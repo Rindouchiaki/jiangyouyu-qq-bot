@@ -12,6 +12,7 @@ from nonebot.log import logger
 
 CLEAN_HOURS = float(os.getenv("CACHE_CLEAN_INTERVAL_HOURS", "1"))
 ENABLED = os.getenv("CACHE_CLEAN_ENABLED", "1").strip() not in ("0", "false", "False")
+DEV_UIN = os.getenv("DEV_UIN", "").strip()
 
 
 def _clean_now() -> dict:
@@ -49,9 +50,7 @@ async def _cache_cmd(event: MessageEvent) -> None:
 
     if not is_our_bot(event):
         return
-    from persona_rules import DEV_UIN
-
-    if DEV_UIN and str(event.get_user_id()) != DEV_UIN:
+    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
         return
     stats = await asyncio.to_thread(cache_clean.size_of)
     text = event.get_plaintext().strip()

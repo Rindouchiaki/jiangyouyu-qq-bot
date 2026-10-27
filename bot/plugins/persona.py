@@ -49,7 +49,7 @@ from persona_rules import (
 )
 
 BOT_UIN = os.getenv("BOT_UIN", "").strip()
-DEV_UIN = os.getenv("DEV_UIN", "100000002").strip()
+DEV_UIN = os.getenv("DEV_UIN", "").strip()
 DEV_NAME = os.getenv("DEV_NAME", "酱酱鱼").strip()
 NICKNAMES = tuple(
     n.strip() for n in os.getenv("NICKNAMES", "酱油鱼,大肥鱼,鲸鱼娘").split(",") if n.strip()
@@ -375,6 +375,8 @@ persona = on_message(priority=50, block=False)
 
 if not MOCK and not API_KEY:
     logger.warning("persona: 未配置 LLM_API_KEY，插件会保持沉默（可用 LLM_MOCK=1 试跑规则）")
+if not DEV_UIN:
+    logger.warning("persona: 未配置 DEV_UIN，管理指令全部禁用")
 
 
 def _load_history() -> None:
@@ -864,7 +866,7 @@ async def _mode_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         return
 
     """切换回复频率：群里只改本群，加 全局/默认 改所有群的默认（仅开发者可用）。"""
-    if DEV_UIN and str(event.get_user_id()) != DEV_UIN:
+    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
         return
 
     kind = _chat_kind(event)
@@ -929,7 +931,7 @@ async def _gacha_cmd(bot: Bot, event: MessageEvent) -> None:
         return
 
     """把回复频率切到抽卡模式（仅开发者）。"""
-    if DEV_UIN and str(event.get_user_id()) != DEV_UIN:
+    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
         return
     kind = _chat_kind(event)
     key = _session_key(event) if kind == "group" else None
@@ -958,7 +960,7 @@ async def _bible_cmd(bot: Bot, event: MessageEvent) -> None:
         return
 
     # 只允许管理员（开发者）手动触发
-    if DEV_UIN and str(event.get_user_id()) != DEV_UIN:
+    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
         logger.debug("persona: /圣经 非管理员，忽略")
         return
 
@@ -980,7 +982,7 @@ usage_cmd = on_command("用量", priority=15, block=True)
 async def _usage_cmd(bot: Bot, event: MessageEvent) -> None:
     if not is_our_bot(event) or not _is_target_account(event):
         return
-    if DEV_UIN and str(event.get_user_id()) != DEV_UIN:
+    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
         return
 
     rows, calls = _usage_today()
@@ -1005,7 +1007,7 @@ chime_cmd = on_command("插话", priority=16, block=True)
 async def _chime_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
     if not is_our_bot(event):
         return
-    if DEV_UIN and str(event.get_user_id()) != DEV_UIN:
+    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
         return
 
     kind = _chat_kind(event)
