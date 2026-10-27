@@ -38,6 +38,8 @@ from nonebot.exception import IgnoredException  # noqa: E402
 from nonebot.message import event_preprocessor  # noqa: E402
 
 _BOT_UIN = os.getenv("BOT_UIN", "").strip()
+if not _BOT_UIN:
+    nonebot.logger.warning("未配置 BOT_UIN：所有连上来的 QQ 账号都会回话")
 
 
 @event_preprocessor
