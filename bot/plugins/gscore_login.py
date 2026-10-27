@@ -2,7 +2,7 @@
 
 三道保险，不依赖核心控制台的配置：
 1. 群里的登录指令不转给核心（按核心的拼法判断，空格、表情隔开也算），核心就不会在群里生成二维码；
-2. 只用群临时会话告诉本人去私聊里发，发不出去也不在群里说任何话；
+2. 私聊告诉本人去私聊里发（先试群临时会话，再试好友私聊），发不出去也不在群里说任何话；
 3. 发往群的消息带核心二维码文案就拦下，并在之后一分钟里拦掉发往该群的图片，
    防核心把文案和二维码拆成几条发（核心「EnableForwardMessage」不是「允许」时会拆）。
 核心那边仍要把「扫码登陆」服务设成 DIRECT（见 docs/早柚核心接入.md）。
@@ -72,9 +72,14 @@ async def _hint(bot: Bot, event: GroupMessageEvent) -> None:
     if not is_our_bot(event):
         return
 
-    try:
-        await bot.send_private_msg(user_id=event.user_id, group_id=event.group_id, message=TIP_PRIVATE)
-        logger.info(f"gscore_login: 已在临时会话提醒 {event.user_id}（群 {event.group_id}）")
-    except Exception as exc:  # noqa: BLE001
-        # 发不出去也不在群里补话，本人可以自己发起临时会话
-        logger.warning(f"gscore_login: 临时会话发送失败 {type(exc).__name__}: {exc}")
+    # SnowLuma 不能主动开临时会话，只能回对方 7 天内发起过的；没有就退回好友私聊。
+    # 两条都发不出去也不在群里补话，本人可以自己点机器人头像发起临时会话
+    for via, extra in (("临时会话", {"group_id": event.group_id}), ("好友私聊", {})):
+        try:
+            await bot.send_private_msg(user_id=event.user_id, message=TIP_PRIVATE, **extra)
+        except Exception as exc:  # noqa: BLE001
+            logger.info(f"gscore_login: {via}提醒 {event.user_id} 失败 {type(exc).__name__}: {exc}")
+            continue
+        logger.info(f"gscore_login: 已在{via}提醒 {event.user_id}（群 {event.group_id}）")
+        return
+    logger.warning(f"gscore_login: 没法私聊 {event.user_id}（没加好友、也没发起过临时会话），群里不提示")
