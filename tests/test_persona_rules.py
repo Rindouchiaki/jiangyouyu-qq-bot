@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "nonebot"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 
 from persona_rules import (  # noqa: E402
     MAX_CHARS_DEFAULT,
