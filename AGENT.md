@@ -15,6 +15,7 @@
 - **换行符**：只有 `README.md`、`AGENT.md`、`docs/架构与运维.md`、`.gitignore`、`LICENSE`、`tools/ocr_win.ps1` 是 LF，其余文本文件（`.py`、`.ps1`、`.json`、其它 `docs/*.md`、`persona.env.example` 等）都是 **CRLF**。改前数一下 `\r` 确认，改后保持原样；`scripts/*.ps1` 和 `tools/ocr_win.ps1`、`tools/ocr_stickers_2x.ps1` 带 UTF-8 BOM，也要保留。
 - **配置**：全部走环境变量，`bot/bot.py` 先 `load_dotenv(bot/persona.env)` 再导入插件，所以插件在模块级 `os.getenv` 就能读到。新增配置项同步写进 `persona.env.example`，代码里的默认值要和样例一致。
 - **目录**：仓库就是运行目录，`.venv`、`bot/persona.env`、`bot/data`、`logs`、`SnowLuma`、`gsuid_core` 都在仓库里（后几个已 gitignore）。脚本统一 dot-source `scripts/common.ps1` 取路径，装在别处的用 persona.env 的 `SNOWLUMA_DIR` / `GSCORE_DIR` / `TOOLS_DIR` / `STICKER_DIR` / `LOG_DIR` 指过去；代码里的默认路径也按仓库算，不要再写死盘符。
+- **部署**：`scripts/setup.ps1` 要能重复跑（已装的跳过、已有的配置不覆盖），新增的安装步骤也照这个写；改了部署流程同步更新 `docs/部署指南.md`。
 - **依赖**：新增第三方包写进 `requirements.txt`。
 - **游戏功能**：星铁 / 绝区零 / 崩坏3 的查询都交给早柚核心的插件，本仓库只管连接和人设避让，不再自己写游戏接口。
 - **权限判断**：开发者专用指令一律写成 `if not DEV_UIN or str(event.get_user_id()) != DEV_UIN: return`，未配置时拒绝所有人，不要写成 `if DEV_UIN and ...`。
@@ -65,6 +66,7 @@ python tests\test_migrate_journal_tags.py  # 旧日记迁移脚本（临时目�
 | #29 | SnowLuma 只能回复对方先发起的临时会话（`send_private_msg` 带 `group_id` 而对方没发起过会被拒），群里「扫码登录」的临时会话提醒几乎总是发不出去 | 先试临时会话，失败再试好友私聊；文档改为让没加好友的群友自己发起临时会话。核心回复临时会话的 `group_id` 由连接插件 6.1 自己带上，已实测 |
 | #30 | #1 之前写的旧日记没有会话标签，自动回忆选不中；旧代码还可能把机器人的话写进库里文件名带日期的私人笔记 | 一次性脚本 `tools/migrate_journal_tags.py`：旧群聊行和紧跟的回复补 `[群号]`、续行并回一行，可选 `--private-as`、`--dev-alias`、`--include-outside`；默认预览，`--apply` 先备份 |
 | #31 | 脚本和代码默认路径写死作者本机 `Z:\snowluma\stack\nonebot`，和仓库布局对不上；`OCR_SCRIPT` 默认指到仓库外；脚本里写死 token 占位符 | 仓库即运行目录：新增 `scripts/common.ps1`，各脚本从 persona.env 读路径和 `ONEBOT_ACCESS_TOKEN` / `SNOWLUMA_WEBUI_PASSWORD`；停止脚本按目录 + 子进程树找进程；删掉重复的 `start-all.ps1`；表情、OCR、抽卡文案默认指仓库里的目录。Windows 上实测启动 / 自检 / 停止（SnowLuma 用假进程代替） |
+| #32 | 部署要手动开好几个终端、按文档一步步敲命令，朋友照着装容易漏 | `scripts/setup.ps1`（幂等）+ 根目录 `一键部署.cmd` / `一键启动.cmd` / `一键停止.cmd`：自动装 uv、Python 3.12、依赖、ffmpeg、SnowLuma、早柚核心和三个插件，生成随机 token 的 `onebot.json` 并和 persona.env 对齐；发现 `Z:\snowluma` 旧安装时可沿用（拷配置 / 数据 / 表情原图，SnowLuma、核心、tools 原地用）。新增 `docs/部署指南.md` |
 
 **自动记忆仍然开着**：`PRIVATE_MIRROR`、`GROUP_MIRROR` 默认 1；私聊每条都落盘，群聊只记被叫/接续的对话；问到「记得/上次」照常带本会话最近 5 条。改的只是按会话隔离和手动指令的权限。
 

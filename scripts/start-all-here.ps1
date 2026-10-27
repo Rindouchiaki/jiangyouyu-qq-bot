@@ -5,7 +5,7 @@
 .DESCRIPTION
     每一步都先查端口，已经在跑的不会重复起。退出脚本后服务继续跑
     （用 Start-Process 分离、隐藏窗口，不挂在当前窗口上）。
-    路径和口令都从 bot\persona.env 读（复制 persona.env.example 后填好）。
+    路径和口令都从 bot\persona.env 读；第一次用先双击「一键部署.cmd」（= scripts\setup.ps1 -Start）。
 
     常用：
       .\scripts\启动全部.ps1                  # 全套拉起
@@ -88,7 +88,7 @@ if ($Stop) {
 
 if ($Status) { Show-Status; return }
 
-if (-not (Test-Path -LiteralPath $cfg.EnvFile)) { throw "还没有 bot\persona.env：复制 bot\persona.env.example 改名后填好" }
+if (-not (Test-Path -LiteralPath $cfg.EnvFile)) { throw "还没有 bot\persona.env，先双击「一键部署.cmd」" }
 
 Write-Host '=== 酱油鱼一键启动 ===' -ForegroundColor Cyan
 
@@ -133,7 +133,7 @@ if (-not $NoVl) {
 if (Test-Listening $WebUiPort) {
     Write-Host "SnowLuma 已在 $WebUiPort 运行，跳过" -ForegroundColor DarkGray
 } elseif (-not (Test-Path $slExe)) {
-    throw "找不到 SnowLuma：$slExe（scripts\install-snowluma.ps1 安装；装在别处就在 persona.env 里设 SNOWLUMA_DIR）"
+    throw "找不到 SnowLuma：$slExe（先双击「一键部署.cmd」；装在别处就在 persona.env 里设 SNOWLUMA_DIR）"
 } else {
     $autoLoad = if ($NoAutoLoad) { '0' } else { '1' }
     $env:SNOWLUMA_HOOK_AUTOLOAD = $autoLoad
@@ -158,9 +158,9 @@ if ($NoCore) {
 } elseif (Test-Listening $CorePort) {
     Write-Host "早柚核心已在 $CorePort 运行，跳过" -ForegroundColor DarkGray
 } elseif (-not (Test-Path $coreDir)) {
-    Write-Host "没装早柚核心（$coreDir），游戏查询不可用；安装见 docs\早柚核心接入.md" -ForegroundColor DarkYellow
+    Write-Host "没装早柚核心（$coreDir），游戏查询不可用；双击「一键部署.cmd」会装上" -ForegroundColor DarkYellow
 } elseif (-not $uv) {
-    Write-Host '找不到 uv，早柚核心没法启动；安装见 docs\早柚核心接入.md' -ForegroundColor DarkYellow
+    Write-Host '找不到 uv，早柚核心没法启动；双击「一键部署.cmd」会装上' -ForegroundColor DarkYellow
 } else {
     $env:PYTHONIOENCODING = 'utf-8'
     $env:PYTHONUTF8 = '1'
@@ -185,7 +185,7 @@ if ($NoCore) {
 if (Test-Listening $NoneBotPort) {
     Write-Host "NoneBot2 已在 $NoneBotPort 运行，跳过" -ForegroundColor DarkGray
 } elseif (-not (Test-Path $nbPy)) {
-    throw "找不到 NoneBot 运行时：$nbPy（python -m venv .venv 后装 requirements.txt）"
+    throw "找不到 NoneBot 运行时：$nbPy（先双击「一键部署.cmd」）"
 } else {
     if (Test-Path $ffmpegBin) { $env:PATH = "$ffmpegBin;$env:PATH" }
     $env:HOST = '127.0.0.1'
@@ -208,4 +208,4 @@ if (Test-Listening $NoneBotPort) {
 Show-Status
 Write-Host ''
 Write-Host "WebUI: http://127.0.0.1:$WebUiPort/   日志: $logs" -ForegroundColor Cyan
-Write-Host '停止全部：.\scripts\启动全部.ps1 -Stop' -ForegroundColor DarkGray
+Write-Host '停止全部：双击「一键停止.cmd」，或 .\scripts\启动全部.ps1 -Stop' -ForegroundColor DarkGray

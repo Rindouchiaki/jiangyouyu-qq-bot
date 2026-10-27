@@ -71,7 +71,7 @@ DeepSeek（OpenAI 兼容接口）—— 只在真要回话时才调用
 bot/                 NoneBot2 源码（人格、图卡、记忆、插件）
   plugins/           各功能插件
   persona.env.example 配置样例（复制成 persona.env 再填）
-scripts/             一键启动 / 停止 / 自检 / 安装脚本
+scripts/             部署 / 启动 / 停止 / 自检脚本（根目录的 一键*.cmd 是双击入口）
 tools/               表情库导出、OCR 等工具
 tests/               离线单测 + 模拟 OneBot 客户端
 config/              SnowLuma 配置样例（onebot.json / runtime.json）
@@ -82,31 +82,24 @@ stickers/index.json  表情库元数据（不含图片本体）
 
 ## 快速开始
 
-前置：Windows 10/11、QQ NT 桌面版（已登录）、Python 3.12、[SnowLuma](https://github.com/snowluma/snowluma) v2.2.0 win-x64。
+前置：Windows 10/11、Git、QQ NT 桌面版。Python、uv、SnowLuma、早柚核心由脚本自动装。
 
 ```powershell
-# 1. 依赖
-python -m venv .venv
-.\.venv\Scripts\pip install -r requirements.txt
-
-# 2. 配置
-copy bot\persona.env.example bot\persona.env   # 填 LLM_API_KEY / BOT_UIN / DEV_UIN / BAISHOU_VAULT
-copy config\onebot.reverse-ws.json <SnowLuma>\config\onebot.json   # 三个 REPLACE_WITH_* 换成随机串，只监听 127.0.0.1
-
-# 3. 起 SnowLuma（WebUI 首次启动会打印初始密码），确认账号已 hook
-
-# 4. 起机器人
-$env:PYTHONIOENCODING='utf-8'
-$env:ONEBOT_ACCESS_TOKEN='...'   # 与 onebot.json 里 wsClients 的 accessToken 相同
-.\.venv\Scripts\python bot\bot.py
+git clone https://github.com/Rindouchiaki/jiangyouyu-qq-bot.git
 ```
 
-一键脚本（会按端口自动跳过已在跑的服务）：
+然后双击仓库根目录的 **`一键部署.cmd`**：问 API Key 和两个 QQ 号，装好全部依赖、生成配置（随机 token、只听 127.0.0.1），
+接着在后台启动整套服务。之后日常用 `一键启动.cmd` / `一键停止.cmd`。
+完整步骤（第一次登录 SnowLuma、从旧的 `Z:\snowluma` 迁移、常见问题）见 **[`docs/部署指南.md`](docs/部署指南.md)**。
+
+命令行等价写法（脚本会按端口跳过已在跑的服务）：
 
 ```powershell
-.\scripts\启动全部.ps1          # QQ → 本地视觉模型 → SnowLuma → NoneBot
-.\scripts\启动全部.ps1 -Status  # 只看状态
-.\scripts\启动全部.ps1 -Stop    # 全停（QQ 保留）
+.\scripts\setup.ps1 -Start          # 部署 + 启动（= 一键部署.cmd）
+.\scripts\启动全部.ps1             # QQ → 本地视觉模型 → SnowLuma → 早柚核心 → NoneBot
+.\scripts\启动全部.ps1 -Status     # 只看状态
+.\scripts\启动全部.ps1 -Stop       # 全停（QQ 保留）
+.\scripts\verify-stack.ps1         # 全链路自检
 ```
 
 ## 成本
@@ -116,6 +109,7 @@ $env:ONEBOT_ACCESS_TOKEN='...'   # 与 onebot.json 里 wsClients 的 accessToken
 
 ## 文档
 
+- [`docs/部署指南.md`](docs/部署指南.md)：从零部署、从旧目录迁移、日常使用和常见问题
 - [`docs/SnowLuma-QQ机器人调查报告.md`](docs/SnowLuma-QQ机器人调查报告.md)：SnowLuma 是什么、怎么部署、和各家的对比
 - [`docs/SnowLuma-参数与原理.md`](docs/SnowLuma-参数与原理.md)：OneBot 网络、反向 WS、token、WebUI 那些坑
 - [`docs/图像与表情包最小Token方案.md`](docs/SnowLuma-图像与表情包最小Token方案.md)：图卡架构与 token 账本
