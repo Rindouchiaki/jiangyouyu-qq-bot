@@ -4,7 +4,7 @@
       {
         "name": "http-default",
         "enabled": true,
-        "host": "0.0.0.0",
+        "host": "127.0.0.1",
         "port": 3000,
         "path": "/",
         "enableWebSocket": false,
@@ -18,7 +18,7 @@
       {
         "name": "ws-default",
         "enabled": true,
-        "host": "0.0.0.0",
+        "host": "127.0.0.1",
         "port": 3001,
         "path": "/",
         "role": "Universal",
@@ -31,10 +31,10 @@
       {
         "name": "nonebot",
         "enabled": true,
-        "url": "ws://127.0.0.1:8080/onebot/v11/ws",
+        "url": "ws://127.0.0.1:18080/onebot/v11/ws",
         "role": "Universal",
         "reconnectIntervalMs": 5000,
-        "accessToken": "",
+        "accessToken": "REPLACE_WITH_32_BYTES_RANDOM_NONEBOT_TOKEN",
         "messageFormat": "array",
         "reportSelfMessage": false
       }

@@ -89,12 +89,13 @@ python -m venv .venv
 
 # 2. 配置
 copy bot\persona.env.example bot\persona.env   # 填 LLM_API_KEY / BOT_UIN / DEV_UIN / BAISHOU_VAULT
-copy config\onebot.reverse-ws.json <SnowLuma>\config\onebot.json
+copy config\onebot.reverse-ws.json <SnowLuma>\config\onebot.json   # 三个 REPLACE_WITH_* 换成随机串，只监听 127.0.0.1
 
 # 3. 起 SnowLuma（WebUI 首次启动会打印初始密码），确认账号已 hook
 
 # 4. 起机器人
 $env:PYTHONIOENCODING='utf-8'
+$env:ONEBOT_ACCESS_TOKEN='...'   # 与 onebot.json 里 wsClients 的 accessToken 相同
 .\.venv\Scripts\python bot\bot.py
 ```
 
