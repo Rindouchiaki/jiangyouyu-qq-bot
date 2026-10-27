@@ -1,7 +1,7 @@
 """游戏查询：/hsr（星穹铁道）、/zzz（绝区零）。
 
 数据在本地缓存（game-data/index.json），默认 24 小时过期后自动重抓，
-抓取失败继续用旧数据，不影响查询。不读米游社账号数据，所以不需要 Cookie。
+抓取失败继续用旧数据，不影响查询。角色查询不需要 Cookie；体力/便笺要 MYS_COOKIE，仅 DEV_UIN 可用。
 """
 
 from __future__ import annotations
@@ -126,6 +126,10 @@ async def _handle(game: str, bot: Bot, event: MessageEvent, arg) -> None:
 
     if action in ("体力", "便笺", "note"):
         _last_used[key] = now
+        # Cookie 是号主自己的账号凭据：别人查会拿号主的号去请求，容易触发米游社风控
+        if not DEV_UIN or qq != DEV_UIN:
+            await bot.send(event, "体力查询只给号主用")
+            return
         uid = mys.get_uid(qq, game)
         if not uid:
             await bot.send(event, f"还没绑定，先发 /{game} 绑定 <UID>")
@@ -135,7 +139,7 @@ async def _handle(game: str, bot: Bot, event: MessageEvent, arg) -> None:
                 event,
                 "查体力需要米游社 Cookie（未配置）。\n"
                 "在浏览器登录米游社 → F12 → Network → 任意请求里的 Cookie，"
-                "填到 stack\\nonebot\\persona.env 的 MYS_COOKIE 后重启。",
+                "填到 bot\\persona.env 的 MYS_COOKIE 后重启。",
             )
             return
         try:
