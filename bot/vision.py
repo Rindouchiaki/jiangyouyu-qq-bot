@@ -447,8 +447,6 @@ async def card_for_seg(seg) -> str:
                     desc = await _describe(_frame_png(img, _busiest_frame(img, n_frames)))
                     if desc:
                         card = f"[动图:{desc[:30]}]" if animated else f"[图片:{desc[:30]}]"
-                    if desc:
-                        card = f"[图片:{desc[:30]}]"
     except (OSError, ValueError) as exc:
         logger.warning(f"vision: 图片解析失败 {type(exc).__name__}: {exc}")
 
