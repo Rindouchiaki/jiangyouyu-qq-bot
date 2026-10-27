@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    酱油鱼一键启动：QQ → 本地视觉模型 → SnowLuma(协议端) → NoneBot2(人格/插件)。
+    酱油鱼一键启动：QQ → 本地视觉模型 → SnowLuma(协议端) → 早柚核心(游戏查询) → NoneBot2(人格/插件)。
 
 .DESCRIPTION
     每一步都先查端口，已经在跑的不会重复起。退出脚本后服务继续跑
@@ -12,6 +12,7 @@
       .\scripts\启动全部.ps1 -Stop            # 全停
       .\scripts\启动全部.ps1 -NoVl            # 不启本地视觉模型（省 1GB 内存）
       .\scripts\启动全部.ps1 -NoAutoLoad      # SnowLuma 不自动注入 QQ 账号
+      .\scripts\启动全部.ps1 -NoCore          # 不启早柚核心（星铁/绝区零/崩坏3 查询）
 
 .NOTES
     日志都在 Z:\snowluma\logs\，WebUI http://127.0.0.1:5099/
@@ -22,9 +23,11 @@ param(
     [switch]$Status,
     [switch]$NoVl,
     [switch]$NoAutoLoad,
+    [switch]$NoCore,
     [int]$NoneBotPort = 18080,
     [int]$WebUiPort = 5099,
-    [int]$VlPort = 11435
+    [int]$VlPort = 11435,
+    [int]$CorePort = 8765
 )
 
 $ErrorActionPreference = 'Stop'
@@ -43,6 +46,7 @@ $vlModel = Join-Path $root 'tools\vl-model\Qwen3-VL-2B-Instruct-Q4_K_M.gguf'
 $vlMmproj = Join-Path $root 'tools\vl-model\mmproj-F16.gguf'
 $qqExe = 'C:\Program Files\Tencent\QQNT\QQ.exe'
 $ffmpegBin = Join-Path $root 'tools\ffmpeg\bin'
+$coreDir = Join-Path $root 'gsuid_core'
 
 function Test-Listening([int]$Port) {
     [bool](Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
@@ -63,6 +67,7 @@ function Show-Status {
             @{ Port = $WebUiPort; Name = 'SnowLuma WebUI' },
             @{ Port = 3000; Name = 'OneBot HTTP' },
             @{ Port = 3001; Name = 'OneBot WS' },
+            @{ Port = $CorePort; Name = '早柚核心' },
             @{ Port = $NoneBotPort; Name = 'NoneBot2' },
             @{ Port = $VlPort; Name = '本地视觉模型' })) {
         $conn = Get-NetTCPConnection -State Listen -LocalPort $item.Port -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -83,8 +88,8 @@ function Show-Status {
 
 # ------------------------------------------------------------------ 停止
 if ($Stop) {
-    Write-Host '正在停止 NoneBot2 / SnowLuma / 本地视觉模型 ...' -ForegroundColor Yellow
-    foreach ($port in @($NoneBotPort, $WebUiPort, $VlPort, 3000, 3001)) {
+    Write-Host '正在停止 NoneBot2 / 早柚核心 / SnowLuma / 本地视觉模型 ...' -ForegroundColor Yellow
+    foreach ($port in @($NoneBotPort, $CorePort, $WebUiPort, $VlPort, 3000, 3001)) {
         Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty OwningProcess -Unique |
             ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
@@ -94,6 +99,10 @@ if ($Stop) {
         Where-Object { $_.CommandLine -like '*Z:\snowluma\stack\nonebot*' -or $_.CommandLine -like '*bot.py*' } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Get-CimInstance Win32_Process -Filter "Name='llama-server.exe'" -ErrorAction SilentlyContinue |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    # 早柚核心由 uv 拉起，真正占端口的 python 可能在 uv 自己的目录里，按命令行认
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.ProcessId -ne $PID -and $_.Name -match '^(python|pythonw|uv)\.exe$' -and $_.CommandLine -like "*$coreDir*" } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Seconds 2
     Write-Host '已停止（QQ 保留运行，需要的话手动关）' -ForegroundColor Green
@@ -163,7 +172,38 @@ if (Test-Listening $WebUiPort) {
     if ($autoLoad -eq '1') { Write-Host '会自动注入已登录的 QQ 账号（没登录就去 WebUI 手动 Load）' -ForegroundColor DarkGray }
 }
 
-# ------------------------------------------------------------------ 4) NoneBot2
+# ------------------------------------------------------------------ 4) 早柚核心（可选）
+# 先于 NoneBot 起，连接插件一启动就能连上；没装或起不来都不影响人设
+$uv = Get-Command uv -ErrorAction SilentlyContinue
+if ($NoCore) {
+    Write-Host '跳过早柚核心（-NoCore）' -ForegroundColor DarkGray
+} elseif (Test-Listening $CorePort) {
+    Write-Host "早柚核心已在 $CorePort 运行，跳过" -ForegroundColor DarkGray
+} elseif (-not (Test-Path $coreDir)) {
+    Write-Host "没装早柚核心（$coreDir），游戏查询不可用；安装见 docs\早柚核心接入.md" -ForegroundColor DarkYellow
+} elseif (-not $uv) {
+    Write-Host '找不到 uv，早柚核心没法启动；安装见 docs\早柚核心接入.md' -ForegroundColor DarkYellow
+} else {
+    $env:PYTHONIOENCODING = 'utf-8'
+    $env:PYTHONUTF8 = '1'
+    Write-Host '启动早柚核心（星铁/绝区零/崩坏3 查询）...' -ForegroundColor Yellow
+    # 全局 ErrorActionPreference=Stop，起不来也不能拦住后面的 NoneBot
+    try {
+        $p = Start-Process -FilePath $uv.Source -ArgumentList 'run', 'core' -WorkingDirectory $coreDir `
+            -RedirectStandardOutput (Join-Path $logs 'gscore.out.log') `
+            -RedirectStandardError (Join-Path $logs 'gscore.err.log') `
+            -PassThru -WindowStyle Hidden
+        if (Wait-Listening $CorePort 90) {
+            Write-Host "早柚核心已启动 (pid $($p.Id))  控制台 http://127.0.0.1:$CorePort/app" -ForegroundColor Green
+        } else {
+            Write-Host "早柚核心 90 秒内没监听（首次启动可能还在装依赖），见 $logs\gscore.err.log；不影响人设" -ForegroundColor DarkYellow
+        }
+    } catch {
+        Write-Host "早柚核心启动失败：$($_.Exception.Message)；不影响人设" -ForegroundColor DarkYellow
+    }
+}
+
+# ------------------------------------------------------------------ 5) NoneBot2
 if (Test-Listening $NoneBotPort) {
     Write-Host "NoneBot2 已在 $NoneBotPort 运行，跳过" -ForegroundColor DarkGray
 } elseif (-not (Test-Path $nbPy)) {

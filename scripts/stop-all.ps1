@@ -7,7 +7,7 @@
 #>
 [CmdletBinding()]
 param(
-    [int[]]$Ports = @(18080, 5099, 3000, 3001)
+    [int[]]$Ports = @(18080, 8765, 5099, 3000, 3001)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,6 +29,14 @@ foreach ($port in $Ports) {
 # 2) 按可执行文件路径兜底（端口还没起来或已被换绑的情况）
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) } |
+    ForEach-Object {
+        $proc = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
+        if ($proc) { $targets[[int]$_.ProcessId] = $proc }
+    }
+
+# 3) 早柚核心由 uv 拉起，真正占端口的 python 可能在 uv 自己的目录里（不在 $root 下），按命令行认
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ProcessId -ne $PID -and $_.Name -match '^(python|pythonw|uv)\.exe$' -and $_.CommandLine -like "*$(Join-Path $root 'gsuid_core')*" } |
     ForEach-Object {
         $proc = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
         if ($proc) { $targets[[int]$_.ProcessId] = $proc }

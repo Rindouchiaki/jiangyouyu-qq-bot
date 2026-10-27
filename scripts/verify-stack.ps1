@@ -14,6 +14,7 @@ param(
     [int]$NoneBotPort = 18080,
     [int]$WebUiPort = 5099,
     [int]$HttpPort = 3000,
+    [int]$CorePort = 8765,
     [string]$HttpToken = '<ONEBOT_HTTP_TOKEN>',
     [string]$NbToken = '<ONEBOT_ACCESS_TOKEN>'
 )
@@ -41,6 +42,11 @@ else { Add-Result 'NoneBot2 监听' 'FAIL' '未监听，先跑 scripts\start-all
 $sl = Get-NetTCPConnection -State Listen -LocalPort $WebUiPort -ErrorAction SilentlyContinue
 if ($sl) { Add-Result 'SnowLuma WebUI' 'PASS' "127.0.0.1:$WebUiPort" }
 else { Add-Result 'SnowLuma WebUI' 'FAIL' '未监听，先跑 scripts\start-all.ps1' }
+
+# 2.5) 早柚核心（可选，游戏查询）
+$core = Get-NetTCPConnection -State Listen -LocalPort $CorePort -ErrorAction SilentlyContinue
+if ($core) { Add-Result '早柚核心监听' 'PASS' "127.0.0.1:$CorePort" }
+else { Add-Result '早柚核心监听' 'WAIT' '未监听：游戏查询不可用，人设不受影响' }
 
 # 3) 框架层往返（不依赖 QQ）
 if ($nb) {
