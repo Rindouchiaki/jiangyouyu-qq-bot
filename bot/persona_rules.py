@@ -74,6 +74,12 @@ _CASUAL_WORDS = (
 )
 
 
+def is_game_command(text: str, prefixes: tuple[str, ...]) -> bool:
+    """早柚核心的游戏指令（sr / zzz / bbb 开头、扫码登录等）：交给核心回，人设不接。"""
+    t = (text or "").strip().lstrip("/").lower()
+    return bool(t) and any(p and t.startswith(p.lower()) for p in prefixes)
+
+
 def wants_help(text: str) -> bool:
     """这句是不是「正经求助」：查/看/找/翻译/出主意。
 

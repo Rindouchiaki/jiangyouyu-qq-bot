@@ -39,6 +39,7 @@ from persona_rules import (
     follow_decision,
     humanize,
     is_conversation_ending,
+    is_game_command,
     judge_annoyance,
     judge_atmosphere,
     judge_mood,
@@ -81,6 +82,10 @@ ENGAGE_FOLLOW_WINDOW = float(os.getenv("ENGAGE_FOLLOW_WINDOW", "45"))
 ENGAGE_MAX_TURNS = int(os.getenv("ENGAGE_MAX_TURNS", "4"))
 STICKER_COOLDOWN = float(os.getenv("STICKER_COOLDOWN", "3"))
 AT_USER = os.getenv("REPLY_AT_USER", "1") == "1"
+# 早柚核心的指令前缀；「绝区零」「崩坏3」这类中文前缀不放进来，免得平常聊这两个游戏时人设也闭嘴
+GAME_CMD_PREFIXES = tuple(
+    p.strip() for p in os.getenv("GAME_CMD_PREFIXES", "sr,zzz,bbb,扫码登录,扫码登陆").split(",") if p.strip()
+)
 PROB_CALLED = float(os.getenv("REPLY_PROB_CALLED", "0.5"))
 PROB_FOLLOW = float(os.getenv("REPLY_PROB_FOLLOW", "0.15"))
 STICKER_AUTO_PROB = float(os.getenv("STICKER_AUTO_PROB", "0.08"))
@@ -593,6 +598,9 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
                 _last_image_seg.pop(old_key, None)
 
     text = event.get_plaintext().strip()
+    if is_game_command(text, GAME_CMD_PREFIXES):
+        # 游戏指令由早柚核心回，人设不接话，也不进上下文和日记
+        return
     if not text:
         # 纯图片：只有「本来就要理这张图」的情况才做本地识图，免得白烧 CPU 和 token
         if not _should_look_image(event):
