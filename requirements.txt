@@ -1,0 +1,15 @@
+# Python 3.12。版本下限按 NoneBot 2.5 生态；作者本机的确切版本以 pip freeze 为准
+# 反向 WS 需要 FastAPI 驱动（NoneBot 默认 DRIVER=~fastapi），裸 nonebot2 不带
+nonebot2[fastapi]>=2.5.0,<3
+nonebot-adapter-onebot>=2.4,<3
+nonebot-plugin-apscheduler>=0.5,<1
+# parser_video_only.py 改了它的内部渲染类，升级前先确认 renders/base.py、parsers/data.py 没变
+nonebot-plugin-parser>=2.6,<2.8
+python-dotenv>=0.21
+httpx>=0.27.2
+pillow>=11
+# 解析插件合并音视频要 ffmpeg：它带一个静态版，但不会自动进 PATH，需把所在目录加进 PATH（脚本默认找 tools\ffmpeg\bin）
+imageio-ffmpeg
+
+# 只有 tests/fake_onebot_client.py 用
+websockets>=15

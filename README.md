@@ -86,7 +86,7 @@ stickers/index.json  表情库元数据（不含图片本体）
 ```powershell
 # 1. 依赖
 python -m venv .venv
-.\.venv\Scripts\pip install nonebot2 nonebot-adapter-onebot nonebot-plugin-parser nonebot-plugin-apscheduler pillow imageio-ffmpeg
+.\.venv\Scripts\pip install -r requirements.txt
 
 # 2. 配置
 copy bot\persona.env.example bot\persona.env   # 填 LLM_API_KEY / BOT_UIN / DEV_UIN / BAISHOU_VAULT
