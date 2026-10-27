@@ -64,7 +64,7 @@ MAX_CHARS = int(os.getenv("REPLY_MAX_CHARS", "20"))
 # 正经求助（查/看/找/翻译）放宽到一两句话，不然「帮我看看这个」只能挤出十几个字
 MAX_CHARS_HELP = int(os.getenv("REPLY_MAX_CHARS_HELP", "80"))
 HELP_MAX_TOKENS = int(os.getenv("REPLY_HELP_MAX_TOKENS", "160"))
-HISTORY_SIZE = int(os.getenv("HISTORY_SIZE", "16"))
+HISTORY_SIZE = int(os.getenv("HISTORY_SIZE", "24"))
 COOLDOWN_SEC = float(os.getenv("REPLY_COOLDOWN", "8"))
 FOLLOW_COOLDOWN_SEC = float(os.getenv("REPLY_GROUP_COOLDOWN", "10"))
 CHIME_PROB = float(os.getenv("REPLY_CHIME_PROB", "0.1"))
@@ -78,16 +78,16 @@ GLOBAL_PER_MIN = int(os.getenv("REPLY_PER_MIN", "4"))
 
 ENGAGE_TTL = float(os.getenv("ENGAGE_TTL", "120"))
 ENGAGE_FOLLOW_WINDOW = float(os.getenv("ENGAGE_FOLLOW_WINDOW", "45"))
-ENGAGE_MAX_TURNS = int(os.getenv("ENGAGE_MAX_TURNS", "8"))
+ENGAGE_MAX_TURNS = int(os.getenv("ENGAGE_MAX_TURNS", "4"))
 STICKER_COOLDOWN = float(os.getenv("STICKER_COOLDOWN", "3"))
 AT_USER = os.getenv("REPLY_AT_USER", "1") == "1"
 PROB_CALLED = float(os.getenv("REPLY_PROB_CALLED", "0.5"))
 PROB_FOLLOW = float(os.getenv("REPLY_PROB_FOLLOW", "0.15"))
-STICKER_AUTO_PROB = float(os.getenv("STICKER_AUTO_PROB", "0.15"))
+STICKER_AUTO_PROB = float(os.getenv("STICKER_AUTO_PROB", "0.08"))
 STICKER_AUTO_COOLDOWN = float(os.getenv("STICKER_AUTO_COOLDOWN", "120"))
 PESTER_WINDOW = float(os.getenv("PESTER_WINDOW", "45"))
 PESTER_COUNT = int(os.getenv("PESTER_COUNT", "5"))
-SNUB_SECONDS = float(os.getenv("SNUB_SECONDS", "300"))
+SNUB_SECONDS = float(os.getenv("SNUB_SECONDS", "100"))
 
 _data_env = os.getenv("PERSONA_DATA_DIR", "").strip()
 _DATA_DIR = Path(_data_env) if _data_env else Path(__file__).resolve().parent.parent / "data"

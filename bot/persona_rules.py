@@ -13,7 +13,6 @@ import re
 import unicodedata
 
 MAX_CHARS_DEFAULT = 20
-HISTORY_DEFAULT = 16
 # 进 prompt 的历史总字符预算（超出就丢最旧的），省 token 的关键旋钮
 HISTORY_CHAR_BUDGET = int(os.getenv("HISTORY_CHAR_BUDGET", "500"))
 HISTORY_ITEM_CHARS = int(os.getenv("HISTORY_ITEM_CHARS", "40"))
