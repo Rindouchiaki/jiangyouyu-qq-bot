@@ -8,8 +8,10 @@ nonebot-plugin-parser>=2.6,<2.8
 python-dotenv>=0.21
 httpx>=0.27.2
 pillow>=11
+# 早柚核心连接插件（核心本体另装，见 docs/早柚核心接入.md）
+nonebot-plugin-genshinuid>=6.1,<7
 # 解析插件合并音视频要 ffmpeg：它带一个静态版，但不会自动进 PATH，需把所在目录加进 PATH（脚本默认找 tools\ffmpeg\bin）
 imageio-ffmpeg
 
-# 只有 tests/fake_onebot_client.py 用
+# 早柚核心连接插件运行时要（它声明的下限太低），tests/fake_onebot_client.py 也用
 websockets>=15

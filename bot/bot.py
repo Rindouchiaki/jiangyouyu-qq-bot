@@ -27,6 +27,8 @@ from nonebot.adapters.onebot.v11 import Adapter  # noqa: E402
 nonebot.init(
     host=os.getenv("HOST", "127.0.0.1"),
     port=int(os.getenv("PORT", "18080")),
+    # NoneBot 只从自己的 .env 读插件自定义配置，persona.env 里的早柚核心连接项要显式传进去
+    **{k.lower(): v for k, v in os.environ.items() if k.upper().startswith("GSUID_CORE_")},
 )
 
 driver = nonebot.get_driver()
@@ -53,6 +55,12 @@ try:
     nonebot.load_plugin("nonebot_plugin_parser")
 except Exception as exc:  # noqa: BLE001
     nonebot.logger.warning(f"B站解析插件加载失败 {type(exc).__name__}: {exc}")
+
+# 早柚核心连接插件：把消息转给另起的核心进程（星铁/绝区零/崩坏3 查询），核心没开也不影响人设
+try:
+    nonebot.load_plugin("GenshinUID")
+except Exception as exc:  # noqa: BLE001
+    nonebot.logger.warning(f"早柚核心连接插件加载失败 {type(exc).__name__}: {exc}")
 
 # 插件目录：本地为 stack/nonebot/plugins，容器内为 /app/plugins
 nonebot.load_plugins("plugins")
