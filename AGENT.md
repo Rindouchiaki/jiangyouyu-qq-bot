@@ -58,6 +58,7 @@ python tests\test_persona_rules.py   # 纯规则，不连 QQ、不调模型
 | #25 | 自写 `/hsr` `/zzz` 和核心重复、`/zzz` 会双回 | 删掉 `game_query` / `mys` / `game_data` 及相关配置，#5 的体力限制随之失效 |
 | #26 | 要保证二维码绝不进群、发不出去也不在群里说话 | `gscore_login.py` 三道保险：群里的登录指令不转给核心（`run_preprocessor`）；只发临时会话、失败只记日志；发往群的消息带二维码文案就拦下并锁该群一分钟内的图片（`on_calling_api`）；判断逻辑在 `bot/gscore_guard.py` |
 | #27 | 早柚核心没有安装和配置说明 | 新增 `docs/早柚核心接入.md` |
+| #28 | 核心没开时连接插件（优先级 0）每条消息都先试连核心，人设回复跟着晚 4–8 秒 | `gscore_link.py`：核心未连接且开了 `GSUID_CORE_REPEAT` 时跳过连接插件，交给它每 10 秒的定时重连；「连接core」不拦 |
 
 **自动记忆仍然开着**：`PRIVATE_MIRROR`、`GROUP_MIRROR` 默认 1；私聊每条都落盘，群聊只记被叫/接续的对话；问到「记得/上次」照常带本会话最近 5 条。改的只是按会话隔离和手动指令的权限。
 
