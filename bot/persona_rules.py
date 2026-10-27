@@ -257,6 +257,15 @@ def judge_annoyance(
     return False, ""
 
 
+# 群聊每分钟总额度用到这个比例就停掉对应回复：插话/自动配图最先停，被叫最后停
+QUOTA_TIERS = {"插话": 0.5, "接续": 0.75, "被叫": 1.0}
+
+
+def quota_allows(used: int, limit: int, kind: str) -> bool:
+    """一分钟内群里已发 used 条时，kind 这类回复还能不能发。"""
+    return used < limit * QUOTA_TIERS[kind]
+
+
 def follow_decision(
     state: dict | None,
     user_id: str,

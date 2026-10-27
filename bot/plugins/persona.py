@@ -43,6 +43,7 @@ from persona_rules import (
     judge_atmosphere,
     judge_mood,
     looks_addressed,
+    quota_allows,
     safe_name,
     wants_help,
     wants_sticker,
@@ -73,7 +74,7 @@ CHIME_HISTORY_BUDGET = int(os.getenv("CHIME_HISTORY_BUDGET", "260"))
 PRIVATE_MIRROR = os.getenv("PRIVATE_MIRROR", "1").strip() not in ("0", "false", "False")
 # 群聊里「真的接上了」的对话也记（被叫/接续，不含随机插话），带群号和发言人
 GROUP_MIRROR = os.getenv("GROUP_MIRROR", "1").strip() not in ("0", "false", "False")
-GLOBAL_PER_MIN = int(os.getenv("REPLY_PER_MIN", "8"))
+GLOBAL_PER_MIN = int(os.getenv("REPLY_PER_MIN", "4"))
 
 ENGAGE_TTL = float(os.getenv("ENGAGE_TTL", "120"))
 ENGAGE_FOLLOW_WINDOW = float(os.getenv("ENGAGE_FOLLOW_WINDOW", "45"))
@@ -510,11 +511,12 @@ async def ask_llm(messages: list[dict[str, str]], max_tokens: int = 48) -> str:
     return await asyncio.to_thread(_call_llm_sync, messages, max_tokens)
 
 
-def _quota_ok() -> bool:
+def _quota_ok(kind: str) -> bool:
+    """群聊全局每分钟额度（按 QUOTA_TIERS 分档）；私聊和被叫触发的抽卡定型文不走这里。"""
     now = time.time()
     while _recent_reply_times and now - _recent_reply_times[0] > 60:
         _recent_reply_times.popleft()
-    return len(_recent_reply_times) < GLOBAL_PER_MIN
+    return quota_allows(len(_recent_reply_times), GLOBAL_PER_MIN, kind)
 
 
 def _is_target_account(event: MessageEvent) -> bool:
@@ -672,6 +674,9 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
             past, name, text, atmosphere="烦", self_names=NICKNAMES,
             mood="不耐烦", dev_name=DEV_NAME or None,
         )
+        if not _quota_ok("被叫"):
+            logger.info(f"persona: 嫌烦收尾跳过（全局限流），冷处理照旧（{why}）")
+            return
         try:
             raw = await ask_llm(messages)
         except Exception as exc:  # noqa: BLE001
@@ -682,6 +687,7 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         _save_history(force=True)
         logger.info(f"persona -> {reply}（嫌烦收尾：{why}，冷处理 {SNUB_SECONDS:.0f}s）")
         await bot.send(event, reply)
+        _recent_reply_times.append(now)
         return
 
     # 收尾的话就散场，不接
@@ -711,7 +717,7 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
                 chime_prob = _chime_prob(key, mcfg)
                 if chime_prob <= 0 or random.random() >= chime_prob:
                     return
-                if now - _last_chime.get(key, 0) < CHIME_COOLDOWN_SEC or not _quota_ok():
+                if now - _last_chime.get(key, 0) < CHIME_COOLDOWN_SEC or not _quota_ok("插话"):
                     return
                 label, allowed, reason = judge_atmosphere(list(history), idle)
                 if not allowed:
@@ -727,10 +733,16 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     mood, mood_reason = judge_mood(list(history), label)
 
     # 「发张表情包」这类明确请求：直接给图，和图之外的话分开计时
-    if wants_sticker(text) and now - _last_sticker.get(key, 0) >= STICKER_COOLDOWN:
+    if (
+        wants_sticker(text)
+        and now - _last_sticker.get(key, 0) >= STICKER_COOLDOWN
+        and (not is_group or _quota_ok("被叫"))
+    ):
         item = sticker_lib.pick_for_mood(mood, key)
         if item and await sticker_lib.send(bot, event, item):
             _last_sticker[key] = now
+            if is_group:
+                _recent_reply_times.append(now)
             logger.info(f"persona: 发图 {item['file']}（{item.get('category')}／情绪 {mood}）")
 
     cd = mcfg["cd"] if addressed else COOLDOWN_SEC
@@ -750,7 +762,8 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     if mname == "米游抽卡":
         reply = _gacha_text()
         _last_reply[key] = now
-        _recent_reply_times.append(now)
+        if mode.startswith("插话"):
+            _last_chime[key] = now
         history.append(("我", reply[:80]))
         _save_history(force=True)
         logger.info(f"persona: 抽卡模式发定型文（{mode}）")
@@ -758,7 +771,16 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
             await bot.send(event, MessageSegment.at(user_id) + "\n" + reply)
         else:
             await bot.send(event, reply)
+        # 被叫触发的定型文不拦，但照样占额度，让其它闲聊先让路
+        if is_group:
+            _recent_reply_times.append(now)
         return
+
+    if is_group:
+        tier = "被叫" if mode.startswith("被叫") else "接续" if mode.startswith("接续") else "插话"
+        if not _quota_ok(tier):
+            logger.info(f"persona: 跳过（全局限流 {GLOBAL_PER_MIN}/分钟，{mode}）")
+            return
 
     past = past_snapshot
     if past:
@@ -811,7 +833,6 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         return
 
     _last_reply[key] = now
-    _recent_reply_times.append(now)
     if mode.startswith("插话"):
         _last_chime[key] = now
     history.append(("我", reply))
@@ -827,6 +848,8 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         await bot.send(event, MessageSegment.at(user_id) + " " + reply)
     else:
         await bot.send(event, reply)
+    if is_group:
+        _recent_reply_times.append(now)
 
     if not is_group and PRIVATE_MIRROR:
         try:
@@ -851,11 +874,14 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
             roll < chance
             and now - _last_auto_sticker.get(key, 0) >= STICKER_AUTO_COOLDOWN
             and now - _last_sticker.get(key, 0) >= STICKER_COOLDOWN
+            and (not is_group or _quota_ok("插话"))
         ):
             item = sticker_lib.pick_for_mood(mood, key)
             if item and await sticker_lib.send(bot, event, item):
                 _last_auto_sticker[key] = now
                 _last_sticker[key] = now
+                if is_group:
+                    _recent_reply_times.append(now)
                 logger.info(f"persona: 顺手配图 {item['file']}（{mood}，概率 {chance:.0%}）")
 mode_cmd = on_command("模式", priority=16, block=True)
 
@@ -973,6 +999,8 @@ async def _bible_cmd(bot: Bot, event: MessageEvent) -> None:
     text = _gacha_text()
     logger.info(f"persona: /圣经 手动触发（{len(text)} 字）")
     await bot.send(event, text)
+    if getattr(event, "message_type", "") == "group":
+        _recent_reply_times.append(now)
 
 # 看账：今日 token 用量（管理员）
 usage_cmd = on_command("用量", priority=15, block=True)
