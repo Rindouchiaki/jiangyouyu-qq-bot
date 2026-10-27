@@ -1,0 +1,52 @@
+# 每次推送 / PR：在 Windows 上检查脚本语法、装锁定的依赖、跑单元测试和 NoneBot 冒烟（不连早柚核心）
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+    steps:
+      # 仓库里的 .ps1 要原样的 BOM + CRLF，别让 Git 转换行符
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+
+      - name: PowerShell 5.1 语法检查
+        shell: powershell
+        run: |
+          $bad = 0
+          foreach ($f in Get-ChildItem scripts\*.ps1, tools\*.ps1) {
+            $tokens = $null; $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tokens, [ref]$errors)
+            foreach ($e in $errors) { Write-Host "::error file=$($f.Name),line=$($e.Extent.StartLineNumber)::$($e.Message)"; $bad++ }
+          }
+          if ($bad) { exit 1 }
+
+      - name: 装依赖（requirements.lock）
+        shell: cmd
+        run: |
+          uv venv .venv --python 3.12 || exit /b 1
+          uv pip install --python .venv\Scripts\python.exe -r requirements.lock
+
+      - name: 单元测试
+        shell: cmd
+        run: |
+          .venv\Scripts\python tests\test_persona_rules.py || exit /b 1
+          .venv\Scripts\python tests\test_gscore_guard.py || exit /b 1
+          .venv\Scripts\python tests\test_migrate_journal_tags.py
+
+      - name: NoneBot 冒烟
+        shell: cmd
+        run: .venv\Scripts\python tests\smoke_stack.py --start-bot

@@ -6,9 +6,10 @@
     1. 检查 git、uv（没有 uv 就自动装）
     2. 旧机器（Z:\snowluma 那套）可沿用：拷 persona.env、聊天数据、表情原图，SnowLuma / 早柚核心 / tools 原地继续用
     3. bot\persona.env：没有就从样例生成，问几项必填的
-    4. Python 3.12 虚拟环境 + 依赖，ffmpeg 放到 tools\ffmpeg\bin
-    5. SnowLuma：没装就下载；生成 onebot.json（随机 token），和 persona.env 的 token 对齐
-    6. 早柚核心 + 星铁/绝区零/崩坏3 插件
+    4. Python 3.12 虚拟环境 + 依赖（requirements.lock 锁定的版本），ffmpeg 放到 tools\ffmpeg\bin
+    5. SnowLuma：没装就下载 external.lock.json 锁定的版本并校验 sha256；生成 onebot.json（随机 token），和 persona.env 的 token 对齐
+    6. 早柚核心 + 星铁/绝区零/崩坏3 插件，装 external.lock.json 锁定的提交
+    已经装了的外部组件默认不动，只提示和锁定版本不一致；-Update 才把它们换到锁定版本（「一键更新.cmd」用）。
     最常用的是双击仓库根目录的「一键部署.cmd」（= 本脚本 -Start）。
 
 .EXAMPLE
@@ -16,6 +17,7 @@
     .\scripts\setup.ps1 -Start               # 装好后直接启动全部
     .\scripts\setup.ps1 -From Z:\snowluma    # 沿用旧安装
     .\scripts\setup.ps1 -NoCore              # 不装早柚核心
+    .\scripts\setup.ps1 -Update              # SnowLuma / 核心 / 插件换到锁定版本（先停服务）
     .\scripts\setup.ps1 -Yes                 # 不提问，全部按默认（必填项留空的要自己去 persona.env 填）
 #>
 [CmdletBinding()]
@@ -23,6 +25,7 @@ param(
     [string]$From,
     [switch]$Start,
     [switch]$NoCore,
+    [switch]$Update,
     [switch]$Yes
 )
 
@@ -33,12 +36,8 @@ try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch { }
 $root = $script:Root
 $envFile = $script:EnvFile
 $PythonVersion = '3.12'
-$CoreRepo = 'https://github.com/Genshin-bots/gsuid_core.git'
-$CorePlugins = [ordered]@{
-    StarRailUID = 'https://github.com/baiqwerdvd/StarRailUID.git'
-    ZZZeroUID   = 'https://github.com/ZZZure/ZZZeroUID.git'
-    BBBUID      = 'https://github.com/Neroliu/BBBUID.git'
-}
+$lock = Get-ExternalLock
+$CorePlugins = @('StarRailUID', 'ZZZeroUID', 'BBBUID')
 
 function Step([string]$Text) { Write-Host ''; Write-Host "== $Text" -ForegroundColor Cyan }
 function Info([string]$Text) { Write-Host "   $Text" -ForegroundColor DarkGray }
@@ -92,6 +91,42 @@ function Update-Path {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
     $env:Path = "$machine;$user;$env:USERPROFILE\.local\bin;$env:USERPROFILE\.cargo\bin"
+}
+
+# 把一个 git 仓库放到锁定的提交：没有就浅克隆；有就只在 -Update 时切过去（有本地改动不动）
+function Sync-GitRepo([string]$Name, [string]$Dir) {
+    $want = $lock.git.$Name
+    $short = $want.commit.Substring(0, 7)
+    if (-not (Test-Path -LiteralPath (Join-Path $Dir '.git'))) {
+        if ((Test-Path -LiteralPath $Dir) -and (Get-ChildItem -LiteralPath $Dir -Force | Select-Object -First 1)) {
+            throw "$Dir 已存在但不是 git 仓库，挪开再跑"
+        }
+        New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+        Invoke-Native git @('-C', $Dir, 'init', '-q') "初始化 $Name"
+        Invoke-Native git @('-C', $Dir, 'remote', 'add', 'origin', $want.repo) "初始化 $Name"
+        Invoke-Native git @('-C', $Dir, 'fetch', '-q', '--depth=1', 'origin', $want.commit) "下载 $Name"
+        Invoke-Native git @('-C', $Dir, '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD') "检出 $Name"
+        Ok "$Name @ $short"
+        return $true
+    }
+    $head = (& git -C $Dir rev-parse HEAD)
+    if ($head -eq $want.commit) { Info "$Name 已是锁定版本 $short"; return $false }
+    if (-not $Update) {
+        Warn "$Name 现在是 $($head.Substring(0, 7))，锁定的是 $short；要换过去就双击「一键更新.cmd」"
+        return $false
+    }
+    if (& git -C $Dir status --porcelain --untracked-files=no) {
+        Warn "$Name 有本地改动，没更新（$Dir）"
+        return $false
+    }
+    Invoke-Native git @('-C', $Dir, 'fetch', '-q', '--depth=1', $want.repo, $want.commit) "下载 $Name"
+    # 锁文件说了算：revert 了更新 PR 再跑一键更新，就是退回旧版本
+    $nowTime = [long](& git -C $Dir show -s --format=%ct HEAD)
+    $wantTime = [long](& git -C $Dir show -s --format=%ct FETCH_HEAD)
+    Invoke-Native git @('-C', $Dir, '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD') "更新 $Name"
+    $how = if ($wantTime -lt $nowTime) { '（锁定的比原来旧，按锁定版本退回）' } else { '' }
+    Ok "$Name $($head.Substring(0, 7)) → $short$how"
+    return $true
 }
 
 function Write-Utf8NoBom([string]$Path, [string]$Text) {
@@ -195,7 +230,8 @@ $py = Join-Path $root '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $py)) {
     Invoke-Native uv @('venv', (Join-Path $root '.venv'), '--python', $interp) '建虚拟环境'
 }
-Invoke-Native uv @('pip', 'install', '--python', $py, '-r', (Join-Path $root 'requirements.txt')) '安装依赖'
+# requirements.lock 是 CI 验证过的确切版本；requirements.txt 只写范围，给自动更新算新版本用
+Invoke-Native uv @('pip', 'install', '--python', $py, '-r', (Join-Path $root 'requirements.lock')) '安装依赖'
 Ok '依赖已装好'
 
 $cfg = Get-StackConfig
@@ -215,8 +251,18 @@ if (-not (Test-Path -LiteralPath $ffmpegExe)) {
 # ------------------------------------------------------------------ 5) SnowLuma
 Step 'SnowLuma（QQ 协议端）'
 $slDir = $cfg.SnowLuma
+$slWant = $lock.snowluma.version
 if (Test-Path -LiteralPath (Join-Path $slDir 'index.mjs')) {
-    Info "已装：$slDir"
+    $slInfo = Join-Path $slDir 'release.json'
+    $slNow = if (Test-Path -LiteralPath $slInfo) { 'v' + (Get-Content -LiteralPath $slInfo -Raw -Encoding UTF8 | ConvertFrom-Json).version } else { '未知版本' }
+    if ($slNow -eq $slWant) {
+        Info "已装 $slNow：$slDir"
+    } elseif ($Update) {
+        if (Test-Listening 5099) { throw 'SnowLuma 还在运行，先双击「一键停止.cmd」再更新' }
+        & "$PSScriptRoot\install-snowluma.ps1" -Destination $slDir -Upgrade
+    } else {
+        Warn "SnowLuma 现在是 $slNow，锁定的是 $slWant；要换过去就双击「一键更新.cmd」"
+    }
 } else {
     & "$PSScriptRoot\install-snowluma.ps1" -Destination $slDir
 }
@@ -266,20 +312,12 @@ $coreDir = $cfg.Core
 if ($NoCore) {
     Info '跳过（-NoCore）'
 } else {
-    if (-not (Test-Path -LiteralPath (Join-Path $coreDir 'pyproject.toml'))) {
-        Invoke-Native git @('clone', '--depth=1', '--single-branch', $CoreRepo, $coreDir) '下载早柚核心'
-    } else {
-        Info "已装：$coreDir"
-    }
+    if ($Update -and (Test-Listening 8765)) { throw '早柚核心还在运行，先双击「一键停止.cmd」再更新' }
+    [void](Sync-GitRepo 'gsuid_core' $coreDir)
     # plugins 目录核心第一次启动才建，先建好
     $pluginDir = Join-Path $coreDir 'gsuid_core\plugins'
     New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
-    foreach ($name in $CorePlugins.Keys) {
-        $dest = Join-Path $pluginDir $name
-        if (Test-Path -LiteralPath $dest) { Info "插件已装：$name"; continue }
-        Invoke-Native git @('clone', '--depth=1', '--single-branch', $CorePlugins[$name], $dest) "下载插件 $name"
-        Ok "插件 $name"
-    }
+    foreach ($name in $CorePlugins) { [void](Sync-GitRepo $name (Join-Path $pluginDir $name)) }
     Push-Location $coreDir
     try { Invoke-Native uv @('sync', '--python', $interp) '安装早柚核心依赖' } finally { Pop-Location }
     Ok '早柚核心已就绪'

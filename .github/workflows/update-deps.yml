@@ -1,0 +1,105 @@
+# 每天查一次外部依赖（pip 包、SnowLuma、早柚核心和三个插件）有没有新版本。
+# 有就改锁文件，在 Windows 上用新版本从零部署、启动整套、跑冒烟测试，全过了才开 / 更新 PR。
+# 合并 PR 后在跑机器人的电脑上双击「一键更新.cmd」。
+# 需要仓库设置：Settings → Actions → General → Workflow permissions 勾选
+# 「Allow GitHub Actions to create and approve pull requests」。
+name: 依赖自动更新
+
+on:
+  schedule:
+    - cron: "17 21 * * *"   # 北京时间每天 05:17
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: deps-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+
+      - name: 查新版本、改锁文件
+        id: check
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --no-project --python 3.12 tools\update_deps.py --summary "%RUNNER_TEMP%\pr.md"
+
+      - name: 用新版本从零部署（和朋友电脑上的一键部署走同一个脚本）
+        if: steps.check.outputs.changed == 'true'
+        shell: cmd
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1 -Yes
+
+      - name: 测试用配置
+        if: steps.check.outputs.changed == 'true'
+        shell: powershell
+        run: |
+          . .\scripts\common.ps1
+          Set-EnvValue BOT_UIN 100000001
+          Set-EnvValue DEV_UIN 100000002
+          Set-EnvValue LLM_MOCK 1
+          Set-EnvValue REPLY_PROB_CALLED 1
+          Set-EnvValue QQ_EXE 'C:\no-qq-on-ci\QQ.exe'
+          Set-EnvValue BAISHOU_VAULT "$env:RUNNER_TEMP\vault"
+
+      - name: 启动整套
+        if: steps.check.outputs.changed == 'true'
+        shell: cmd
+        # 输出写文件：后台服务会继承标准输出，直接接在步骤的管道上步骤就结束不了
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start-all-here.ps1 -NoQQ -NoVl -NoAutoLoad > "%RUNNER_TEMP%\start.log" 2>&1 < NUL
+          set code=%ERRORLEVEL%
+          type "%RUNNER_TEMP%\start.log"
+          exit /b %code%
+
+      - name: 冒烟测试（含早柚核心）
+        if: steps.check.outputs.changed == 'true'
+        shell: cmd
+        run: .venv\Scripts\python tests\smoke_stack.py --core --core-dir gsuid_core --core-wait 900
+
+      - name: 单元测试
+        if: steps.check.outputs.changed == 'true'
+        shell: cmd
+        run: |
+          .venv\Scripts\python tests\test_persona_rules.py || exit /b 1
+          .venv\Scripts\python tests\test_gscore_guard.py || exit /b 1
+          .venv\Scripts\python tests\test_migrate_journal_tags.py
+
+      - name: 停止
+        if: always() && steps.check.outputs.changed == 'true'
+        shell: cmd
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\stop-all.ps1 > NUL 2>&1 < NUL & exit /b 0
+
+      - name: 失败时上传日志
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs
+          path: logs/
+          if-no-files-found: ignore
+
+      - name: 开 / 更新 PR
+        if: steps.check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: deps/auto-update
+          delete-branch: true
+          add-paths: |
+            external.lock.json
+            requirements.lock
+          commit-message: "chore(deps): 更新外部依赖（${{ steps.check.outputs.summary_line }}）"
+          title: "chore(deps): 更新外部依赖（${{ steps.check.outputs.summary_line }}）"
+          body-path: ${{ runner.temp }}/pr.md
+          labels: dependencies

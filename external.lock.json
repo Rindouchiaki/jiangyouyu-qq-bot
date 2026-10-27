@@ -1,0 +1,26 @@
+{
+  "_说明": "外部组件锁定的版本。由 .github/workflows/update-deps.yml 自动更新（开 PR），合并后在电脑上双击「一键更新.cmd」生效，别手改。",
+  "snowluma": {
+    "version": "v2.2.0",
+    "asset": "SnowLuma-v2.2.0-win-x64.zip",
+    "sha256": "4e293f1e4452c9ae0d8a8d4f065dea8a170ca64502f2d6d4bff8f92a826b5f75"
+  },
+  "git": {
+    "gsuid_core": {
+      "repo": "https://github.com/Genshin-bots/gsuid_core.git",
+      "commit": "042ab5a187544d0def582db2730faa8049f50544"
+    },
+    "StarRailUID": {
+      "repo": "https://github.com/baiqwerdvd/StarRailUID.git",
+      "commit": "739a80a26b7a137b6b7b7d45435c769822de06d0"
+    },
+    "ZZZeroUID": {
+      "repo": "https://github.com/ZZZure/ZZZeroUID.git",
+      "commit": "3aae474dd926fe35472e7b89b104473af5ccdc8d"
+    },
+    "BBBUID": {
+      "repo": "https://github.com/Neroliu/BBBUID.git",
+      "commit": "28ca081d14a8876a7c06b553321085513a356e4a"
+    }
+  }
+}

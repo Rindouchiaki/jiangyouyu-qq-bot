@@ -89,7 +89,7 @@ git clone https://github.com/Rindouchiaki/jiangyouyu-qq-bot.git
 ```
 
 然后双击仓库根目录的 **`一键部署.cmd`**：问 API Key 和两个 QQ 号，装好全部依赖、生成配置（随机 token、只听 127.0.0.1），
-接着在后台启动整套服务。之后日常用 `一键启动.cmd` / `一键停止.cmd`。
+接着在后台启动整套服务。之后日常用 `一键启动.cmd` / `一键停止.cmd`；GitHub 上合并了 PR（包括每天自动开的依赖更新 PR）以后双击 `一键更新.cmd`。
 完整步骤（第一次登录 SnowLuma、从旧的 `Z:\snowluma` 迁移、常见问题）见 **[`docs/部署指南.md`](docs/部署指南.md)**。
 
 命令行等价写法（脚本会按端口跳过已在跑的服务）：
@@ -100,6 +100,7 @@ git clone https://github.com/Rindouchiaki/jiangyouyu-qq-bot.git
 .\scripts\启动全部.ps1 -Status     # 只看状态
 .\scripts\启动全部.ps1 -Stop       # 全停（QQ 保留）
 .\scripts\verify-stack.ps1         # 全链路自检
+.\scripts\update.ps1               # 拉代码 + 依赖换到锁定版本 + 重启（= 一键更新.cmd）
 ```
 
 ## 成本

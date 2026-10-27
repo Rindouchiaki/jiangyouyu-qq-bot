@@ -1,0 +1,9 @@
+# 工作流里用的 Actions 版本（pip 包、SnowLuma、早柚核心由 update-deps.yml 管）
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(ci)"

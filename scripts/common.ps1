@@ -57,6 +57,11 @@ function Get-StackConfig {
     }
 }
 
+# external.lock.json：SnowLuma、早柚核心和插件锁定的版本（CI 自动开 PR 更新）
+function Get-ExternalLock {
+    Get-Content -LiteralPath (Join-Path $script:Root 'external.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+}
+
 function Test-Listening([int]$Port) {
     [bool](Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
 }
