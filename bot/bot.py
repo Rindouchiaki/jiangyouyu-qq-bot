@@ -1,0 +1,56 @@
+r"""SnowLuma -> NoneBot2 最小入口（反向 WebSocket 模式）。
+
+NoneBot2 在这里作为 WS 服务端，监听 HOST:PORT，路径 /onebot/v11/ws；
+SnowLuma 通过 config/onebot_<uin>.json 的 wsClients 主动连过来。
+
+本地运行：scripts\run-nonebot.ps1（宿主端口 18080）
+容器运行：stack\docker-compose.yml（容器内 8080，发布到宿主 127.0.0.1:18080）
+两条路对 SnowLuma 暴露的 URL 相同：ws://127.0.0.1:18080/onebot/v11/ws
+
+人设插件的配置（BOT_UIN / LLM_* / REPLY_*）放在同目录的 persona.env，
+必须在加载插件之前读进环境变量，否则插件导入时就取不到值。
+"""
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=Path(__file__).with_name("persona.env"))
+
+import nonebot  # noqa: E402
+from nonebot.adapters.onebot.v11 import Adapter  # noqa: E402
+
+nonebot.init(
+    host=os.getenv("HOST", "127.0.0.1"),
+    port=int(os.getenv("PORT", "18080")),
+)
+
+driver = nonebot.get_driver()
+driver.register_adapter(Adapter)
+
+# 账号守卫：SnowLuma 可能同时登录多个 QQ 账号（实测 100000002 与 100000001 同时在线），
+# 只有 BOT_UIN 这个号的事件才往下走。用全局 event_preprocessor，在任何 matcher（含解析插件）之前拦截。
+from nonebot.exception import IgnoredException  # noqa: E402
+from nonebot.message import event_preprocessor  # noqa: E402
+
+_BOT_UIN = os.getenv("BOT_UIN", "").strip()
+
+
+@event_preprocessor
+async def _only_bot_account(bot, event, state) -> None:
+    if _BOT_UIN and str(getattr(event, "self_id", "")) != _BOT_UIN:
+        raise IgnoredException(f"非机器人账号 {getattr(event, 'self_id', '?')} 的事件")
+
+
+# 第三方解析插件要先加载，后面的 plugins 里有针对它的行为调优（只发视频不发封面）
+try:
+    nonebot.load_plugin("nonebot_plugin_parser")
+except Exception as exc:  # noqa: BLE001
+    nonebot.logger.warning(f"B站解析插件加载失败 {type(exc).__name__}: {exc}")
+
+# 插件目录：本地为 stack/nonebot/plugins，容器内为 /app/plugins
+nonebot.load_plugins("plugins")
+
+if __name__ == "__main__":
+    nonebot.run()

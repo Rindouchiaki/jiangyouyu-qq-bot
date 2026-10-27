@@ -1,0 +1,56 @@
+{
+  "networks": {
+    "httpServers": [
+      {
+        "name": "http-default",
+        "enabled": true,
+        "host": "0.0.0.0",
+        "port": 3000,
+        "path": "/",
+        "enableWebSocket": false,
+        "accessToken": "REPLACE_WITH_32_BYTES_RANDOM_HTTP_TOKEN",
+        "messageFormat": "array",
+        "reportSelfMessage": false
+      }
+    ],
+    "httpClients": [],
+    "wsServers": [
+      {
+        "name": "ws-default",
+        "enabled": true,
+        "host": "0.0.0.0",
+        "port": 3001,
+        "path": "/",
+        "role": "Universal",
+        "accessToken": "REPLACE_WITH_32_BYTES_RANDOM_WS_TOKEN",
+        "messageFormat": "array",
+        "reportSelfMessage": false
+      }
+    ],
+    "wsClients": [
+      {
+        "name": "nonebot",
+        "enabled": true,
+        "url": "ws://127.0.0.1:8080/onebot/v11/ws",
+        "role": "Universal",
+        "reconnectIntervalMs": 5000,
+        "accessToken": "",
+        "messageFormat": "array",
+        "reportSelfMessage": false
+      }
+    ]
+  },
+  "statusCommand": {
+    "enabled": true,
+    "swallow": false,
+    "cooldownSeconds": 5,
+    "trigger": "#sl"
+  },
+  "historySync": {
+    "enabled": false
+  },
+  "notifications": {
+    "channelIds": []
+  },
+  "musicSignUrl": ""
+}

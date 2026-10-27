@@ -1,0 +1,33 @@
+# 本地配置与运行产物，不入库
+bot/persona.env
+bot/*.env
+!bot/persona.env.example
+data/
+logs/
+_cache/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 运行时下载的东西（体积大，自己准备）
+SnowLuma/
+_snowluma/
+tools/llama.cpp/
+tools/vl-model/
+tools/ffmpeg/
+stickers/ori/
+downloads/
+_downloads/
+_research/
+_mail/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
