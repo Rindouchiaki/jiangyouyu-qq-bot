@@ -7,7 +7,7 @@
     登录后跑这一条，就能一次性确认 SnowLuma -> NoneBot -> 插件 全链路。
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File Z:\snowluma\scripts\verify-stack.ps1
+    powershell -ExecutionPolicy Bypass -File .\scripts\verify-stack.ps1
 #>
 [CmdletBinding()]
 param(
@@ -15,14 +15,23 @@ param(
     [int]$WebUiPort = 5099,
     [int]$HttpPort = 3000,
     [int]$CorePort = 8765,
-    [string]$HttpToken = '<ONEBOT_HTTP_TOKEN>',
-    [string]$NbToken = '<ONEBOT_ACCESS_TOKEN>'
+    # 不传就从配置里读：HTTP token 取 SnowLuma 的 onebot.json，NoneBot token 取 persona.env
+    [string]$HttpToken,
+    [string]$NbToken
 )
 
 $ErrorActionPreference = 'Continue'
-$root = 'Z:\snowluma'
-$nbLog = Join-Path $root 'logs\nonebot.out.log'
-$slLog = Join-Path $root 'logs\snowluma.out.log'
+. "$PSScriptRoot\common.ps1"
+$cfg = Get-StackConfig
+$nbLog = Join-Path $cfg.Logs 'nonebot.out.log'
+$cfgDir = Join-Path $cfg.SnowLuma 'config'
+if (-not $NbToken) { $NbToken = $cfg.Env['ONEBOT_ACCESS_TOKEN'] }
+if (-not $HttpToken) {
+    try {
+        $global = Get-Content -LiteralPath (Join-Path $cfgDir 'onebot.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $HttpToken = @($global.networks.httpServers)[0].accessToken
+    } catch { }
+}
 $results = [System.Collections.Generic.List[object]]::new()
 
 function Add-Result([string]$Item, [string]$State, [string]$Note = '') {
@@ -36,12 +45,12 @@ Write-Host '=== 栈自检 ===' -ForegroundColor Cyan
 # 1) NoneBot2
 $nb = Get-NetTCPConnection -State Listen -LocalPort $NoneBotPort -ErrorAction SilentlyContinue
 if ($nb) { Add-Result 'NoneBot2 监听' 'PASS' "127.0.0.1:$NoneBotPort" }
-else { Add-Result 'NoneBot2 监听' 'FAIL' '未监听，先跑 scripts\start-all.ps1' }
+else { Add-Result 'NoneBot2 监听' 'FAIL' '未监听，先跑 scripts\启动全部.ps1' }
 
 # 2) SnowLuma WebUI
 $sl = Get-NetTCPConnection -State Listen -LocalPort $WebUiPort -ErrorAction SilentlyContinue
 if ($sl) { Add-Result 'SnowLuma WebUI' 'PASS' "127.0.0.1:$WebUiPort" }
-else { Add-Result 'SnowLuma WebUI' 'FAIL' '未监听，先跑 scripts\start-all.ps1' }
+else { Add-Result 'SnowLuma WebUI' 'FAIL' '未监听，先跑 scripts\启动全部.ps1' }
 
 # 2.5) 早柚核心（可选，游戏查询）
 $core = Get-NetTCPConnection -State Listen -LocalPort $CorePort -ErrorAction SilentlyContinue
@@ -50,10 +59,12 @@ else { Add-Result '早柚核心监听' 'WAIT' '未监听：游戏查询不可用
 
 # 3) 框架层往返（不依赖 QQ）
 if ($nb) {
-    $py = Join-Path $root 'stack\.venv\Scripts\python.exe'
+    $py = $cfg.Python
+    # 要用机器人号：bot.py 的账号守卫只放行 BOT_UIN 的事件
+    $selfId = if ($cfg.Env['BOT_UIN']) { $cfg.Env['BOT_UIN'] } else { '10001' }
     if (Test-Path $py) {
         $env:PYTHONIOENCODING = 'utf-8'
-        $out = & $py (Join-Path $root 'stack\tests\fake_onebot_client.py') --token $NbToken --self-id 100000001 2>&1 | Out-String
+        $out = & $py (Join-Path $cfg.Root 'tests\fake_onebot_client.py') --token "$NbToken" --self-id $selfId 2>&1 | Out-String
         if ($LASTEXITCODE -eq 0) { Add-Result '框架层往返 (/ping)' 'PASS' '收到 send_msg pong' }
         elseif ($out -match '403|already a bot') {
             Add-Result '框架层往返 (/ping)' 'WAIT' '真账号已占着同 self_id 的连接，假客户端连不进去（不是故障）'
@@ -98,12 +109,11 @@ if (Test-Path $nbLog) {
 }
 
 # 4.5) 账号级配置一致性（登录后 SnowLuma 会生成 onebot_<uin>.json）
-$cfgDir = Join-Path $root 'SnowLuma\config'
 $perUin = Get-ChildItem -LiteralPath $cfgDir -Filter 'onebot_*.json' -ErrorAction SilentlyContinue
 if ($perUin) {
     foreach ($f in $perUin) {
         try {
-            $c = Get-Content -LiteralPath $f.FullName -Raw | ConvertFrom-Json
+            $c = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
             $client = @($c.networks.wsClients) | Where-Object { $_.url -like '*18080*' } | Select-Object -First 1
             if (-not $client) {
                 Add-Result "账号配置 $($f.Name)" 'FAIL' '缺少指向 18080 的 wsClients'

@@ -3,11 +3,10 @@ r"""SnowLuma -> NoneBot2 最小入口（反向 WebSocket 模式）。
 NoneBot2 在这里作为 WS 服务端，监听 HOST:PORT，路径 /onebot/v11/ws；
 SnowLuma 通过 config/onebot_<uin>.json 的 wsClients 主动连过来。
 
-本地运行：scripts\run-nonebot.ps1（宿主端口 18080）
-容器运行：stack\docker-compose.yml（容器内 8080，发布到宿主 127.0.0.1:18080）
-两条路对 SnowLuma 暴露的 URL 相同：ws://127.0.0.1:18080/onebot/v11/ws
+后台运行：scripts\启动全部.ps1；前台调试：scripts\run-nonebot.ps1（端口 18080）
+SnowLuma 连的 URL：ws://127.0.0.1:18080/onebot/v11/ws
 
-人设插件的配置（BOT_UIN / LLM_* / REPLY_*）放在同目录的 persona.env，
+人设插件的配置（BOT_UIN / LLM_* / REPLY_*）和反向 WS 的 ONEBOT_ACCESS_TOKEN 放在同目录的 persona.env，
 必须在加载插件之前读进环境变量，否则插件导入时就取不到值。
 """
 
@@ -62,7 +61,7 @@ try:
 except Exception as exc:  # noqa: BLE001
     nonebot.logger.warning(f"早柚核心连接插件加载失败 {type(exc).__name__}: {exc}")
 
-# 插件目录：本地为 stack/nonebot/plugins，容器内为 /app/plugins
+# 插件目录：bot/plugins（上面已切到 bot/）
 nonebot.load_plugins("plugins")
 
 if __name__ == "__main__":

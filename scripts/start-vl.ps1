@@ -1,16 +1,17 @@
-﻿# 本地视觉模型（llama.cpp + Qwen3-VL-2B）——只在「无字照片」需要描述时用
+﻿# 本地视觉模型（llama.cpp + Qwen3-VL-2B）——只在「无字照片」需要描述时用，前台跑
 # 启动后监听 127.0.0.1:11435，OpenAI 兼容接口 /v1/chat/completions
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\common.ps1"
+$cfg = Get-StackConfig
 
-$root = 'Z:\snowluma'
-$bin = Join-Path $root 'tools\llama.cpp\bin\llama-server.exe'
-if (-not (Test-Path $bin)) { $bin = Join-Path $root 'tools\llama.cpp\llama-server.exe' }
-$model = Join-Path $root 'tools\vl-model\Qwen3-VL-2B-Instruct-Q4_K_M.gguf'
-$mmproj = Join-Path $root 'tools\vl-model\mmproj-F16.gguf'
-$log = Join-Path $root 'logs\vl.log'
+$bin = Join-Path $cfg.Tools 'llama.cpp\bin\llama-server.exe'
+if (-not (Test-Path $bin)) { $bin = Join-Path $cfg.Tools 'llama.cpp\llama-server.exe' }
+$model = Join-Path $cfg.Tools 'vl-model\Qwen3-VL-2B-Instruct-Q4_K_M.gguf'
+$mmproj = Join-Path $cfg.Tools 'vl-model\mmproj-F16.gguf'
+$log = Join-Path $cfg.Logs 'vl.log'
 
 foreach ($p in @($bin, $model, $mmproj)) {
-    if (-not (Test-Path $p)) { throw "找不到 $p，先跑 scripts\setup-vl.ps1" }
+    if (-not (Test-Path $p)) { throw "找不到 $p（llama.cpp 放 tools\llama.cpp，模型放 tools\vl-model）" }
 }
 
 New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null

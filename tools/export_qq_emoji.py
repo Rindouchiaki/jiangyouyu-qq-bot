@@ -3,7 +3,7 @@
 只读源目录，不改动 QQ 的任何文件。
 
 用法：
-    python export_qq_emoji.py --src "<...>\\nt_data\\Emoji\\personal_emoji\\Ori" --out Z:\\snowluma\\stickers
+    python export_qq_emoji.py --src "<...>\\nt_data\\Emoji\\personal_emoji\\Ori" --out stickers
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ def shape_tag(w: int, h: int) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", required=True)
-    ap.add_argument("--out", default=r"Z:\snowluma\stickers")
+    ap.add_argument("--out", default=str(Path(__file__).resolve().parents[1] / "stickers"))
     ap.add_argument("--limit", type=int, default=0, help="只导出前 N 张，0 = 全部")
     args = ap.parse_args()
 

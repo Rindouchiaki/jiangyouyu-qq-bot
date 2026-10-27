@@ -253,7 +253,8 @@ try:
 except Exception as exc:  # noqa: BLE001
     logger.warning(f"persona: 载入 gacha_texts 失败 {type(exc).__name__}: {exc}")
 GACHA_TEXT = GACHA_TEXTS[0]
-GACHA_FILE = os.getenv("GACHA_TEXT_FILE", "").strip()
+# 没配置就用仓库的 gacha-texts 目录；目录不在时退回上面的内置文案
+GACHA_FILE = os.getenv("GACHA_TEXT_FILE", "").strip() or str(Path(__file__).resolve().parents[2] / "gacha-texts")
 _last_gacha: list[int] = [-1]
 
 

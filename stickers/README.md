@@ -42,20 +42,20 @@ stickers/
 /表情 分类       看分类统计
 ```
 
-插件：`stack/nonebot/plugins/stickers.py`（冷却 5 秒，只允许机器人号发言）。
+插件：`bot/plugins/stickers.py`（冷却 5 秒，只允许机器人号发言）。
 
 ## 重新生成
 
 ```powershell
 # 1) 导出（只读 QQ 目录）
-python stack\tools\export_qq_emoji.py --src "<...>\personal_emoji\Ori" --out Z:\snowluma\stickers
+.venv\Scripts\python tools\export_qq_emoji.py --src "<...>\personal_emoji\Ori" --out stickers
 
 # 2) OCR（Windows 自带引擎，PS 5.1）
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File stack\tools\ocr_stickers.ps1 -Dir Z:\snowluma\stickers\ori -Out Z:\snowluma\stickers\ocr.jsonl
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File stack\tools\ocr_stickers_2x.ps1 -Dir Z:\snowluma\stickers\ori -Out Z:\snowluma\stickers\ocr2.jsonl
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\ocr_stickers.ps1 -Dir stickers\ori -Out stickers\ocr.jsonl
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\ocr_stickers_2x.ps1 -Dir stickers\ori -Out stickers\ocr2.jsonl
 
 # 3) 合并 + 打标签
-python stack\tools\tag_stickers.py --dir Z:\snowluma\stickers
+.venv\Scripts\python tools\tag_stickers.py --dir stickers
 ```
 
 > `ocr_stickers_2x.ps1` 必须带 UTF-8 BOM，否则 PowerShell 5.1 会按 ANSI 解析中文导致语法错误。

@@ -15,6 +15,7 @@ venv/
 
 # 运行时下载的东西（体积大，自己准备）
 SnowLuma/
+gsuid_core/
 _snowluma/
 tools/llama.cpp/
 tools/vl-model/

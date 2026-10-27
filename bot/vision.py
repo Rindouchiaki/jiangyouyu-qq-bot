@@ -42,8 +42,8 @@ VLM_OPENAI_URL = os.getenv("VLM_OPENAI_URL", "http://127.0.0.1:11435").rstrip("/
 VLM_TIMEOUT = float(os.getenv("VLM_TIMEOUT", "120"))
 
 BASE_DIR = Path(__file__).resolve().parent
-OCR_SCRIPT = Path(os.getenv("OCR_SCRIPT", str(BASE_DIR.parent.parent / "tools" / "ocr_win.ps1")))
-STICKER_DIR = Path(os.getenv("STICKER_DIR", r"Z:\snowluma\stickers"))
+OCR_SCRIPT = Path(os.getenv("OCR_SCRIPT", str(BASE_DIR.parent / "tools" / "ocr_win.ps1")))
+STICKER_DIR = Path(os.getenv("STICKER_DIR") or BASE_DIR.parent / "stickers")
 CACHE_DIR = Path(os.getenv("VISION_CACHE_DIR", str(BASE_DIR / "data" / "vision")))
 HASH_CACHE = Path(os.getenv("STICKER_HASH_CACHE", str(BASE_DIR / "data" / "sticker_hashes.json")))
 CARD_CACHE = CACHE_DIR / "cards.json"

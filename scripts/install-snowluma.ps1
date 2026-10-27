@@ -15,12 +15,15 @@
 [CmdletBinding()]
 param(
     [string]$Version = 'latest',
-    [string]$Destination = 'Z:\snowluma\SnowLuma',
+    # 不传就装到仓库的 SnowLuma\（persona.env 的 SNOWLUMA_DIR 可改）
+    [string]$Destination,
     [switch]$Lite,
     [string]$Proxy
 )
 
 $ErrorActionPreference = 'Stop'
+# PS 5.1 的参数默认值里 $PSScriptRoot 是空的，只能放到这里算
+if (-not $Destination) { . "$PSScriptRoot\common.ps1"; $Destination = (Get-StackConfig).SnowLuma }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $headers = @{ 'User-Agent' = 'snowluma-install-script'; 'Accept' = 'application/vnd.github+json' }

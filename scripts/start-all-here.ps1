@@ -4,7 +4,8 @@
 
 .DESCRIPTION
     每一步都先查端口，已经在跑的不会重复起。退出脚本后服务继续跑
-    （用 Start-Process 分离，不挂在当前窗口上）。
+    （用 Start-Process 分离、隐藏窗口，不挂在当前窗口上）。
+    路径和口令都从 bot\persona.env 读（复制 persona.env.example 后填好）。
 
     常用：
       .\scripts\启动全部.ps1                  # 全套拉起
@@ -13,9 +14,10 @@
       .\scripts\启动全部.ps1 -NoVl            # 不启本地视觉模型（省 1GB 内存）
       .\scripts\启动全部.ps1 -NoAutoLoad      # SnowLuma 不自动注入 QQ 账号
       .\scripts\启动全部.ps1 -NoCore          # 不启早柚核心（星铁/绝区零/崩坏3 查询）
+      .\scripts\启动全部.ps1 -NoQQ            # 不去拉起 QQ
 
 .NOTES
-    日志都在 Z:\snowluma\logs\，WebUI http://127.0.0.1:5099/
+    日志都在仓库的 logs\（persona.env 的 LOG_DIR 可改），WebUI http://127.0.0.1:5099/
 #>
 [CmdletBinding()]
 param(
@@ -24,6 +26,7 @@ param(
     [switch]$NoVl,
     [switch]$NoAutoLoad,
     [switch]$NoCore,
+    [switch]$NoQQ,
     [int]$NoneBotPort = 18080,
     [int]$WebUiPort = 5099,
     [int]$VlPort = 11435,
@@ -33,32 +36,22 @@ param(
 $ErrorActionPreference = 'Stop'
 # 让中文输出在重定向/日志里也正常（默认可能按 GBK 写）
 try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch { }
-$root = 'Z:\snowluma'
-$logs = Join-Path $root 'logs'
+. "$PSScriptRoot\common.ps1"
+$cfg = Get-StackConfig
+$logs = $cfg.Logs
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 
-$nbPy = Join-Path $root 'stack\.venv\Scripts\python.exe'
-$nbDir = Join-Path $root 'stack\nonebot'
-$slExe = Join-Path $root 'SnowLuma\node.exe'
-$slDir = Join-Path $root 'SnowLuma'
-$vlBin = Join-Path $root 'tools\llama.cpp\bin\llama-server.exe'
-$vlModel = Join-Path $root 'tools\vl-model\Qwen3-VL-2B-Instruct-Q4_K_M.gguf'
-$vlMmproj = Join-Path $root 'tools\vl-model\mmproj-F16.gguf'
-$qqExe = 'C:\Program Files\Tencent\QQNT\QQ.exe'
-$ffmpegBin = Join-Path $root 'tools\ffmpeg\bin'
-$coreDir = Join-Path $root 'gsuid_core'
-
-function Test-Listening([int]$Port) {
-    [bool](Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
-}
-
-function Wait-Listening([int]$Port, [int]$Seconds = 45) {
-    for ($i = 0; $i -lt $Seconds; $i++) {
-        if (Test-Listening $Port) { return $true }
-        Start-Sleep -Seconds 1
-    }
-    return $false
-}
+$nbPy = $cfg.Python
+$nbDir = $cfg.BotDir
+$slDir = $cfg.SnowLuma
+$slExe = Join-Path $slDir 'node.exe'
+$vlBin = Join-Path $cfg.Tools 'llama.cpp\bin\llama-server.exe'
+if (-not (Test-Path $vlBin)) { $vlBin = Join-Path $cfg.Tools 'llama.cpp\llama-server.exe' }
+$vlModel = Join-Path $cfg.Tools 'vl-model\Qwen3-VL-2B-Instruct-Q4_K_M.gguf'
+$vlMmproj = Join-Path $cfg.Tools 'vl-model\mmproj-F16.gguf'
+$qqExe = $cfg.QQ
+$ffmpegBin = $cfg.Ffmpeg
+$coreDir = $cfg.Core
 
 function Show-Status {
     Write-Host ''
@@ -88,42 +81,27 @@ function Show-Status {
 
 # ------------------------------------------------------------------ 停止
 if ($Stop) {
-    Write-Host '正在停止 NoneBot2 / 早柚核心 / SnowLuma / 本地视觉模型 ...' -ForegroundColor Yellow
-    foreach ($port in @($NoneBotPort, $CorePort, $WebUiPort, $VlPort, 3000, 3001)) {
-        Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty OwningProcess -Unique |
-            ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
-    }
-    # NoneBot 的 runtime 子进程可能不占端口，按命令行兜底
-    Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like '*Z:\snowluma\stack\nonebot*' -or $_.CommandLine -like '*bot.py*' } |
-        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-    Get-CimInstance Win32_Process -Filter "Name='llama-server.exe'" -ErrorAction SilentlyContinue |
-        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-    # 早柚核心由 uv 拉起，真正占端口的 python 可能在 uv 自己的目录里，按命令行认
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.ProcessId -ne $PID -and $_.Name -match '^(python|pythonw|uv)\.exe$' -and $_.CommandLine -like "*$coreDir*" } |
-        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-    Start-Sleep -Seconds 2
-    Write-Host '已停止（QQ 保留运行，需要的话手动关）' -ForegroundColor Green
+    & "$PSScriptRoot\stop-all.ps1" -NoneBotPort $NoneBotPort
     Show-Status
     return
 }
 
 if ($Status) { Show-Status; return }
 
+if (-not (Test-Path -LiteralPath $cfg.EnvFile)) { throw "还没有 bot\persona.env：复制 bot\persona.env.example 改名后填好" }
+
 Write-Host '=== 酱油鱼一键启动 ===' -ForegroundColor Cyan
 
 # ------------------------------------------------------------------ 1) QQ
 $qqRunning = [bool](Get-Process -Name QQ -ErrorAction SilentlyContinue)
-if (-not $qqRunning) {
+if (-not $qqRunning -and -not $NoQQ) {
     if (Test-Path $qqExe) {
         Write-Host '启动 QQ ...' -ForegroundColor Yellow
         Start-Process -FilePath $qqExe | Out-Null
         Start-Sleep -Seconds 8
         $qqRunning = [bool](Get-Process -Name QQ -ErrorAction SilentlyContinue)
     } else {
-        Write-Warning "找不到 QQ：$qqExe"
+        Write-Warning "找不到 QQ：$qqExe（装在别处就在 persona.env 里设 QQ_EXE）"
     }
 }
 if ($qqRunning) {
@@ -135,7 +113,7 @@ if (-not $NoVl) {
     if (Test-Listening $VlPort) {
         Write-Host "本地视觉模型已在 $VlPort 运行，跳过" -ForegroundColor DarkGray
     } elseif (-not (Test-Path $vlBin) -or -not (Test-Path $vlModel) -or -not (Test-Path $vlMmproj)) {
-        Write-Warning "本地视觉模型不全（bin/model/mmproj 缺一个），跳过；无字图片将没有描述"
+        Write-Host '没装本地视觉模型（可选），跳过；无字图片将没有描述' -ForegroundColor DarkGray
     } else {
         Write-Host '启动本地视觉模型（Qwen3-VL-2B, 首次加载约 10-20 秒）...' -ForegroundColor Yellow
         $vlArgs = @('-m', $vlModel, '--mmproj', $vlMmproj, '--host', '127.0.0.1', '--port', "$VlPort", '-c', '8192', '-ngl', '0', '--jinja')
@@ -155,13 +133,13 @@ if (-not $NoVl) {
 if (Test-Listening $WebUiPort) {
     Write-Host "SnowLuma 已在 $WebUiPort 运行，跳过" -ForegroundColor DarkGray
 } elseif (-not (Test-Path $slExe)) {
-    throw "找不到 SnowLuma：$slExe"
+    throw "找不到 SnowLuma：$slExe（scripts\install-snowluma.ps1 安装；装在别处就在 persona.env 里设 SNOWLUMA_DIR）"
 } else {
     $autoLoad = if ($NoAutoLoad) { '0' } else { '1' }
     $env:SNOWLUMA_HOOK_AUTOLOAD = $autoLoad
     $env:SNOWLUMA_LOG_LEVEL = 'info'
-    # 固定 WebUI 初始密码，避免重启就换密码、日志又被脱敏
-    $env:SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD = '<WEBUI_PASSWORD>'
+    # 固定 WebUI 初始密码，避免重启就换密码、日志又被脱敏（只在第一次启动时生效）
+    if ($cfg.Env['SNOWLUMA_WEBUI_PASSWORD']) { $env:SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD = $cfg.Env['SNOWLUMA_WEBUI_PASSWORD'] }
     Write-Host '启动 SnowLuma（协议端）...' -ForegroundColor Yellow
     $p = Start-Process -FilePath $slExe -ArgumentList './index.mjs' -WorkingDirectory $slDir `
         -RedirectStandardOutput (Join-Path $logs 'snowluma.out.log') `
@@ -207,13 +185,14 @@ if ($NoCore) {
 if (Test-Listening $NoneBotPort) {
     Write-Host "NoneBot2 已在 $NoneBotPort 运行，跳过" -ForegroundColor DarkGray
 } elseif (-not (Test-Path $nbPy)) {
-    throw "找不到 NoneBot 运行时：$nbPy"
+    throw "找不到 NoneBot 运行时：$nbPy（python -m venv .venv 后装 requirements.txt）"
 } else {
     if (Test-Path $ffmpegBin) { $env:PATH = "$ffmpegBin;$env:PATH" }
     $env:HOST = '127.0.0.1'
     $env:PORT = "$NoneBotPort"
     $env:LOG_LEVEL = 'INFO'
-    $env:ONEBOT_ACCESS_TOKEN = '<ONEBOT_ACCESS_TOKEN>'
+    # 反向 WS 的 token 由 bot.py 从 persona.env 的 ONEBOT_ACCESS_TOKEN 读，要和 SnowLuma onebot.json 的 wsClients 一致
+    if (-not $cfg.Env['ONEBOT_ACCESS_TOKEN']) { Write-Warning 'persona.env 没有 ONEBOT_ACCESS_TOKEN：反向 WS 不校验 token' }
     # 不设这两个，日志会按 GBK 写，中文和 emoji 直接 UnicodeEncodeError
     $env:PYTHONIOENCODING = 'utf-8'
     $env:PYTHONUTF8 = '1'
@@ -228,5 +207,5 @@ if (Test-Listening $NoneBotPort) {
 
 Show-Status
 Write-Host ''
-Write-Host 'WebUI: http://127.0.0.1:5099/   日志: Z:\snowluma\logs\' -ForegroundColor Cyan
+Write-Host "WebUI: http://127.0.0.1:$WebUiPort/   日志: $logs" -ForegroundColor Cyan
 Write-Host '停止全部：.\scripts\启动全部.ps1 -Stop' -ForegroundColor DarkGray

@@ -1,7 +1,7 @@
 """把 OCR 文本并进 index.json，按语义打分类标签。
 
 用法：
-    python tag_stickers.py --dir Z:\\snowluma\\stickers
+    python tools\\tag_stickers.py --dir stickers
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def classify(text: str) -> tuple[str, list[str]]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dir", default=r"Z:\snowluma\stickers")
+    ap.add_argument("--dir", default=str(Path(__file__).resolve().parents[1] / "stickers"))
     args = ap.parse_args()
 
     root = Path(args.dir)

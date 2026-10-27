@@ -14,6 +14,7 @@
 - **语言**：注释、日志、回复文案一律中文；注释短，只写关键原因，不写过程。
 - **换行符**：只有 `README.md`、`AGENT.md`、`docs/架构与运维.md`、`.gitignore`、`LICENSE`、`tools/ocr_win.ps1` 是 LF，其余文本文件（`.py`、`.ps1`、`.json`、其它 `docs/*.md`、`persona.env.example` 等）都是 **CRLF**。改前数一下 `\r` 确认，改后保持原样；`scripts/*.ps1` 和 `tools/ocr_win.ps1`、`tools/ocr_stickers_2x.ps1` 带 UTF-8 BOM，也要保留。
 - **配置**：全部走环境变量，`bot/bot.py` 先 `load_dotenv(bot/persona.env)` 再导入插件，所以插件在模块级 `os.getenv` 就能读到。新增配置项同步写进 `persona.env.example`，代码里的默认值要和样例一致。
+- **目录**：仓库就是运行目录，`.venv`、`bot/persona.env`、`bot/data`、`logs`、`SnowLuma`、`gsuid_core` 都在仓库里（后几个已 gitignore）。脚本统一 dot-source `scripts/common.ps1` 取路径，装在别处的用 persona.env 的 `SNOWLUMA_DIR` / `GSCORE_DIR` / `TOOLS_DIR` / `STICKER_DIR` / `LOG_DIR` 指过去；代码里的默认路径也按仓库算，不要再写死盘符。
 - **依赖**：新增第三方包写进 `requirements.txt`。
 - **游戏功能**：星铁 / 绝区零 / 崩坏3 的查询都交给早柚核心的插件，本仓库只管连接和人设避让，不再自己写游戏接口。
 - **权限判断**：开发者专用指令一律写成 `if not DEV_UIN or str(event.get_user_id()) != DEV_UIN: return`，未配置时拒绝所有人，不要写成 `if DEV_UIN and ...`。
@@ -28,7 +29,7 @@ python tests\test_gscore_guard.py          # 二维码不进群的判断
 python tests\test_migrate_journal_tags.py  # 旧日记迁移脚本（临时目录里跑）
 ```
 
-测试自己会把 `bot/` 加进 `sys.path`。`tests/test_vision_offline.py` 需要 Windows OCR、Pillow，以及写死的 `Z:\snowluma\stickers`、`Z:\snowluma\_research` 目录。
+测试自己会把 `bot/` 加进 `sys.path`。`tests/test_vision_offline.py` 要 Windows OCR，表情原图 `stickers/ori` 不入库，没有就跳过表情那一步。
 
 ---
 
@@ -63,13 +64,13 @@ python tests\test_migrate_journal_tags.py  # 旧日记迁移脚本（临时目�
 | #28 | 核心没开时连接插件（优先级 0）每条消息都先试连核心，人设回复跟着晚 4–8 秒 | `gscore_link.py`：核心未连接且开了 `GSUID_CORE_REPEAT` 时跳过连接插件，交给它每 10 秒的定时重连；「连接core」不拦 |
 | #29 | SnowLuma 只能回复对方先发起的临时会话（`send_private_msg` 带 `group_id` 而对方没发起过会被拒），群里「扫码登录」的临时会话提醒几乎总是发不出去 | 先试临时会话，失败再试好友私聊；文档改为让没加好友的群友自己发起临时会话。核心回复临时会话的 `group_id` 由连接插件 6.1 自己带上，已实测 |
 | #30 | #1 之前写的旧日记没有会话标签，自动回忆选不中；旧代码还可能把机器人的话写进库里文件名带日期的私人笔记 | 一次性脚本 `tools/migrate_journal_tags.py`：旧群聊行和紧跟的回复补 `[群号]`、续行并回一行，可选 `--private-as`、`--dev-alias`、`--include-outside`；默认预览，`--apply` 先备份 |
+| #31 | 脚本和代码默认路径写死作者本机 `Z:\snowluma\stack\nonebot`，和仓库布局对不上；`OCR_SCRIPT` 默认指到仓库外；脚本里写死 token 占位符 | 仓库即运行目录：新增 `scripts/common.ps1`，各脚本从 persona.env 读路径和 `ONEBOT_ACCESS_TOKEN` / `SNOWLUMA_WEBUI_PASSWORD`；停止脚本按目录 + 子进程树找进程；删掉重复的 `start-all.ps1`；表情、OCR、抽卡文案默认指仓库里的目录。Windows 上实测启动 / 自检 / 停止（SnowLuma 用假进程代替） |
 
 **自动记忆仍然开着**：`PRIVATE_MIRROR`、`GROUP_MIRROR` 默认 1；私聊每条都落盘，群聊只记被叫/接续的对话；问到「记得/上次」照常带本会话最近 5 条。改的只是按会话隔离和手动指令的权限。
 
 ### 已知限制
 
 - 繁体变体（如「醬醬魚」）不会被 `safe_name` 认出，需要的话把繁体写进 `NICKNAMES`。
-- **目录布局**：脚本和多处默认路径按作者本机 `Z:\snowluma\stack\nonebot` 写死，和仓库的 `bot/` 布局不一致。另外 `vision.py` 的 `OCR_SCRIPT` 默认是相对路径 `../../tools`，仓库布局下指到仓库外（可用 `OCR_SCRIPT` 覆盖）；`bot/bot.py` 注释、`verify-stack.ps1`、`stickers/README.md` 和 `docs/` 里还有 `stack/nonebot` 旧路径。现在只在本机跑，部署到服务器时再统一处理。
 - #1 之前写入的旧日记用 `tools/migrate_journal_tags.py` 补标签（默认只预览，`--apply` 先备份再改）；旧私聊行只有 `[私聊]`，分不出是谁，除非用 `--private-as` 全部归给一个人，否则只能私聊里 `/回忆` 查。
 
 ---
@@ -84,32 +85,30 @@ python tests\test_migrate_journal_tags.py  # 旧日记迁移脚本（临时目�
 2. `BOT_UIN` 未配置时不过滤：SnowLuma 同时登录两个号（样例里第二个号就是开发者自己）时两个号都会以人设回话。可以考虑未配置时额外丢掉 `self_id == DEV_UIN` 的事件。
 3. `/模式` 状态文案用 `:.0%` 显示概率，米游抽卡的 1.8% 会显示成「2%」。
 
-### 早柚核心（未在真实环境验证）
+### 早柚核心
 
-4. 一键脚本的核心启停（#24）没有在 Windows 上跑过；停止逻辑按命令行里的核心目录找 uv 拉起的 python，需要实测。
-5. 端到端冒烟测试（真实核心 + 三个插件 + 模拟 OneBot 客户端）还没做：本地运行第三方代码需要额外授权。
-6. 人设按前缀避让，`zzz困死了`、`bbb笑死` 这类聊天也会让人设闭嘴，可调 `GAME_CMD_PREFIXES`。
-7. 核心和插件按文档 `git clone` 最新版，没有锁版本；BBBUID 较新、单人维护，崩坏3 没有完整面板。
+4. 人设按前缀避让，`zzz困死了`、`bbb笑死` 这类聊天也会让人设闭嘴，可调 `GAME_CMD_PREFIXES`。
+5. 核心和插件按文档 `git clone` 最新版，没有锁版本；BBBUID 较新、单人维护，崩坏3 没有完整面板。
 
 ### 设计取舍
 
-8. 静音模式的判断在识图之后：静音的群照样跑 OCR / 视觉模型。图卡会进上下文历史，可能是有意保留，也可能只是浪费。
-9. `/圣经` 只有开发者能用；如果想让群友也能触发，需要放开权限（已经计入群聊限流）。
-10. 抽卡文案有三份：`persona.py` 里写死的列表、`gacha_texts.py`、`gacha-texts/*.txt`（`GACHA_TEXT_FILE` 优先）。
-11. `BOT_UIN` 在多处重复判断（`bot.py` 全局预处理器、`is_our_bot()`、`_is_target_account()`、各插件手写的 `self_id` 比较），可以只留预处理器。
+6. 静音模式的判断在识图之后：静音的群照样跑 OCR / 视觉模型。图卡会进上下文历史，可能是有意保留，也可能只是浪费。
+7. `/圣经` 只有开发者能用；如果想让群友也能触发，需要放开权限（已经计入群聊限流）。
+8. 抽卡文案有三份：`persona.py` 里写死的列表、`gacha_texts.py`、`gacha-texts/*.txt`（`GACHA_TEXT_FILE` 优先）。
+9. `BOT_UIN` 在多处重复判断（`bot.py` 全局预处理器、`is_our_bot()`、`_is_target_account()`、各插件手写的 `self_id` 比较），可以只留预处理器。
 
 ### 运维和文档
 
-12. `docs/SnowLuma-QQ机器人调查报告.md`、`docs/SnowLuma-拓展路线评估-Docker.md` 还是 8080 + 空 token 的旧示例。
-13. 提醒（未实测）：已有的账号级 `onebot_<uin>.json` 会叠加在全局 `onebot.json` 上，可能把 `0.0.0.0` / 8080 带回来；README 可以提醒检查。
-14. `docs/SnowLuma-参数与原理.md` 里有三个 accessToken 的首尾片段；虽然截断了，建议换一组新 token。
-15. `scripts/install-snowluma.ps1` 下载后不校验哈希。
+10. `docs/SnowLuma-QQ机器人调查报告.md`、`docs/SnowLuma-拓展路线评估-Docker.md` 还是 8080 + 空 token 的旧示例。
+11. 提醒（未实测）：已有的账号级 `onebot_<uin>.json` 会叠加在全局 `onebot.json` 上，可能把 `0.0.0.0` / 8080 带回来；README 可以提醒检查。
+12. `docs/SnowLuma-参数与原理.md` 里有三个 accessToken 的首尾片段；虽然截断了，建议换一组新 token。
+13. `scripts/install-snowluma.ps1` 下载后不校验哈希。
 
 ### 性能和测试
 
-16. `vision._match_sticker` 每次命中都重读 `index.json`；`_save_cards` 每张图都同步重写整个缓存文件。
-17. `/回忆` 和自动回忆每次都全量扫描日记目录，日记多了会慢。
-18. 测试只覆盖 `persona_rules` 和离线识图；`persona.py` 的主处理流程、`memory.py` 的标签过滤没有测试。
+14. `vision._match_sticker` 每次命中都重读 `index.json`；`_save_cards` 每张图都同步重写整个缓存文件。
+15. `/回忆` 和自动回忆每次都全量扫描日记目录，日记多了会慢。
+16. 测试只覆盖 `persona_rules` 和离线识图；`persona.py` 的主处理流程、`memory.py` 的标签过滤没有测试。
 
 ---
 

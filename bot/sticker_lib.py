@@ -15,7 +15,7 @@ from pathlib import Path
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment
 from nonebot.log import logger
 
-STICKER_DIR = Path(os.getenv("STICKER_DIR", r"Z:\snowluma\stickers"))
+STICKER_DIR = Path(os.getenv("STICKER_DIR") or Path(__file__).resolve().parent.parent / "stickers")
 INDEX_FILE = STICKER_DIR / "index.json"
 
 _items: list[dict] = []

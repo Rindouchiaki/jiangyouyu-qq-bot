@@ -2,17 +2,23 @@
 
 import asyncio
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
+# 缓存写到临时目录，不弄脏 bot/data
+TMP = Path(tempfile.mkdtemp(prefix="vision_test_"))
+os.environ.setdefault("VISION_CACHE_DIR", str(TMP / "vision"))
+os.environ.setdefault("STICKER_HASH_CACHE", str(TMP / "sticker_hashes.json"))
 
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
 import vision  # noqa: E402
 
-STICKER_DIR = Path(r"Z:\snowluma\stickers")
-OUT = Path(r"Z:\snowluma\_research\vision_test.png")
+STICKER_DIR = vision.STICKER_DIR
+OUT = TMP / "vision_test.png"
 
 
 class Seg:
@@ -44,12 +50,15 @@ def make_text_image(path: Path, text: str = "HELLO WORLD 123") -> None:
 def main() -> int:
     ok = True
 
-    # 1) 表情库命中：sha1 路径
+    # 1) 表情库命中：sha1 路径（表情原图 stickers/ori 不入库，没有就跳过）
     item = json.loads((STICKER_DIR / "index.json").read_text(encoding="utf-8"))["items"][0]
-    uri = (STICKER_DIR / item["file"]).resolve().as_uri()
-    card = asyncio.run(vision.image_card(FakeEvent([Seg(uri)])))
-    print("sticker card:", card)
-    ok &= card.startswith("[表情:")
+    if (STICKER_DIR / item["file"]).is_file():
+        uri = (STICKER_DIR / item["file"]).resolve().as_uri()
+        card = asyncio.run(vision.image_card(FakeEvent([Seg(uri)])))
+        print("sticker card:", card)
+        ok &= card.startswith("[表情:")
+    else:
+        print(f"SKIP  表情库命中：没有 {STICKER_DIR / item['file']}")
 
     # 2) 未知图片 -> OCR
     OUT.parent.mkdir(parents=True, exist_ok=True)
