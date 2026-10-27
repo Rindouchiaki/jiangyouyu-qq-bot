@@ -43,6 +43,7 @@ from persona_rules import (
     judge_atmosphere,
     judge_mood,
     looks_addressed,
+    safe_name,
     wants_help,
     wants_sticker,
 )
@@ -619,6 +620,8 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     # 身份对齐：开发者统一记成「酱酱鱼」，别人用自己的群名片
     if DEV_UIN and user_id == DEV_UIN:
         name = DEV_NAME or name
+    else:
+        name = safe_name(name, user_id, (DEV_NAME, *NICKNAMES))
 
     # 私聊内容同时记进白守日记（形成长期人格的素材）
     if not is_group and PRIVATE_MIRROR:
