@@ -623,7 +623,7 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     # 私聊内容同时记进白守日记（形成长期人格的素材）
     if not is_group and PRIVATE_MIRROR:
         try:
-            await asyncio.to_thread(memory.remember, f"对方：{text}", "私聊")
+            await asyncio.to_thread(memory.remember, f"对方：{text}", f"私聊{user_id}")
         except Exception as exc:  # noqa: BLE001
             logger.debug(f"persona: 私聊记录失败 {type(exc).__name__}: {exc}")
 
@@ -762,7 +762,9 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     # 问到「记得/上次」这类，翻一下白守里的记忆
     notes = None
     if memory.available() and any(hint in text for hint in RECALL_HINTS):
-        notes = await asyncio.to_thread(memory.recent, 5)
+        # 只带本会话的记录和开发者 /记 的笔记
+        scope = f"群{event.group_id}" if is_group else f"私聊{user_id}"
+        notes = await asyncio.to_thread(memory.recent, 5, (scope, DEV_NAME))
         if notes:
             logger.info(f"persona: 带上 {len(notes)} 条记忆")
 
@@ -823,15 +825,15 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
 
     if not is_group and PRIVATE_MIRROR:
         try:
-            await asyncio.to_thread(memory.remember, f"我：{reply}", "私聊")
+            await asyncio.to_thread(memory.remember, f"我：{reply}", f"私聊{user_id}")
         except Exception as exc:  # noqa: BLE001
             logger.debug(f"persona: 私聊记录失败 {type(exc).__name__}: {exc}")
     elif is_group and GROUP_MIRROR and mode.startswith(("被叫", "接续")):
         # 群聊里只有真被叫/接续的对话才进记忆，随机插话不记，免得日记变成闲聊流水账
-        tag = f"群{event.group_id} {name}"
+        tag = f"群{event.group_id}"
         try:
-            await asyncio.to_thread(memory.remember, f"{tag}：{text}", "")
-            await asyncio.to_thread(memory.remember, f"我：{reply}", "")
+            await asyncio.to_thread(memory.remember, f"{name}：{text}", tag)
+            await asyncio.to_thread(memory.remember, f"我：{reply}", tag)
         except Exception as exc:  # noqa: BLE001
             logger.debug(f"persona: 群聊记录失败 {type(exc).__name__}: {exc}")
 

@@ -5,6 +5,7 @@
 - /记忆         看库状态
 
 人设插件在问到「还记得/上次」时会自动带上最近几条记忆。
+三个指令都只给开发者（DEV_UIN）用：日记里有私聊和别的群的内容。
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ from nonebot.log import logger
 from nonebot.params import CommandArg
 
 BOT_UIN = os.getenv("BOT_UIN", "").strip()
+DEV_UIN = os.getenv("DEV_UIN", "").strip()
+DEV_NAME = os.getenv("DEV_NAME", "酱酱鱼").strip()
 COOLDOWN = float(os.getenv("MEMORY_COOLDOWN", "3"))
 
 _last_used: dict[str, float] = {}
@@ -32,6 +35,8 @@ status_cmd = on_command("记忆", aliases={"memory"}, priority=17, block=True)
 
 def _guard(bot: Bot, event: MessageEvent) -> bool:
     if BOT_UIN and str(getattr(event, "self_id", "")) != BOT_UIN:
+        return False
+    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
         return False
     key = str(event.get_session_id())
     now = time.time()
@@ -58,9 +63,8 @@ async def _remember(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         return
 
     try:
-        sender = getattr(event, "sender", None)
-        who = (getattr(sender, "card", "") or getattr(sender, "nickname", "") or "") if sender else ""
-        path = await asyncio.to_thread(memory.remember, text, who)
+        # 署名固定为 DEV_NAME：人设插件按这个标签取开发者笔记
+        path = await asyncio.to_thread(memory.remember, text, DEV_NAME)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"memory: 写入失败 {type(exc).__name__}: {exc}")
         await bot.send(event, f"没写进去：{exc}")
@@ -85,7 +89,9 @@ async def _recall(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         await bot.send(event, f"找不到白守的库：{memory.VAULT}")
         return
 
-    hits = await asyncio.to_thread(memory.search, keyword)
+    # 群里只翻本群和开发者笔记，私聊（只有开发者能用）不限
+    tags = (f"群{event.group_id}", DEV_NAME) if getattr(event, "message_type", "") == "group" else ()
+    hits = await asyncio.to_thread(memory.search, keyword, 3, tags)
     if not hits:
         await bot.send(event, f"记忆里没有「{keyword}」")
         return
