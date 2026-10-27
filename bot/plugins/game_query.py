@@ -27,6 +27,7 @@ MAX_LIST = 8
 
 _data: dict = {}
 _last_used: dict[str, float] = {}
+_refresh_task: asyncio.Task | None = None
 
 hsr_cmd = on_command("hsr", priority=18, block=True)
 zzz_cmd = on_command("zzz", priority=18, block=True)
@@ -65,6 +66,7 @@ def _fmt(game: str, c: dict) -> str:
 
 @get_driver().on_startup
 async def _startup() -> None:
+    global _refresh_task
     _reload()
 
     if game_data.is_stale():
@@ -85,7 +87,8 @@ async def _startup() -> None:
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"game_query: 定时刷新异常 {type(exc).__name__}: {exc}")
 
-    asyncio.create_task(_loop())
+    # 事件循环只弱引用任务，不留引用可能被回收
+    _refresh_task = asyncio.create_task(_loop())
 
 
 async def _handle(game: str, bot: Bot, event: MessageEvent, arg) -> None:
