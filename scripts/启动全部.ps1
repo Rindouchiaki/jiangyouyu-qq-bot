@@ -1,3 +1,3 @@
-﻿# 一键启动（根目录快捷入口）：真正逻辑在 scripts\start-all-here.ps1
-# 用法示例：.\启动全部.ps1 -Status / -Stop / -NoVl
-& "$PSScriptRoot\scripts\start-all-here.ps1" @args
+﻿# 一键启动（快捷入口）：真正逻辑在同目录的 start-all-here.ps1
+# 用法示例：.\scripts\启动全部.ps1 -Status / -Stop / -NoVl
+& "$PSScriptRoot\start-all-here.ps1" @args

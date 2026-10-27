@@ -7,11 +7,11 @@
     （用 Start-Process 分离，不挂在当前窗口上）。
 
     常用：
-      .\启动全部.ps1                  # 全套拉起
-      .\启动全部.ps1 -Status          # 只看现在谁在跑
-      .\启动全部.ps1 -Stop            # 全停
-      .\启动全部.ps1 -NoVl            # 不启本地视觉模型（省 1GB 内存）
-      .\启动全部.ps1 -NoAutoLoad      # SnowLuma 不自动注入 QQ 账号
+      .\scripts\启动全部.ps1                  # 全套拉起
+      .\scripts\启动全部.ps1 -Status          # 只看现在谁在跑
+      .\scripts\启动全部.ps1 -Stop            # 全停
+      .\scripts\启动全部.ps1 -NoVl            # 不启本地视觉模型（省 1GB 内存）
+      .\scripts\启动全部.ps1 -NoAutoLoad      # SnowLuma 不自动注入 QQ 账号
 
 .NOTES
     日志都在 Z:\snowluma\logs\，WebUI http://127.0.0.1:5099/
@@ -189,4 +189,4 @@ if (Test-Listening $NoneBotPort) {
 Show-Status
 Write-Host ''
 Write-Host 'WebUI: http://127.0.0.1:5099/   日志: Z:\snowluma\logs\' -ForegroundColor Cyan
-Write-Host '停止全部：.\启动全部.ps1 -Stop' -ForegroundColor DarkGray
+Write-Host '停止全部：.\scripts\启动全部.ps1 -Stop' -ForegroundColor DarkGray
