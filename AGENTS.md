@@ -29,6 +29,8 @@ python tests\test_persona_rules.py         # 纯规则，不连 QQ、不调模�
 python tests\test_gscore_guard.py          # 二维码不进群的判断
 python tests\test_bonds.py                 # 小本本（好感度 / 日记）读写，临时目录里跑
 python tests\test_slang.py                 # 热梗词典；学到的梗按会话隔离（临时目录里跑）
+python tests\test_topics.py                # 话题词表和自学习
+python tests\test_sticker_weights.py       # 表情按权重抽、心情分类
 powershell -File tests\test_env_sync.ps1  # 一键更新按样例重写 persona.env，临时目录里跑
 python tests\test_migrate_journal_tags.py  # 旧日记迁移脚本（临时目录里跑）
 python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（--core 连已启动的整套）
@@ -63,6 +65,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #15 | README 写米游抽卡被叫 10%，代码和样例是 1.8% | README 改为 1.8%，样例注释 `1.8%%` 改成 `1.8%` |
 | #16 | 人设像现实里嘴硬顶牛的小孩，不像二次元傲娇；开发者单开一档、处处另算 | 参照萌娘百科「傲娇」：底子改成弱气、怕羞、不坦率，傲是对不熟的人戴的面具，五档按「讨厌冷冰冰 / 陌生淡淡偶尔犟嘴 / 普通端着傲基本不娇 / 有好感会害羞撒娇 / 亲近又傲又娇」重写；去掉阴阳怪气、狠话，炸毛改成「你、你说什么呢」式的慌；露真心改为普通 15%、有好感 35%、亲近 50%；新增 `CUTE_CHANCE` 抽签句尾带「喵」「呐」或「…」（讨厌、陌生不带），`humanize` 不再吃掉「…」「~」；开发者不再单开一档：喊名字、露真心、嫌烦、私聊晚回、主动找人都按好感档，只保留提示词里「最亲近的人」；好感保底「有好感」、涨×2 掉÷2、不受「30 + 熟悉度」封顶（`dev_floor`） |
 | #17 | #16 之后平常聊天也句句傲娇，语气词和「…」太多 | 平时正常聊，五档改成看热不热情、积不积极；突然冒一句傲娇（`DERE_CHANCE`）和带「喵」「…」（`CUTE_CHANCE`）都降到普通 3% / 有好感 6% / 亲近 10%。新增害羞话题（`shy_topic`：问喜不喜欢 / 想不想 / 在不在意，夸、表白、撒娇，关心、约玩，说她傲娇），按好感反应（`shy_reaction`：讨厌陌生不傲娇、普通大声否认、亲近多数小声），普通及以下同一人追问第二次更不高兴、第三次起 -2；同一人 10 分钟 3 次躲这个人、一个群 10 分钟被问满 5 次整群躲，躲 10 分钟，人设不说话、@ 也不理，游戏查询照常；亲近的人哄（`is_coaxing`）能提前哄回来 |
+| #18 | 几轮改人设、改开发者以后，文档、注释和提示词里还留着旧说法（甩脸子、毒舌、「开发者」态度档、主人不看好感、回话路数里的傲娇），还有早就过期的调研文档和没人用的脚本 | 删掉 `docs/改动记录.md`（只记了 #4，已被本表取代）、`docs/调研-星铁绝区零与B站解析.md` 和四篇 SnowLuma 调研文档、`scripts/start-vl.ps1`、`scripts/smoke-test-onebot.ps1`、`config/onebot.native.json`；README、使用手册、架构与运维、样例注释、`devs.py` 对齐现在的设计；回话路数（会在一个会话里粘一阵）去掉傲娇路数；`test_topics.py`、`test_sticker_weights.py` 进 CI；视觉模型配置对不上记进待确认 11 |
 | #16 | 样例里 `REPLY_FOLLOW_COOLDOWN` 没有代码读 | 删掉；省话档的被叫/接续冷却实际是 `REPLY_GROUP_COOLDOWN`（其它档位写死）；`REPLY_COOLDOWN` 注释改为「主动插话的冷却」 |
 | #17 | `bot_guard.py` 的 `BOT_UIN` 默认是作者的号，没配置时其它号的机器人全部静默 | 默认改为空（不过滤），未配置时启动告警 |
 | #18 | 代码默认值和样例不一致（`SNUB_SECONDS` 300/100、`ENGAGE_MAX_TURNS` 8/4、`HISTORY_SIZE` 16/24、`STICKER_AUTO_PROB` 0.15/0.08） | 代码默认对齐样例 |
@@ -118,7 +121,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | `b2f86bd` `cad1714` | `AGENT.md` 改名 `AGENTS.md` |
 | `88e3cea` | 新增 `docs/使用手册.md`：群友用法、主人指令、档位与小本本 |
 | `d2d0abc` | 改名后同步仓库内对 `AGENT.md` 的引用 |
-| `2ff066d` | 修正文档漂移；`docs/SnowLuma-参数与原理.md` 里的 accessToken 片段换成占位符（见待确认 11） |
+| `2ff066d` | 修正文档漂移；`docs/SnowLuma-参数与原理.md` 里的 accessToken 片段换成占位符（这篇文档 #18 已删） |
 | `dbd0d46` | 部署指南补 uv 坏包重装的排错说明 |
 | `226502f` | `.gitignore` 忽略 `persona.local.env` |
 | `e94e262` | 一键启动带 `OLLAMA_MODELS` 拉起 Ollama，修白守找不到 bge-m3 |
@@ -155,22 +158,22 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 
 ### 运维和文档
 
-9. `docs/SnowLuma-QQ机器人调查报告.md`、`docs/SnowLuma-拓展路线评估-Docker.md` 还是 8080 + 空 token 的旧示例。
-10. 提醒（未实测）：已有的账号级 `onebot_<uin>.json` 会叠加在全局 `onebot.json` 上，可能把 `0.0.0.0` / 8080 带回来；README 可以提醒检查。
-11. `docs/SnowLuma-参数与原理.md` 里原有的三个 accessToken 首尾片段已换成 `<ONEBOT_*_TOKEN>` 占位符；线上 token 本身要不要轮换由作者定（这篇文档还提到 WebUI 口令，同理）。
+9. 提醒（未实测）：已有的账号级 `onebot_<uin>.json` 会叠加在全局 `onebot.json` 上，可能把 `0.0.0.0` / 8080 带回来；README 可以提醒检查。
+10. 线上 OneBot token 和 WebUI 口令要不要轮换由作者定（早先写在已删的调研文档里，git 历史里还能看到首尾片段）。
+11. 本地视觉模型：一键启动和看门狗会拉起 llama.cpp 的 Qwen3-VL（11435），但 `vision.py` 默认 `VLM_ENABLED=0`、`VLM_PROVIDER=ollama`，样例里也没有这几项，不配就用不上。没写进样例是因为一键更新会按样例值冲掉作者机器上的设置；要不要默认打开、启动脚本要不要默认不拉起它，等作者确认。`vision.py` 的其它配置（`IMAGE_*`、`STICKER_*`）也都不在样例里。
 
 ### 性能和测试
 
 12. `vision._match_sticker` 每次命中都重读 `index.json`；`_save_cards` 每张图都同步重写整个缓存文件。
 13. `/回忆` 和自动回忆每次都全量扫描日记目录，日记多了会慢。
-14. 测试只覆盖 `persona_rules` 和离线识图；`persona.py` 的主处理流程只有 `smoke_stack.py` 用 mock 跑「@ 有回复」「私聊连发合成一批、不秒回」，联网、插话 `[不回]`、主动找人还没有自动测试（只用假 DeepSeek 接口手动跑过联网）；`memory.py` 的标签过滤没有测试。
+14. 测试只覆盖 `persona_rules` 和离线识图；`persona.py` 的主处理流程只有 `smoke_stack.py` 用 mock 跑「@ 有回复」「私聊连发合成一批、不秒回」，联网、插话 `[不回]`、主动找人、害羞跑开和哄回来还没有自动测试（联网用假 DeepSeek 接口、害羞用 mock 手动跑过）；`memory.py` 的标签过滤没有测试。
 15. `LLM_MODEL` 默认 `deepseek-chat`：DeepSeek 现在的文档只列 `deepseek-flash` / `deepseek-v4-pro`，没提 `deepseek-chat` 还能不能用，作者确认后再改样例。
 
 ---
 
 ## 改之前先想清楚的地方
 
-- **记忆隔离是刻意的**：不要为了「记得更多」把 `memory.recent` 的会话标签过滤去掉，否则私聊和别的群的内容会被带进来。想让机器人跨群记住某件事，用开发者 `/记`（署名 `DEV_NAME`，任何会话问到「记得/上次」时都会被带出）。
+- **记忆隔离是刻意的**：不要为了「记得更多」把 `memory.recent` 的会话标签过滤去掉，否则私聊和别的群的内容会被带进来。想让机器人跨群记住某件事，用开发者 `/记`（署名是 `devs.py` 里的名字，任何会话问到「记得/上次」时都会被带出）。
 - **学到的梗分会话**：`slang_learned.json` 里只有网上查得到（`results_mention` 确认搜索结果里真有这个词，再按摘要解释得出来）的才进 `public`，哪里都认；查不到的记在 `scoped` 的 `g群号` / `p QQ号` 下，只在原会话用。作者要求「某些群自己的梗不能带到外面」，别把 scoped 合进 public、别让 `slang.hint` 不带 scope 查。接梗按 `SLANG_PLAY_PROB` 抽签、`SLANG_PLAY_GAP` 间隔、`slang_play_ok` 看气氛，作者要求「非常偶尔接一下」，别调高。
 - **小本本按人共用、私事不进群**：`bonds.py` 按 QQ 号存好感、熟悉度和日记，群里私聊是同一条（作者要求「换个地方也认得」）；但私聊里摘的日记带 `src="p"`，`visible_notes` 在群里会滤掉，别去掉。日记和群风格是群友原话整理的，只能放 user 消息（`compose_messages` 的小本本块）；system 里只放由数字算出的态度档位，不放名字和日记原文。
 - **群里话少是刻意的**：被 @ 必回、喊名字按态度回，其余（接续、插话、只发表情）都受 `REPLY_CASUAL_GAP` 间隔和 `REPLY_GROUP_PER_HOUR` 额度限制，作者要求「偶尔冒个泡，不像住在群里」。人设可以嘴毒、吐槽，但 `is_offensive` 那道兜底（带脏话不发）别拆。

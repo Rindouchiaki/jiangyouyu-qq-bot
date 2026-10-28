@@ -353,7 +353,7 @@ def main() -> int:
     assert "绝不辱骂" in base and "不人身攻击" in base and "嘴毒" in base  # 可以嘴毒，不能辱骂攻击
     assert "阴阳怪气" not in "".join(REPLY_FLAVORS) and "嘴硬顶牛的小孩" in base  # 二次元傲娇，不是现实里犟嘴
     assert is_offensive("你个傻逼") and is_offensive("滚蛋") and not is_offensive("滚去睡") and not is_offensive("才不理你呢") and not is_offensive("")
-    print("PASS  可以毒舌但不辱骂：人设写明底线，带脏话的回复重说；日常的「滚去睡」不算骂人")
+    print("PASS  可以嘴毒但不辱骂：人设写明底线，带脏话的回复重说；日常的「滚去睡」不算骂人")
 
     assert attitude(0, 0) == "陌生" and attitude(0, 20) == "普通" and attitude(30, 20) == "有好感"
     assert attitude(60, 40) == "亲近" and attitude(60, 10) == "有好感" and attitude(-40, 50) == "讨厌"
