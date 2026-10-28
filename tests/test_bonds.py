@@ -70,6 +70,14 @@ def main() -> int:
     assert bonds._data.get("floor") == 1
     print("PASS  老数据里刚认识的人抬到礼貌底线，记仇的不动，只迁一次")
 
+    # 私聊里没法 @ 人，/好感 靠昵称找 QQ 号
+    bonds.touch("77001", "夜雨轩烛", 0, now=4000.0)
+    bonds.touch("77002", "夜雨", 0, now=4001.0)
+    assert bonds.find_user("轩烛") == ["77001"]
+    assert sorted(bonds.find_user("夜雨")) == ["77001", "77002"]
+    assert bonds.find_user("没这个人") == [] and bonds.find_user("  ") == []
+    print("PASS  昵称找人：一对一、一对多、查无此人都分得清")
+
     print("\n结果: 全部通过")
     return 0
 

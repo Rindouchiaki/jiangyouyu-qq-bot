@@ -67,6 +67,34 @@ async def _notebook(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
     await notebook_cmd.finish("用法：/小本本 @某人 或 /小本本 QQ号；群里不带参数看群日记")
 
 
+def _bond_usage(event: MessageEvent) -> str:
+    """群里能 @ 人，私聊只能写 QQ 号或名字，用法提示跟着变。"""
+    who = "@某人、QQ号 或名字" if getattr(event, "message_type", "") == "group" else "QQ号 或名字"
+    return (
+        f"用法：/好感 {who} —— 看对方现在的好感/熟悉\n"
+        f"/好感 {who} +10 加好感、-10 减、=30 设成 30；写「熟悉 +5」是调熟悉度"
+    )
+
+
+def _pick_by_name(text: str) -> tuple[str, str, str]:
+    """没给 QQ 号时按昵称找人：返回 (QQ号, 剩下的话, 提示)。
+
+    一对一碰上就把昵称从文本里挖掉，剩下的（+10 / 熟悉 +5）照常解析；
+    碰上多个或者一个都没碰上，第三个返回值就是给用户看的提示。
+    """
+    hint = re.sub(r"[+\-=]?\s*\d{1,3}", " ", text)
+    hint = hint.replace("熟悉", " ").replace("好感", " ").strip()
+    if not hint:
+        return "", text, ""
+    hits = bonds.find_user(hint)
+    if len(hits) == 1:
+        return hits[0], text.replace(hint, " "), ""
+    if len(hits) > 1:
+        names = "、".join(f"{bonds.user(u).get('name') or u}({u})" for u in hits[:6])
+        return "", text, f"好几个都叫这个：{names}，用 QQ 号再点一下"
+    return "", text, f"没找到叫「{hint}」的人，写 QQ 号吧"
+
+
 @bond_cmd.handle()
 async def _bond(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
     """开发者手动调好感/熟悉度：/好感 @人（看）、+10 / -10 / =30 / 熟悉 +5。"""
@@ -81,10 +109,11 @@ async def _bond(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         target = m.group(0)
         text = (text[:m.start()] + " " + text[m.end():]).strip()
     if not target:
-        await bond_cmd.finish(
-            "用法：/好感 @某人 看；/好感 @某人 +10 好感加；-10 减；=30 设成 30；"
-            "/好感 @某人 熟悉 +5 调熟悉度"
-        )
+        target, text, tip = _pick_by_name(text)
+        if tip:
+            await bond_cmd.finish(tip)
+    if not target:
+        await bond_cmd.finish(_bond_usage(event))
     field = "fam" if ("熟悉" in text) else "aff"
     level = re.search(r"([+\-=]?)\s*(\d{1,3})", text)
     if not level:

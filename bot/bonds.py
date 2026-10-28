@@ -86,6 +86,23 @@ def user(uid: str) -> dict:
         return dict(_data["users"].get(str(uid)) or new_bond())
 
 
+def find_user(text: str) -> list[str]:
+    """按昵称找 QQ 号：昵称里包含关键字就算，忽略大小写。
+
+    私聊里没法 @ 人，只能靠这个把人名翻译成 QQ 号；群聊里也顺手支持。
+    返回匹配到的 QQ 号列表（0 个 / 1 个 / 多个，由调用方决定怎么处理）。
+    """
+    key = (text or "").strip().lower()
+    if not key:
+        return []
+    with _lock:
+        return [
+            uid
+            for uid, rec in _data["users"].items()
+            if key and key in str(rec.get("name") or "").lower()
+        ]
+
+
 def touch(uid: str, name: str, delta: int, now: float | None = None) -> dict:
     """这个人跟我说了句话：更新好感、熟悉度和最近用的名字。"""
     with _lock:
