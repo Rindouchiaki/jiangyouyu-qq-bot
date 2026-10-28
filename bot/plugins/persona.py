@@ -426,7 +426,7 @@ _diary_user_turns: dict[str, int] = defaultdict(int)
 _diary_user_last: dict[str, float] = defaultdict(float)
 _diary_group_msgs: dict[str, int] = defaultdict(int)
 _diary_group_last: dict[str, float] = defaultdict(float)
-# 后台任务要留引用，否则可能被回收（见 AGENT.md #8）
+# 后台任务要留引用，否则可能被回收（见 AGENTS.md #8）
 _bg_tasks: set[asyncio.Task] = set()
 
 persona = on_message(priority=50, block=False)

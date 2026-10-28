@@ -12,7 +12,7 @@
 ## 代码约定（改代码必须遵守）
 
 - **语言**：注释、日志、回复文案一律中文；注释短，只写关键原因，不写过程。
-- **换行符**：只有 `README.md`、`AGENT.md`、`docs/架构与运维.md`、`.gitignore`、`LICENSE`、`tools/ocr_win.ps1` 是 LF，其余文本文件（`.py`、`.ps1`、`.json`、其它 `docs/*.md`、`persona.env.example` 等）都是 **CRLF**。改前数一下 `\r` 确认，改后保持原样；`scripts/*.ps1` 和 `tools/ocr_win.ps1`、`tools/ocr_stickers_2x.ps1` 带 UTF-8 BOM，也要保留。
+- **换行符**：只有 `README.md`、`AGENTS.md`、`docs/架构与运维.md`、`.gitignore`、`LICENSE`、`tools/ocr_win.ps1` 是 LF，其余文本文件（`.py`、`.ps1`、`.json`、其它 `docs/*.md`、`persona.env.example` 等）都是 **CRLF**。改前数一下 `\r` 确认，改后保持原样；`scripts/*.ps1` 和 `tools/ocr_win.ps1`、`tools/ocr_stickers_2x.ps1` 带 UTF-8 BOM，也要保留。
 - **配置**：全部走环境变量，`bot/bot.py` 先 `load_dotenv(bot/persona.env)`、再读 `bot/persona.local.env`（盖过同名项）后导入插件，所以插件在模块级 `os.getenv` 就能读到。新增配置项同步写进 `persona.env.example`，代码里的默认值要和样例一致。一键更新（`setup.ps1 -Update`）会按样例重写 persona.env：`common.ps1` 的 `PersonalEnvKeys`（账号、密钥、路径）和样例里没有的项保留，其余换成样例值；新增「每台机器不一样」的配置项要加进 `PersonalEnvKeys`，否则一键更新会把它冲掉。
 - **目录**：仓库就是运行目录，`.venv`、`bot/persona.env`、`bot/data`、`logs`、`SnowLuma`、`gsuid_core` 都在仓库里（后几个已 gitignore）。脚本统一 dot-source `scripts/common.ps1` 取路径，装在别处的用 persona.env 的 `SNOWLUMA_DIR` / `GSCORE_DIR` / `TOOLS_DIR` / `STICKER_DIR` / `LOG_DIR` 指过去；代码里的默认路径也按仓库算，不要再写死盘符。
 - **部署**：`scripts/setup.ps1` 要能重复跑（已装的跳过、已有的配置不覆盖；只有 `-Update` 按上面的规则重写 persona.env），新增的安装步骤也照这个写；改了部署流程同步更新 `docs/部署指南.md`。
