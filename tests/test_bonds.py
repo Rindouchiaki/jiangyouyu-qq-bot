@@ -22,7 +22,7 @@ def main() -> int:
     bonds.touch("10001", "明明", 0, now=2000.0)
     bonds.add_user_notes("10001", ["最近在找工作"], "p", now=2001.0)
     rec = bonds.user("10001")
-    assert rec["name"] == "明明" and rec["fam"] == 2 and len(rec["notes"]) == 2, rec
+    assert rec["name"] == "明明" and rec["fam"] == 10 and len(rec["notes"]) == 2, rec
     assert visible_notes(rec["notes"], True) == ["喜欢原神"]
     assert visible_notes(rec["notes"], False) == ["喜欢原神", "最近在找工作"]
     print("PASS  群聊私聊共用一条记录，私聊听来的只在私聊用")
@@ -39,12 +39,44 @@ def main() -> int:
     assert bonds.group("123")["style"][0]["t"] == "爱玩谐音梗"
     print("PASS  落盘后重新载入不丢")
 
-    assert bonds.user("99999") == {"aff": 0, "fam": 0, "notes": []} and "99999" not in bonds._data["users"]
+    assert bonds.user("99999") == {"aff": 10, "fam": 8, "notes": [], "topics": {}} and "99999" not in bonds._data["users"]
     assert bonds.forget_user("10001") and not bonds.forget_user("10001")
     assert bonds.user("10001")["notes"] == [] and bonds.group("123")["notes"]
     assert bonds.clear_group("123") and bonds.group("123")["notes"] == []
     bonds.save(force=True)
     print("PASS  只读不建记录；删除某人 / 清空本群")
+
+    # 初始好感度是「礼貌」的普通档，不是爱答不理的陌生
+    from persona_rules import attitude  # noqa: E402
+
+    assert attitude(10, 8) == "普通" and attitude(0, 0) == "陌生"
+    before, after = bonds.set_levels("88888", "新人", aff=30)
+    assert before["aff"] == 10 and after["aff"] == 30, (before, after)
+    before, after = bonds.set_levels("88888", fam=-5)
+    assert after["fam"] == 0 and after["aff"] == 30, after
+    before, after = bonds.set_levels("88888", aff=999, fam=999)
+    assert after["aff"] == 100 and after["fam"] == 100, after
+    print("PASS  /好感 手动调数值，越界夹紧，态度档跟着变")
+
+    # 老数据迁移：刚认识（好感 0~9、熟悉 <8）抬到礼貌底线，负数好感不动
+    old = TMP / "old.json"
+    old.write_text(
+        '{"users": {"1": {"aff": 0, "fam": 0}, "2": {"aff": -40, "fam": 2}}, "groups": {}}',
+        encoding="utf-8",
+    )
+    bonds.load(old)
+    assert bonds.user("1")["aff"] == 10 and bonds.user("1")["fam"] == 8
+    assert bonds.user("2")["aff"] == -40 and bonds.user("2")["fam"] == 8
+    assert bonds._data.get("floor") == 1
+    print("PASS  老数据里刚认识的人抬到礼貌底线，记仇的不动，只迁一次")
+
+    # 私聊里没法 @ 人，/好感 靠昵称找 QQ 号
+    bonds.touch("77001", "夜雨轩烛", 0, now=4000.0)
+    bonds.touch("77002", "夜雨", 0, now=4001.0)
+    assert bonds.find_user("轩烛") == ["77001"]
+    assert sorted(bonds.find_user("夜雨")) == ["77001", "77002"]
+    assert bonds.find_user("没这个人") == [] and bonds.find_user("  ") == []
+    print("PASS  昵称找人：一对一、一对多、查无此人都分得清")
 
     print("\n结果: 全部通过")
     return 0

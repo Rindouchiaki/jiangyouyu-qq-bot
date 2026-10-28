@@ -36,8 +36,11 @@ from nonebot.log import logger
 from nonebot.params import CommandArg
 
 import bonds
+import gscore_guard
 import memory
+import slang
 import sticker_lib
+import topics
 import vision
 from persona_rules import (
     AFF_PESTER,
@@ -54,6 +57,7 @@ from persona_rules import (
     is_conversation_ending,
     is_offensive,
     is_game_command,
+    is_question,
     judge_annoyance,
     judge_atmosphere,
     judge_mood,
@@ -86,6 +90,8 @@ MOCK = os.getenv("LLM_MOCK", "0") == "1"
 MAX_CHARS = int(os.getenv("REPLY_MAX_CHARS", "20"))
 # 正经求助（查/看/找/翻译）放宽到一两句话，不然「帮我看看这个」只能挤出十几个字
 MAX_CHARS_HELP = int(os.getenv("REPLY_MAX_CHARS_HELP", "80"))
+# 直接问事（啥/怎么/能不能/问号）放宽一点，不然「还有啥游戏能绑定uid」答不完整
+MAX_CHARS_QUESTION = int(os.getenv("REPLY_MAX_CHARS_QUESTION", "40"))
 HELP_MAX_TOKENS = int(os.getenv("REPLY_HELP_MAX_TOKENS", "160"))
 HISTORY_SIZE = int(os.getenv("HISTORY_SIZE", "24"))
 COOLDOWN_SEC = float(os.getenv("REPLY_COOLDOWN", "8"))
@@ -752,7 +758,9 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
                 _last_image_seg.pop(old_key, None)
 
     text = event.get_plaintext().strip()
-    if is_game_command(text, GAME_CMD_PREFIXES):
+    if is_game_command(text, GAME_CMD_PREFIXES) or gscore_guard.bare_core_command(
+        [str(seg.data.get("text", "")) for seg in event.get_message() if seg.type == "text"]
+    ):
         # 游戏指令由早柚核心回，人设不接话，也不进上下文和日记
         return
     if not text:
@@ -904,10 +912,23 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     # 跟她说话才算互动：好感、熟悉度按 QQ 号记，群里私聊是同一份
     bond = _bond_touch(user_id, name, affinity_delta(text)) if addressed else bonds.user(user_id)
     is_dev = bool(DEV_UIN) and user_id == DEV_UIN
-    att = None if is_dev else attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
+    att = attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
+
+    # 话题自学习：说到的类别记一笔（谁说的记谁）；好感高/熟的人才在提示词里顺他的话题，省 token
+    topic_hits = topics.detect(text)
+    if topic_hits:
+        bonds.learn_topics(user_id, name, topic_hits)
+        bonds.save(force=True)
+    bond_topics = bonds.top_topics(user_id) if is_dev or att in ("有好感", "亲近") else []
+    slang_note = slang.hint(text)
+    if bond_topics:
+        logger.debug(f"persona: 带上他的话题 {bond_topics}")
+    if slang_note:
+        logger.debug(f"persona: 热梗 {slang_note}")
 
     # 被叫/接续用短冷却（聊天里 2 秒内接着说是常态），主动插话才用长冷却
-    label, _, _ = judge_atmosphere(list(history), idle)
+    # 氛围只在群里才有意义：私聊里「有火气」会让它凭空炸毛，所以私聊不传
+    label, _, _ = judge_atmosphere(list(history), idle) if is_group else (None, True, "")
     mood, mood_reason = judge_mood(list(history), label)
 
     # 「发张表情包」这类明确请求：直接给图，和图之外的话分开计时
@@ -978,6 +999,7 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         logger.debug(f"persona: 上下文 {len(past)} 条，末条 {past[-1][0]}: {past[-1][1][:24]}")
 
     help_mode = wants_help(text)
+    question = is_question(text) and not help_mode
     scene = sticker_scene(text)
     # 群里碰到明显场景时有时只甩一张对得上的表情，偶尔也随手甩张无厘头的：像真人冒个泡，也少说话少露馅
     item = None
@@ -1039,15 +1061,20 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         help_mode=help_mode,
         hour=datetime.now().hour,
         attitude=att,
+        bond=(int(bond.get("aff", 0)), int(bond.get("fam", 0))),
         dere=dere,
         user_notes=user_notes,
         group_notes=group_notes,
         group_style=group_style,
-        flavor=pick_flavor(),
+        flavor=pick_flavor(att),
+        topics=bond_topics,
+        slang=slang_note,
     )
 
+    limit = HELP_MAX_TOKENS if help_mode else 64 if question else 48
+    chars = MAX_CHARS_HELP if help_mode else MAX_CHARS_QUESTION if question else MAX_CHARS
     try:
-        raw = await ask_llm(messages, HELP_MAX_TOKENS if help_mode else 48)
+        raw = await ask_llm(messages, limit)
     except urllib.error.HTTPError as exc:
         logger.warning(f"persona: LLM HTTP {exc.code} {exc.reason}")
         return
@@ -1055,12 +1082,28 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         logger.warning(f"persona: LLM 调用失败 {type(exc).__name__}: {exc}")
         return
 
-    reply = humanize(raw, MAX_CHARS_HELP if help_mode else MAX_CHARS)
+    reply = humanize(raw, chars)
     if not reply:
+        logger.info("persona: 模型这句清完是空的，不发")
         return
     if is_offensive(reply):
-        logger.warning(f"persona: 这句带攻击性，不发：{reply}")
-        return
+        # 偶尔被带出脏话：不静默丢掉，改成重说一句，免得看着像机器人没反应
+        logger.warning(f"persona: 这句带攻击性，重说：{reply}")
+        retry = [dict(m) for m in messages]
+        retry[0] = {
+            "role": "system",
+            "content": str(retry[0].get("content", ""))
+            + "\n刚才那句带了脏话或人身攻击，重说一句；语气可以冲，但不许出现脏字、骂人的词。",
+        }
+        try:
+            raw = await ask_llm(retry, limit)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"persona: 重说失败 {type(exc).__name__}: {exc}")
+            return
+        reply = humanize(raw, chars)
+        if not reply or is_offensive(reply):
+            logger.warning("persona: 重说还是带攻击性，不发")
+            return
 
     # 接续/插话本来就可有可无：这期间别人已经插了新话，就别补旧的一句，否则看着像答错人
     if is_group and not mode.startswith("被叫") and _last_message_at.get(key, 0.0) > started_at:

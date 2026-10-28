@@ -16,7 +16,10 @@ import threading
 import time
 from pathlib import Path
 
-from persona_rules import merge_notes, update_bond
+from persona_rules import INITIAL_AFF, INITIAL_FAM, merge_notes, new_bond, update_bond
+
+# 初始好感度迁移标记：老数据里「刚认识」的人抬到礼貌底线，只做一次
+FLOOR_VERSION = 1
 
 _data_env = os.getenv("PERSONA_DATA_DIR", "").strip()
 DATA_FILE = (Path(_data_env) if _data_env else Path(__file__).resolve().parent / "data") / "bonds.json"
@@ -24,6 +27,10 @@ USER_NOTE_CAP = int(os.getenv("DIARY_USER_NOTES", "6"))
 GROUP_NOTE_CAP = int(os.getenv("DIARY_GROUP_NOTES", "8"))
 GROUP_STYLE_CAP = int(os.getenv("DIARY_GROUP_STYLE", "4"))
 NOTE_MAX_CHARS = int(os.getenv("DIARY_NOTE_CHARS", "20"))
+# 话题权重：聊到一次 +1，最多 TOPIC_MAX；两周没提权重减半，低于 TOPIC_MIN_SCORE 就当没这个兴趣
+TOPIC_MAX = int(os.getenv("TOPIC_MAX_WEIGHT", "60"))
+TOPIC_HALF_DAYS = float(os.getenv("TOPIC_HALF_DAYS", "14"))
+TOPIC_MIN_SCORE = float(os.getenv("TOPIC_MIN_SCORE", "1.2"))
 
 _lock = threading.RLock()
 _data: dict = {"users": {}, "groups": {}}
@@ -41,7 +48,28 @@ def load(path: Path | None = None) -> None:
             raw = {}
         _data["users"] = raw.get("users") if isinstance(raw.get("users"), dict) else {}
         _data["groups"] = raw.get("groups") if isinstance(raw.get("groups"), dict) else {}
-        _state["dirty"] = False
+        _data["floor"] = raw.get("floor", 0)
+        _state["dirty"] = _raise_floor()
+        if _state["dirty"]:
+            # 迁移的结果先落盘，别等下一次互动才写，避免重启后又回到旧值再迁一次
+            save(force=True)
+
+
+def _raise_floor() -> bool:
+    """老数据里好感低、还没混熟的人抬到礼貌底线（好感 0 以下的不动，那是真被惹到了）。
+
+    只做一次，用 floor 字段记账，之后新建的记录直接就是新底线。
+    """
+    if int(_data.get("floor") or 0) >= FLOOR_VERSION:
+        return False
+    for rec in _data["users"].values():
+        aff, fam = int(rec.get("aff", 0)), int(rec.get("fam", 0))
+        if 0 <= aff < INITIAL_AFF:
+            rec["aff"] = INITIAL_AFF
+        if fam < INITIAL_FAM:
+            rec["fam"] = INITIAL_FAM
+    _data["floor"] = FLOOR_VERSION
+    return True
 
 
 def save(force: bool = False) -> None:
@@ -57,9 +85,26 @@ def save(force: bool = False) -> None:
 
 
 def user(uid: str) -> dict:
-    """只读拿一份（没有就是空的默认值），不会建记录。"""
+    """只读拿一份（没有就是初始值），不会建记录。"""
     with _lock:
-        return dict(_data["users"].get(str(uid)) or {"aff": 0, "fam": 0, "notes": []})
+        return dict(_data["users"].get(str(uid)) or new_bond())
+
+
+def find_user(text: str) -> list[str]:
+    """按昵称找 QQ 号：昵称里包含关键字就算，忽略大小写。
+
+    私聊里没法 @ 人，只能靠这个把人名翻译成 QQ 号；群聊里也顺手支持。
+    返回匹配到的 QQ 号列表（0 个 / 1 个 / 多个，由调用方决定怎么处理）。
+    """
+    key = (text or "").strip().lower()
+    if not key:
+        return []
+    with _lock:
+        return [
+            uid
+            for uid, rec in _data["users"].items()
+            if key and key in str(rec.get("name") or "").lower()
+        ]
 
 
 def touch(uid: str, name: str, delta: int, now: float | None = None) -> dict:
@@ -73,11 +118,65 @@ def touch(uid: str, name: str, delta: int, now: float | None = None) -> dict:
         return dict(rec)
 
 
+def set_levels(
+    uid: str, name: str = "", aff: int | None = None, fam: int | None = None
+) -> tuple[dict, dict]:
+    """开发者手动调好感/熟悉度（/好感）：给 None 的项不动。返回 (改前, 改后)。"""
+    with _lock:
+        rec = _data["users"].setdefault(str(uid), new_bond())
+        before = dict(rec)
+        if name:
+            rec["name"] = name
+        if aff is not None:
+            rec["aff"] = max(-100, min(100, int(aff)))
+        if fam is not None:
+            rec["fam"] = max(0, min(100, int(fam)))
+        _state["dirty"] = True
+        return before, dict(rec)
+
+
+def learn_topics(uid: str, name: str = "", words: list[str] | tuple[str, ...] = (),
+                 now: float | None = None) -> list[str]:
+    """这个人又聊到这些话题了：每个话题权重 +1（封顶 TOPIC_MAX），记下最近一次时间。"""
+    words = [w for w in dict.fromkeys(words) if w]
+    if not words:
+        return []
+    ts = time.time() if now is None else now
+    with _lock:
+        rec = _data["users"].setdefault(str(uid), new_bond())
+        if name:
+            rec["name"] = name
+        topics = rec.setdefault("topics", {})
+        for w in words:
+            item = topics.setdefault(w, {"w": 0.0, "t": ts})
+            item["w"] = min(TOPIC_MAX, float(item.get("w", 0)) + 1.0)
+            item["t"] = ts
+        _state["dirty"] = True
+    return words
+
+
+def top_topics(uid: str, k: int = 3, now: float | None = None) -> list[str]:
+    """最近常聊的话题：按「两周减半」衰减后取前 k 个；没什么记录就返回空。"""
+    ts = time.time() if now is None else now
+    with _lock:
+        rec = _data["users"].get(str(uid)) or {}
+        topics = dict(rec.get("topics") or {})
+    scored: list[tuple[float, str]] = []
+    for word, item in topics.items():
+        weight = float(item.get("w", 0) or 0)
+        days = max(0.0, (ts - float(item.get("t", 0) or 0)) / 86400)
+        score = weight * (0.5 ** (days / TOPIC_HALF_DAYS))
+        if score >= TOPIC_MIN_SCORE:
+            scored.append((score, word))
+    scored.sort(key=lambda pair: -pair[0])
+    return [word for _, word in scored[:k]]
+
+
 def add_user_notes(uid: str, texts: list[str], src: str, now: float | None = None) -> int:
     if not texts:
         return 0
     with _lock:
-        rec = _data["users"].setdefault(str(uid), {"aff": 0, "fam": 0, "notes": []})
+        rec = _data["users"].setdefault(str(uid), new_bond())
         rec["notes"] = merge_notes(rec.get("notes"), [t[:NOTE_MAX_CHARS] for t in texts], src, now, USER_NOTE_CAP)
         _state["dirty"] = True
     return len(texts)

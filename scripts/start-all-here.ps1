@@ -52,6 +52,9 @@ $vlMmproj = Join-Path $cfg.Tools 'vl-model\mmproj-F16.gguf'
 $qqExe = $cfg.QQ
 $ffmpegBin = $cfg.Ffmpeg
 $coreDir = $cfg.Core
+# 守护开关：起过之后留个标记，scripts\watchdog.ps1 只在标记存在时才补服务；
+# -Stop 会删掉它，这样手动停掉之后守护不会又把服务拉回来。
+$runFlag = Join-Path $logs '.stack-on'
 
 function Show-Status {
     Write-Host ''
@@ -81,12 +84,16 @@ function Show-Status {
 
 # ------------------------------------------------------------------ 停止
 if ($Stop) {
+    Remove-Item -LiteralPath $runFlag -ErrorAction SilentlyContinue
     & "$PSScriptRoot\stop-all.ps1" -NoneBotPort $NoneBotPort
     Show-Status
     return
 }
 
 if ($Status) { Show-Status; return }
+
+# 从这里开始真的去拉服务，留个标记给守护脚本
+Set-Content -LiteralPath $runFlag -Value (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') -Encoding utf8
 
 if (-not (Test-Path -LiteralPath $cfg.EnvFile)) { throw "还没有 bot\persona.env，先双击「一键部署.cmd」" }
 

@@ -32,6 +32,59 @@ _items: list[dict] = []
 _categories: Counter = Counter()
 _last_pick: dict[str, str] = {}
 _notes: dict[str, dict] = {}  # id -> {"note": 用途备注, "uses": 用过几次}
+# 每个会话最近发过的几张（越靠后越新）和各类用了几次：用来压住重复，别老发固定的那几张
+_pick_hist: dict[str, list[str]] = {}
+_cat_used: dict[str, Counter] = {}
+HIST_MAX = 8
+# 用过的次数越多越难再被选中：权重 1/(1 + USES_FADE * uses)
+USES_FADE = float(os.getenv("STICKER_USES_FADE", "0.6"))
+# 最近第 1 / 前 3 / 前 8 张的降权系数；同分类连发也降权
+RECENT_FADE = (0.05, 0.2, 0.5)
+CAT_FADE = float(os.getenv("STICKER_CAT_FADE", "0.35"))
+# 已经在至少 6 张里能挑时，绝不再发上一张
+HARD_SKIP = int(os.getenv("STICKER_HARD_SKIP", "6"))
+# 心情 → 候选分类及概率：合适的分类只占一部分，剩下的给中性表情，免得一张图包办所有场合
+MOOD_MIX = {
+    "炸毛": (("生气", 0.35), ("拒绝", 0.10), ("无文字", 0.25), ("其他", 0.20), ("疑问", 0.05), ("搞笑", 0.05)),
+    "甜": (("卖萌", 0.25), ("夸奖", 0.10), ("回应", 0.10), ("无文字", 0.25), ("其他", 0.20), ("搞笑", 0.10)),
+    "不耐烦": (("拒绝", 0.20), ("生气", 0.10), ("无文字", 0.35), ("其他", 0.35)),
+    "清醒": (("无文字", 0.35), ("其他", 0.30), ("疑问", 0.10), ("回应", 0.10), ("搞笑", 0.10), ("卖萌", 0.05)),
+}
+_by_cat: dict[str, list[dict]] = {}
+
+
+def _weight(item: dict, session: str = "") -> float:
+    """一张表情这回合被选中的相对权重：用得越多、最近刚发过、同分类连发，都会往下压。"""
+    weight = 1.0 / (1.0 + USES_FADE * int((_notes.get(item["id"]) or {}).get("uses", 0)))
+    hist = _pick_hist.get(session, []) if session else []
+    for depth, fade in zip((1, 3, 8), RECENT_FADE):
+        if item["id"] in hist[-depth:]:
+            weight *= fade
+            break
+    if session:
+        used = _cat_used.get(session, Counter()).get(item.get("category", "其他"), 0)
+        if used:
+            weight *= 1.0 / (1.0 + CAT_FADE * used)
+    return max(weight, 1e-5)
+
+
+def _remember(session: str, item: dict) -> dict:
+    """记下这次发了什么，供下一次降权用。"""
+    if session:
+        hist = _pick_hist.setdefault(session, [])
+        hist.append(item["id"])
+        del hist[:-HIST_MAX]
+        _cat_used.setdefault(session, Counter())[item.get("category", "其他")] += 1
+        _last_pick[session] = item["id"]
+    return item
+
+
+def _weighted(pool: list[dict], session: str = "", prefer_saved: float = 0.0) -> dict:
+    """按权重抽一张；prefer_saved 是「先从自己收藏的里挑」的概率。"""
+    saved = [it for it in pool if it.get("file", "").startswith("saved/")]
+    if saved and prefer_saved > 0 and random.random() < prefer_saved:
+        pool = saved
+    return _remember(session, random.choices(pool, weights=[_weight(it, session) for it in pool])[0])
 
 
 def _read_saved() -> list[dict]:
@@ -59,6 +112,9 @@ def load() -> None:
         pass
     _categories.clear()
     _categories.update(item.get("category", "其他") for item in _items)
+    _by_cat.clear()
+    for item in _items:
+        _by_cat.setdefault(item.get("category", "其他"), []).append(item)
     logger.info(f"sticker_lib: {len(_items)} 张，分类 {dict(_categories)}")
 
 
@@ -161,30 +217,37 @@ def pick(keyword: str = "", session: str = "") -> dict | None:
     if not pool:
         return None
 
-    recent = {_last_pick[session]} if session in _last_pick else set()
-    fresh = [it for it in pool if it["id"] not in recent] or pool
-    chosen = random.choice(fresh)
-    if session:
-        _last_pick[session] = chosen["id"]
-    return chosen
+    # 能挑的够多时先剔掉上一张，避免连着两次同一张
+    hist = _pick_hist.get(session, []) if session else []
+    if len(pool) >= HARD_SKIP and hist:
+        fresh = [it for it in pool if it["id"] != hist[-1]]
+        pool = fresh or pool
+    return _weighted(pool, session)
 
 
 def pick_for_mood(mood: str, session: str = "", prefer_saved: float = 0.0) -> dict | None:
-    """炸毛挑生气的，甜挑卖萌的，兜底随机；prefer_saved 的概率先从自己收藏的里挑。"""
-    order = ["生气", "卖萌"] if mood == "炸毛" else ["卖萌", "搞笑"]
+    """按心情先挑分类、再在分类里按新鲜度挑一张：既对味，又不会老发固定那几张。
+
+    心情合适的分类只占一部分概率（炸毛时 35% 生气 + 10% 拒绝），剩下分给无文字、
+    其他这些中性表情；分类里不足 2 张就把它的概率匀回去，避免一张图反复发。
+    """
+    mix = list(MOOD_MIX.get(mood) or MOOD_MIX["清醒"])
     if prefer_saved > 0 and random.random() < prefer_saved:
         saved = [it for it in _items if it.get("file", "").startswith("saved/")]
-        fitting = [it for it in saved if it.get("category") in order] or saved
+        fitting = [it for it in saved if it.get("category") in {c for c, _ in mix}] or saved
         if fitting:
-            chosen = random.choice(fitting)
-            if session:
-                _last_pick[session] = chosen["id"]
-            return chosen
-    for cat in order:
-        chosen = pick(cat, session)
-        if chosen:
-            return chosen
-    return pick("", session)
+            return _weighted(fitting, session)
+    # 分类里凑不够两张的（拒绝只有 1 张）不参与抽，概率按比例分给别人
+    sized = [(cat, p) for cat, p in mix if len(_by_cat.get(cat, [])) >= 2]
+    if not sized:
+        return _weighted(_items, session) if _items else None
+    total = sum(p for _, p in sized)
+    roll = random.random() * total
+    for cat, p in sized:
+        roll -= p
+        if roll <= 0:
+            return _weighted(_by_cat[cat], session)
+    return _weighted(_by_cat[sized[-1][0]], session)
 
 
 def pick_for_scene(words: tuple[str, ...], session: str = "", prefer_saved: float = 0.0) -> dict | None:
@@ -197,17 +260,7 @@ def pick_for_scene(words: tuple[str, ...], session: str = "", prefer_saved: floa
     pool = [it for it in _items if fits(it)]
     if not pool:
         return None
-    saved = [it for it in pool if it.get("file", "").startswith("saved/")]
-    if saved and random.random() < prefer_saved:
-        pool = saved
-    recent = {_last_pick[session]} if session in _last_pick else set()
-    pool = [it for it in pool if it["id"] not in recent] or pool
-    # 用得多的是她喜欢的，更容易被挑中
-    weights = [1 + min(10, int((_notes.get(it["id"]) or {}).get("uses", 0))) for it in pool]
-    chosen = random.choices(pool, weights=weights)[0]
-    if session:
-        _last_pick[session] = chosen["id"]
-    return chosen
+    return _weighted(pool, session, prefer_saved)
 
 
 async def send(bot: Bot, event: MessageEvent, item: dict) -> bool:

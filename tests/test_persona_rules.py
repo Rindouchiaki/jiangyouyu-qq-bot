@@ -19,6 +19,7 @@ from persona_rules import (  # noqa: E402
     is_conversation_ending,
     is_offensive,
     is_game_command,
+    is_question,
     judge_atmosphere,
     judge_annoyance,
     judge_mood,
@@ -247,10 +248,12 @@ def main() -> int:
     assert later["aff"] < 0, later  # 记仇消得慢
     print("PASS  update_bond：难涨易掉，冷落会淡，骂人会掉，高好感要一直维持")
 
-    assert DERE_CHANCE["陌生"] == 0 and DERE_CHANCE["亲近"] <= 0.25 and DERE_CHANCE["普通"] > 0
+    assert DERE_CHANCE["陌生"] == 0 and DERE_CHANCE["亲近"] <= 0.5 and DERE_CHANCE["普通"] > 0
+    assert DERE_CHANCE["亲近"] > DERE_CHANCE["普通"] > DERE_CHANCE["陌生"]  # 越亲近越容易露真心
     calm = compose_messages([], "小红", "在吗", attitude="亲近")[0]["content"]
     soft = compose_messages([], "小红", "在吗", attitude="亲近", dere=True)[0]["content"]
-    assert "保持傲" in calm and "说漏嘴" not in calm and "说漏嘴" in soft
+    assert "说漏嘴" not in calm and "说漏嘴" in soft
+    assert "保持傲" not in calm  # 亲近档不再强制每句都端着傲
     print("PASS  底子是傲：只有抽中时才露一点真心")
 
     probs = [name_call_prob(a, 0.5) for a in ("讨厌", "陌生", "普通", "有好感", "亲近")]
@@ -260,8 +263,8 @@ def main() -> int:
 
     base = compose_messages([], "小红", "在吗", attitude="讨厌", chime=True)[0]["content"]
     assert "绝不辱骂" in base and "不人身攻击" in base and "毒舌" in base  # 可以毒舌，不能辱骂攻击
-    assert is_offensive("你个傻逼") and is_offensive("滚吧") and not is_offensive("才不理你呢") and not is_offensive("")
-    print("PASS  可以毒舌但不辱骂：人设写明底线，带脏话的回复不发")
+    assert is_offensive("你个傻逼") and is_offensive("滚蛋") and not is_offensive("滚去睡") and not is_offensive("才不理你呢") and not is_offensive("")
+    print("PASS  可以毒舌但不辱骂：人设写明底线，带脏话的回复重说；日常的「滚去睡」不算骂人")
 
     assert attitude(0, 0) == "陌生" and attitude(0, 20) == "普通" and attitude(30, 20) == "有好感"
     assert attitude(60, 40) == "亲近" and attitude(60, 10) == "有好感" and attitude(-40, 50) == "讨厌"
@@ -299,6 +302,30 @@ def main() -> int:
     assert "路数" not in compose_messages([], "小红", "帮我查下", flavor="吐槽一句", help_mode=True)[0]["content"]
     assert len({pick_flavor() for _ in range(200)}) == len(REPLY_FLAVORS)
     print("PASS  群风格走 user 消息；每句随机一个路数，求助时不用")
+
+    assert is_question("还有啥游戏能绑定uid") and is_question("这是啥？")
+    assert not is_question("你咋回复这么快") and is_question("在吗")
+    q = compose_messages(
+        [("野心爱", "你咋回复这么快")], "夜雨轩烛", "还有啥游戏能绑定uid"
+    )
+    assert "先一句话直接回答" in q[0]["content"], q[0]["content"]
+    assert "历史里更早的发言已经聊过了" in q[0]["content"]
+    h = compose_messages([], "小明", "帮我查下这个", help_mode=True)[0]["content"]
+    assert "正经求助" in h and "先一句话直接回答" not in h
+    print("PASS  问句先答最后一条，不和求助提示重复")
+
+    msgs = compose_messages([("小明", "今天又加班")], "小明", "原神抽卡歪了，破防",
+                            topics=["游戏", "工作"], slang="破防=心理防线被击穿")
+    system = msgs[0]["content"]
+    assert "他最近常聊：游戏、工作" in system, system
+    assert "破防=心理防线被击穿" in system
+    assert "别解释它们" in system
+    print("PASS  好感高才拼话题，热梗命中才给解释")
+
+    msgs = compose_messages([], "小明", "吃了吗", topics=None, slang="")
+    system = msgs[0]["content"]
+    assert "他最近常聊" not in system and "别解释它们" not in system
+    print("PASS  没话题没热梗时不拼，不白花 token")
 
     print(f"\n结果: {'全部通过' if failed == 0 else f'{failed} 项失败'}")
     return 0 if failed == 0 else 1
