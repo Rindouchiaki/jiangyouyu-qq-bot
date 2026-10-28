@@ -55,6 +55,7 @@ import web_search
 from persona_rules import (
     AFF_PESTER,
     SEARCH_PRELUDES,
+    SEARCH_PRELUDES_COLD,
     SLANG_EXPLAIN_PROMPT,
     SLANG_MINE_PROMPT,
     ATTITUDE_REPLY_FACTOR,
@@ -960,6 +961,9 @@ async def _sleep(sec: float) -> None:
         await asyncio.sleep(sec)
 
 
+FLUSTER_STICKER_WORDS = ("委屈", "害羞", "脸红", "哭", "可怜", "不开心")
+
+
 async def _send_sticker(bot: Bot, event: MessageEvent, key: str, hint: str, mood: str) -> dict | None:
     if time.time() - _last_sticker.get(key, 0) < STICKER_COOLDOWN:
         return None
@@ -967,6 +971,8 @@ async def _send_sticker(bot: Bot, event: MessageEvent, key: str, hint: str, mood
     item = (
         (sticker_lib.pick_for_scene(scene[1], key, STICKER_SAVED_PREFER) if scene else None)
         or (sticker_lib.pick(hint, key) if hint else None)
+        # 炸毛时先找委屈、害羞的表情（读后感里有画面和意思），找不到再按心情分类抽
+        or (sticker_lib.pick_for_scene(FLUSTER_STICKER_WORDS, key, STICKER_SAVED_PREFER) if mood == "炸毛" else None)
         or sticker_lib.pick_for_mood(mood, key, STICKER_SAVED_PREFER)
     )
     if item and await sticker_lib.send(bot, event, item):
@@ -1140,11 +1146,14 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     same_user = [t for (uid, t, ts) in _recent_user_msgs[key] if uid == user_id]
     annoyed, why = judge_annoyance(same_user, PESTER_WINDOW, PESTER_COUNT)
     if is_group and annoyed:
-        _bond_touch(user_id, name, AFF_PESTER)
+        pester = _bond_touch(user_id, name, AFF_PESTER)
+        # 熟的人追着烦：别别扭扭地岔开；不熟的：二次元式地打发掉
+        pester_att = attitude(int(pester.get("aff", 0)), int(pester.get("fam", 0)))
+        snub_line = "…不想说这个了啦" if pester_att in ("有好感", "亲近") else "哼，不想聊了"
         _snub_until[key] = now + SNUB_SECONDS
         _engaged.pop(key, None)
         messages = compose_messages(
-            past, name, text, atmosphere="烦", self_names=NICKNAMES,
+            past, name, text, atmosphere="烦", self_names=NICKNAMES, attitude=pester_att,
             mood="不耐烦", dev_name=devs.DEV_NAMES, dev_aliases=devs.DEV_ALIASES, new_msgs=new_msgs,
         )
         if not _quota_ok("被叫", key):
@@ -1155,9 +1164,9 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"persona: 收尾回复失败 {type(exc).__name__}: {exc}")
             return True
-        reply = humanize(raw, MAX_CHARS, fallback="烦了，不说了")
+        reply = humanize(raw, MAX_CHARS, fallback=snub_line)
         if is_offensive(reply):
-            reply = "烦了，不说了"
+            reply = snub_line
         await _sleep(typing_delay(reply, TYPING_SEC_PER_CHAR, TYPING_MAX_SEC))
         history.append(("我", reply))
         _save_history(force=True)
@@ -1414,7 +1423,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         # 像人一样先说一声「我查查」，查的时间就当在翻网页
         if random.random() >= SEARCH_PRELUDE_PROB:
             return
-        line = random.choice(SEARCH_PRELUDES)
+        line = random.choice(SEARCH_PRELUDES_COLD if att == "讨厌" else SEARCH_PRELUDES)
         await _sleep(reaction_delay(True))
         await bot.send(event, line)
         history.append(("我", line))
@@ -1569,7 +1578,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
 
     # 模型没自己甩表情时，偶尔顺手配一张（这一轮已经被要求发过图就不重复）
     if not sent_sticker and not wants_sticker(text):
-        chance = min(0.9, STICKER_AUTO_PROB * (2 if mood == "炸毛" else 1) * (1.5 if att == "亲近" else 1))
+        chance = min(0.9, STICKER_AUTO_PROB * (1.5 if att == "亲近" else 1))
         roll = random.random()
         logger.debug(f"persona: 配图判定 chance={chance:.2f} roll={roll:.3f} mood={mood}")
         if (
