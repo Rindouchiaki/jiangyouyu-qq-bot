@@ -109,7 +109,7 @@ def add_group_style(gid: str, texts: list[str], now: float | None = None) -> int
 
 
 def forget_user(uid: str) -> bool:
-    """本人要求忘掉：整条删掉（群日记里提到他的不动，那是群里公开说过的）。"""
+    """开发者删某人的记录（/小本本 删除）：整条删掉（群日记里提到他的不动，那是群里公开说过的）。"""
     with _lock:
         existed = _data["users"].pop(str(uid), None) is not None
         _state["dirty"] = _state["dirty"] or existed

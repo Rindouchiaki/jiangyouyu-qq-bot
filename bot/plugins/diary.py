@@ -1,9 +1,9 @@
-"""小本本指令：看好感度和日记、让她忘掉自己。
+"""小本本指令（都只给开发者）：看好感度和日记，删记录。
 
-- /小本本                群里：看本群的群日记（仅开发者）
-- /小本本 @某人 或 QQ号   看这个人的好感、熟悉度和日记（仅开发者）
-- /小本本 清空本群        清掉本群的群日记（仅开发者）
-- /忘了我                 谁都能用：删掉关于自己的全部记录（好感、熟悉度、日记）
+- /小本本                群里：看本群的群日记
+- /小本本 @某人 或 QQ号   看这个人的好感、熟悉度和日记
+- /小本本 删除 @某人 或 QQ号   删掉关于这个人的全部记录（好感、熟悉度、日记），比如本人要求时
+- /小本本 清空本群        清掉本群的群日记
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from persona_rules import attitude
 DEV_UIN = os.getenv("DEV_UIN", "").strip()
 
 notebook_cmd = on_command("小本本", priority=17, block=True)
-forget_cmd = on_command("忘了我", aliases={"忘掉我"}, priority=17, block=True)
 
 
 def _describe_user(uid: str) -> str:
@@ -43,6 +42,13 @@ async def _notebook(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         bonds.clear_group(gid)
         bonds.save(force=True)
         await notebook_cmd.finish("本群的群日记清掉了")
+    if text.startswith("删除"):
+        uid = target or text[2:].strip()
+        if not uid.isdigit():
+            await notebook_cmd.finish("用法：/小本本 删除 @某人 或 /小本本 删除 QQ号")
+        existed = bonds.forget_user(uid)
+        bonds.save(force=True)
+        await notebook_cmd.finish(f"关于 {uid} 的记录删了" if existed else f"本来就没有 {uid} 的记录")
     if not target and text.isdigit():
         target = text
     if target:
@@ -53,12 +59,3 @@ async def _notebook(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         style = "；".join(n["t"] for n in rec.get("style", [])) or "还没记什么"
         await notebook_cmd.finish(f"本群日记：{notes}\n本群风格：{style}")
     await notebook_cmd.finish("用法：/小本本 @某人 或 /小本本 QQ号；群里不带参数看群日记")
-
-
-@forget_cmd.handle()
-async def _forget(bot: Bot, event: MessageEvent) -> None:
-    if not is_our_bot(event):
-        return
-    existed = bonds.forget_user(str(event.get_user_id()))
-    bonds.save(force=True)
-    await forget_cmd.finish("哼，忘了就忘了，谁稀罕记你" if existed else "本来就没记你什么")

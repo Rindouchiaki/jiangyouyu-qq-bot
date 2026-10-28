@@ -44,7 +44,7 @@ def main() -> int:
     assert bonds.user("10001")["notes"] == [] and bonds.group("123")["notes"]
     assert bonds.clear_group("123") and bonds.group("123")["notes"] == []
     bonds.save(force=True)
-    print("PASS  只读不建记录；忘了我 / 清空本群")
+    print("PASS  只读不建记录；删除某人 / 清空本群")
 
     print("\n结果: 全部通过")
     return 0
