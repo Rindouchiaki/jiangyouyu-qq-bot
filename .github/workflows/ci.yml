@@ -27,12 +27,18 @@ jobs:
         shell: powershell
         run: |
           $bad = 0
-          foreach ($f in Get-ChildItem scripts\*.ps1, tools\*.ps1) {
+          foreach ($f in Get-ChildItem scripts\*.ps1, tools\*.ps1, tests\*.ps1) {
             $tokens = $null; $errors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tokens, [ref]$errors)
             foreach ($e in $errors) { Write-Host "::error file=$($f.Name),line=$($e.Extent.StartLineNumber)::$($e.Message)"; $bad++ }
           }
           if ($bad) { exit 1 }
+
+      - name: persona.env 同步（一键更新）
+        shell: powershell
+        run: |
+          & .\tests\test_env_sync.ps1
+          exit $LASTEXITCODE
 
       - name: 装依赖（requirements.lock）
         shell: cmd

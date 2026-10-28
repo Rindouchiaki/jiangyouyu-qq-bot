@@ -1,22 +1,87 @@
-﻿# 各脚本共用（dot-source）：仓库根目录、bot\persona.env 读写、各运行目录。
+﻿# 各脚本共用（dot-source）：仓库根目录、bot\persona.env 读写（含一键更新时按样例重写）、各运行目录。
 # 运行目录默认都在仓库里，旧机器上已经装在别处的可以在 persona.env 里用 *_DIR 指过去。
 
 $script:Root = Split-Path -Parent $PSScriptRoot
 $script:EnvFile = Join-Path $script:Root 'bot\persona.env'
+# 自己长期要保留的调参写这里：bot.py 读完 persona.env 再读它（盖过同名项），一键更新不碰
+$script:LocalEnvFile = Join-Path $script:Root 'bot\persona.local.env'
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 
-function Read-EnvFile([string]$Path = $script:EnvFile) {
+function Read-EnvFile([string]$Path = $script:EnvFile, [switch]$NoLocal) {
     $map = [ordered]@{}
-    if (-not (Test-Path -LiteralPath $Path)) { return $map }
-    foreach ($line in [IO.File]::ReadAllLines($Path, [Text.Encoding]::UTF8)) {
-        $t = $line.Trim()
-        if (-not $t -or $t.StartsWith('#') -or $t.IndexOf('=') -lt 1) { continue }
-        $k, $v = $t.Split('=', 2)
-        $v = $v.Trim()
-        if ($v.Length -ge 2 -and ($v[0] -eq '"' -or $v[0] -eq "'") -and $v[-1] -eq $v[0]) { $v = $v.Substring(1, $v.Length - 2) }
-        $map[$k.Trim()] = $v
+    $paths = @($Path)
+    # 读默认的 persona.env 时连 persona.local.env 一起读，和 bot.py 看到的一致
+    if (-not $NoLocal -and $Path -eq $script:EnvFile) { $paths += $script:LocalEnvFile }
+    foreach ($p in $paths) {
+        if (-not (Test-Path -LiteralPath $p)) { continue }
+        foreach ($line in [IO.File]::ReadAllLines($p, [Text.Encoding]::UTF8)) {
+            $t = $line.Trim()
+            if (-not $t -or $t.StartsWith('#') -or $t.IndexOf('=') -lt 1) { continue }
+            $k, $v = $t.Split('=', 2)
+            $v = $v.Trim()
+            if ($v.Length -ge 2 -and ($v[0] -eq '"' -or $v[0] -eq "'") -and $v[-1] -eq $v[0]) { $v = $v.Substring(1, $v.Length - 2) }
+            $map[$k.Trim()] = $v
+        }
     }
     return $map
+}
+
+# 一键更新按样例重写 persona.env 时原样保留的项：账号、密钥、路径这些每台机器不一样的
+$script:PersonalEnvKeys = @(
+    'BOT_UIN', 'DEV_UIN', 'DEV_NAME', 'NICKNAMES', 'LLM_BASE_URL', 'LLM_MODEL', 'LLM_API_KEY',
+    'GSUID_CORE_HOST', 'GSUID_CORE_PORT', 'GSUID_CORE_WS_TOKEN', 'BAISHOU_VAULT', 'GACHA_TEXT_FILE',
+    'ONEBOT_ACCESS_TOKEN', 'SNOWLUMA_WEBUI_PASSWORD',
+    'SNOWLUMA_DIR', 'GSCORE_DIR', 'TOOLS_DIR', 'STICKER_DIR', 'LOG_DIR', 'QQ_EXE'
+)
+
+function Format-EnvValue([string]$Value) {
+    # 带 # 或首尾空格的要加引号，不然 dotenv 会截掉
+    if ($Value -match '#' -or $Value -ne $Value.Trim()) { return '"' + $Value.Replace('"', '\"') + '"' }
+    return $Value
+}
+
+# 一键更新用：按样例重写 persona.env。账号、密钥、路径（PersonalEnvKeys）照原样带过去，调参项换成样例里的值，
+# 样例里没有的项原样放在最后。有变化才写，写之前备份成 persona.env.bak-时间。返回改了值的调参项说明。
+function Sync-EnvFromExample(
+    [string]$Path = $script:EnvFile,
+    [string]$Example = (Join-Path $script:Root 'bot\persona.env.example')
+) {
+    $cur = Read-EnvFile $Path -NoLocal
+    $out = New-Object System.Collections.Generic.List[string]
+    $changed = New-Object System.Collections.Generic.List[string]
+    $seen = @{}
+    foreach ($line in [IO.File]::ReadAllLines($Example, [Text.Encoding]::UTF8)) {
+        $m = [regex]::Match($line, '^(\s*#\s*)?([A-Z][A-Z0-9_]*)=(.*)$')
+        if (-not $m.Success) { $out.Add($line); continue }
+        $key = $m.Groups[2].Value
+        if ($m.Groups[1].Success) {
+            # 样例里注释掉的路径项（# SNOWLUMA_DIR=...）：自己设过就写成生效的
+            if ($cur.Contains($key) -and $script:PersonalEnvKeys -contains $key) {
+                $out.Add("$key=$(Format-EnvValue $cur[$key])"); $seen[$key] = $true
+            } else { $out.Add($line) }
+            continue
+        }
+        $seen[$key] = $true
+        $value = $m.Groups[3].Value
+        if ($cur.Contains($key)) {
+            if ($script:PersonalEnvKeys -contains $key) { $value = Format-EnvValue $cur[$key] }
+            elseif ($cur[$key] -cne $value) { $changed.Add("$key：$($cur[$key]) → $value") }
+        }
+        $out.Add("$key=$value")
+    }
+    $extra = @($cur.Keys | Where-Object { -not $seen.ContainsKey($_) })
+    if ($extra.Count) {
+        $out.Add('')
+        $out.Add('# ---- 样例里没有、自己加的配置（一键更新原样保留）----')
+        foreach ($k in $extra) { $out.Add("$k=$(Format-EnvValue $cur[$k])") }
+    }
+    $text = ($out -join "`r`n") + "`r`n"
+    $old = if (Test-Path -LiteralPath $Path) { [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) } else { '' }
+    if ($text -cne $old) {
+        if (Test-Path -LiteralPath $Path) { Copy-Item -LiteralPath $Path -Destination ("$Path.bak-" + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
+        [IO.File]::WriteAllText($Path, $text, $script:Utf8NoBom)
+    }
+    return ,$changed
 }
 
 # 改一项（没有就追加）；UTF-8 无 BOM + CRLF：python-dotenv 读到 BOM 会把第一项的键名读坏

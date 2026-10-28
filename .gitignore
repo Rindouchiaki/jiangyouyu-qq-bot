@@ -2,6 +2,7 @@
 bot/persona.env
 bot/*.env
 !bot/persona.env.example
+bot/persona.env.bak-*
 data/
 logs/
 _cache/

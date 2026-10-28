@@ -10,6 +10,8 @@
     5. SnowLuma：没装就下载 external.lock.json 锁定的版本并校验 sha256；生成 onebot.json（随机 token），和 persona.env 的 token 对齐
     6. 早柚核心 + external.lock.json 里列的游戏插件，装锁定的提交，再装各插件自己的依赖
     已经装了的外部组件默认不动，只提示和锁定版本不一致；-Update 才把它们换到锁定版本（「一键更新.cmd」用）。
+    -Update 时还会按样例重写 persona.env：账号、密钥、路径和自己加的项保留，调参项换成样例里的新值（先备份）；
+    自己要长期保留的调参写进 bot\persona.local.env，或者加 -KeepEnv 不动 persona.env。
     最常用的是双击仓库根目录的「一键部署.cmd」（= 本脚本 -Start）。
 
 .EXAMPLE
@@ -17,7 +19,8 @@
     .\scripts\setup.ps1 -Start               # 装好后直接启动全部
     .\scripts\setup.ps1 -From Z:\snowluma    # 沿用旧安装
     .\scripts\setup.ps1 -NoCore              # 不装早柚核心
-    .\scripts\setup.ps1 -Update              # SnowLuma / 核心 / 插件换到锁定版本（先停服务）
+    .\scripts\setup.ps1 -Update              # SnowLuma / 核心 / 插件换到锁定版本，persona.env 调参项换成样例的（先停服务）
+    .\scripts\setup.ps1 -Update -KeepEnv     # 同上，但 persona.env 不动
     .\scripts\setup.ps1 -Yes                 # 不提问，全部按默认（必填项留空的要自己去 persona.env 填）
 #>
 [CmdletBinding()]
@@ -26,6 +29,7 @@ param(
     [switch]$Start,
     [switch]$NoCore,
     [switch]$Update,
+    [switch]$KeepEnv,
     [switch]$Yes
 )
 
@@ -208,6 +212,15 @@ Step '配置 bot\persona.env'
 if (-not (Test-Path -LiteralPath $envFile)) {
     Copy-Item -LiteralPath (Join-Path $root 'bot\persona.env.example') -Destination $envFile
     Ok '从 persona.env.example 生成了 persona.env'
+} elseif ($Update -and -not $KeepEnv) {
+    $changed = Sync-EnvFromExample
+    if ($changed.Count) {
+        Ok '按样例更新了 persona.env 的调参项（账号、密钥、路径和自己加的项没动，旧文件备份成 persona.env.bak-时间）：'
+        foreach ($c in $changed) { Info $c }
+        Info '想保留自己的值就写进 bot\persona.local.env（会盖过 persona.env，一键更新不碰）'
+    } else {
+        Info 'persona.env 的调参项已经和样例一致'
+    }
 }
 # 样例里的占位号码当作没填
 $placeholders = @('', '100000001', '100000002')

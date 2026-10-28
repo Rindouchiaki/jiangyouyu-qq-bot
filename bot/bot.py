@@ -16,6 +16,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=Path(__file__).with_name("persona.env"))
+# 自己长期要保留的调参写 persona.local.env：后读、盖过 persona.env（一键更新会按样例重写 persona.env，不碰它）
+load_dotenv(dotenv_path=Path(__file__).with_name("persona.local.env"), override=True)
 # NoneBot 按当前工作目录找 .env 和 load_plugins 的目录：切到本文件所在目录，
 # 和 run-nonebot.ps1 的 Set-Location 一致，从仓库根目录直接启动也能加载插件
 os.chdir(Path(__file__).resolve().parent)

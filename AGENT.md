@@ -13,9 +13,9 @@
 
 - **语言**：注释、日志、回复文案一律中文；注释短，只写关键原因，不写过程。
 - **换行符**：只有 `README.md`、`AGENT.md`、`docs/架构与运维.md`、`.gitignore`、`LICENSE`、`tools/ocr_win.ps1` 是 LF，其余文本文件（`.py`、`.ps1`、`.json`、其它 `docs/*.md`、`persona.env.example` 等）都是 **CRLF**。改前数一下 `\r` 确认，改后保持原样；`scripts/*.ps1` 和 `tools/ocr_win.ps1`、`tools/ocr_stickers_2x.ps1` 带 UTF-8 BOM，也要保留。
-- **配置**：全部走环境变量，`bot/bot.py` 先 `load_dotenv(bot/persona.env)` 再导入插件，所以插件在模块级 `os.getenv` 就能读到。新增配置项同步写进 `persona.env.example`，代码里的默认值要和样例一致。
+- **配置**：全部走环境变量，`bot/bot.py` 先 `load_dotenv(bot/persona.env)`、再读 `bot/persona.local.env`（盖过同名项）后导入插件，所以插件在模块级 `os.getenv` 就能读到。新增配置项同步写进 `persona.env.example`，代码里的默认值要和样例一致。一键更新（`setup.ps1 -Update`）会按样例重写 persona.env：`common.ps1` 的 `PersonalEnvKeys`（账号、密钥、路径）和样例里没有的项保留，其余换成样例值；新增「每台机器不一样」的配置项要加进 `PersonalEnvKeys`，否则一键更新会把它冲掉。
 - **目录**：仓库就是运行目录，`.venv`、`bot/persona.env`、`bot/data`、`logs`、`SnowLuma`、`gsuid_core` 都在仓库里（后几个已 gitignore）。脚本统一 dot-source `scripts/common.ps1` 取路径，装在别处的用 persona.env 的 `SNOWLUMA_DIR` / `GSCORE_DIR` / `TOOLS_DIR` / `STICKER_DIR` / `LOG_DIR` 指过去；代码里的默认路径也按仓库算，不要再写死盘符。
-- **部署**：`scripts/setup.ps1` 要能重复跑（已装的跳过、已有的配置不覆盖），新增的安装步骤也照这个写；改了部署流程同步更新 `docs/部署指南.md`。
+- **部署**：`scripts/setup.ps1` 要能重复跑（已装的跳过、已有的配置不覆盖；只有 `-Update` 按上面的规则重写 persona.env），新增的安装步骤也照这个写；改了部署流程同步更新 `docs/部署指南.md`。
 - **依赖**：新增第三方包写进 `requirements.txt`（写范围），再跑 `python tools/update_deps.py` 重新生成 `requirements.lock`；外部组件的版本只改 `external.lock.json`（平时由自动更新 PR 改）。
 - **游戏功能**：游戏查询都交给早柚核心的插件（列表在 `external.lock.json`，加新游戏照 `docs/早柚核心接入.md` 第六节），本仓库只管连接、登录拦截、人设避让和全员自动签到（`gscore_plugins/JiangyouyuAuto`，一键部署拷进核心），不再自己写游戏接口。
 - **权限判断**：开发者专用指令一律写成 `if not DEV_UIN or str(event.get_user_id()) != DEV_UIN: return`，未配置时拒绝所有人，不要写成 `if DEV_UIN and ...`。
@@ -28,6 +28,7 @@
 python tests\test_persona_rules.py         # 纯规则，不连 QQ、不调模型
 python tests\test_gscore_guard.py          # 二维码不进群的判断
 python tests\test_bonds.py                 # 小本本（好感度 / 日记）读写，临时目录里跑
+powershell -File tests\test_env_sync.ps1  # 一键更新按样例重写 persona.env，临时目录里跑
 python tests\test_migrate_journal_tags.py  # 旧日记迁移脚本（临时目录里跑）
 python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（--core 连已启动的整套）
 ```
@@ -76,6 +77,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #38 | 登录过的账号要每天自动领签到奖励（米哈游系插件只签自己开过自动签到的人，鸣潮、终末地默认不签） | 本仓库的核心插件 `gscore_plugins/JiangyouyuAuto`（一键部署拷进核心）：启动前打开鸣潮（新装 RoverSign）、终末地的 `SigninMaster` 和各插件定时签到，关私聊签到报告（含插件导入时缓存的开关）；米哈游系每小时给有 Cookie 的 UID 补自动签到订阅；登录态自动续：米哈游系每天签到前用 Stoken 换新 Cookie，终末地 cred 失效时用扫码存的登录 token 重新换（鸣潮的短信 token 没有续期接口）。Linux 上起整套核心实测配置写入、订阅补齐、不重复 |
 | #39 | 抽卡记录要在群里说一句就能更新 | 米哈游系和终末地本来就支持 `前缀刷新抽卡记录`（终末地文档原写成导入，已改）；鸣潮免链接的 `ww刷新抽卡记录` 要先 `ww抽卡登录`，登录页有滑块且由本机核心提供，群友手机打不开，文档写明原因和看过的替代方案（隧道、内网穿透、IPv6、云服务器都因花钱、国内不好用或要开到外网暂不做），群友仍用链接导入，苹果用户走作者的网页 |
 | #40 | 要傲娇人设、群友好感度和小本本、群里少说话 | 人设改傲娇，按态度抽签偶尔露真心，每句随机回话路数；`bonds.py` 按 QQ 号存好感 / 熟悉度 / 日记（群聊私聊共用，私聊日记不进群），好感难涨易掉；模型隔一阵摘个人日记和群日记（关系 + 本群风格），每条 ≤20 字；被 @ 必回不受额度，喊名字按态度 10%~70%，没被叫的回话同群至少隔 3 分钟、每小时最多 6 条、插话 2%；只发表情要对得上场景（偶尔无厘头），表情小本本记用途和次数；可以毒舌但不辱骂，带脏话的回复不发；看到新表情会收藏进 `stickers/saved`；`/小本本`、`/忘了我`、`/表情 收藏` |
+| #41 | 调了默认值以后旧 `persona.env` 会盖过去，每次要手动改 | 一键更新（`setup.ps1 -Update`）按样例重写 persona.env：`PersonalEnvKeys`（账号、密钥、路径）和样例里没有的项保留，其余换成样例值，先备份、列出改动，`-KeepEnv` 跳过；自己要保留的调参写 `persona.local.env`（bot.py 后读、盖过同名项）；`tests/test_env_sync.ps1` 进 CI |
 
 **自动记忆仍然开着**：`PRIVATE_MIRROR`、`GROUP_MIRROR` 默认 1；私聊每条都落盘，群聊只记被叫/接续的对话；问到「记得/上次」照常带本会话最近 5 条。改的只是按会话隔离和手动指令的权限。
 
