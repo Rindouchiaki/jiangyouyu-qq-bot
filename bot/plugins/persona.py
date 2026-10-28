@@ -1524,7 +1524,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
 
     logger.info(
         f"persona -> {reply}{' +表情' if sent_sticker else ''}（{mode}，{len(batch)} 条一起回，氛围 {label}，"
-        f"情绪 {mood}·{mood_reason}，对象 {name}，态度 {att}{'·露真心' if dere else ''}{'·语气词' if cute else ''}"
+        f"情绪 {mood}·{mood_reason}，对象 {name}，态度 {att}{'·害羞' if shy_line else ''}{'·冒傲娇' if dere and not shy_line else ''}{'·语气词' if cute else ''}"
         f"{'，联网' if can_search else ''}{'，兴趣 ' + '/'.join(interest) if interest else ''}）"
     )
 
