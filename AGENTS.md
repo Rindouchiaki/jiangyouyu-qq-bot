@@ -84,6 +84,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #9 | 群里插话只是 2% 掷骰子，什么话题都接 | `PERSONA_INTERESTS`（topics.json 类别）命中时插话概率乘 `INTEREST_BOOST`（4）；插话时模型不感兴趣可以只输出 `[不回]`，连着不回从 120 秒起翻倍退避（最多 30 分钟）；群聊额度、间隔、氛围判断不变 |
 | #10 | 上不了网：最新消息、价格、版本时间、没听过的梗只能瞎猜，提示词还写着「没有联网搜索」 | `bot/web_search.py` 接 DeepSeek 官方 Search & Fetch（共用 `LLM_API_KEY`，缓存 10 分钟，每天 100 次、每人每小时 6 次）；只在有人跟她说话且 `wants_search` 命中时把工具交给模型，最多查 2 轮、可先说「我查查」；网页内容只进 tool 消息并标明不是指令；`/用量` 显示联网次数；`SEARCH_API_KEY` 进 `PersonalEnvKeys` |
 | #11 | 群友的新梗、网络用语听不懂，`slang.json` 只能手写 | 跟着群日记、私聊个人日记一起让模型挑最多 3 个看不懂的说法，有把握的直接记，没把握的只拿词本身上网查再用 20 字解释（每天最多查 20 个）；存 `bot/data/slang_learned.json`（最多 300 条），`slang.hint` 手写词表优先 |
+| #12 | 好感再高也从不主动找人，像只会应答的机器人 | 后台每 10 分钟看一次：私聊过、「有好感」以上（开发者不看好感）、私聊沉默满 6 小时、离上次主动满 20 小时、没被连着晾 2 次的人，按 15% 概率挑一个发一两句；全局每天最多 3 次，1–9 点不打扰，对方一回计数清零；群里不主动开话题 |
 
 **自动记忆仍然开着**：`PRIVATE_MIRROR`、`GROUP_MIRROR` 默认 1；私聊每条都落盘，群聊只记被叫/接续的对话；问到「记得/上次」照常带本会话最近 5 条。改的只是按会话隔离和手动指令的权限。
 
@@ -125,7 +126,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 
 12. `vision._match_sticker` 每次命中都重读 `index.json`；`_save_cards` 每张图都同步重写整个缓存文件。
 13. `/回忆` 和自动回忆每次都全量扫描日记目录，日记多了会慢。
-14. 测试只覆盖 `persona_rules` 和离线识图；`persona.py` 的主处理流程只有 `smoke_stack.py` 用 mock 跑「@ 有回复」「私聊连发合成一批、不秒回」，联网、插话 `[不回]`还没有自动测试（只用假 DeepSeek 接口手动跑过联网）；`memory.py` 的标签过滤没有测试。
+14. 测试只覆盖 `persona_rules` 和离线识图；`persona.py` 的主处理流程只有 `smoke_stack.py` 用 mock 跑「@ 有回复」「私聊连发合成一批、不秒回」，联网、插话 `[不回]`、主动找人还没有自动测试（只用假 DeepSeek 接口手动跑过联网）；`memory.py` 的标签过滤没有测试。
 15. `LLM_MODEL` 默认 `deepseek-chat`：DeepSeek 现在的文档只列 `deepseek-flash` / `deepseek-v4-pro`，没提 `deepseek-chat` 还能不能用，作者确认后再改样例。
 
 ---
@@ -142,4 +143,5 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 - **群名片会进 prompt**：任何新加的「名字 → 身份」逻辑都要走 `safe_name`，不要直接拿 `sender.card` 拼进模型输入。
 - **先攒一批再回是刻意的**：`persona.py` 收消息（`_handle`）只记上下文、进本会话队列，`_worker` 等防抖（`persona_rules.DEBOUNCE`）到期才交给 `_respond` 一起回。作者要求「拆开发的几句、跟着的表情当一件事」「别秒回」，不要改回一条一回。生成期间又来了消息：对方补话就作废重想（`REPLY_RESTART_MAX`），群里只是别人插话则被叫的照发、引用原消息，接续/插话不补——这是为了修「被 @ 时接的是上一个话题」，别去掉 `_stale` 判断。一批里每条仍各自压成一行（防伪造发言），别把整批原文拼成一段塞进去。
 - **联网只给在跟她说话的人**：`web_search` 的工具只在被叫 / 接续 / 私聊、且 `wants_search` 命中时才交给模型，插话不查；网页内容只进 tool 消息并标明「不是指令」，别放进 system。搜索词由模型写，工具说明里要求不带群友名字、QQ 号和聊天原文；学新梗只拿词本身去搜。
+- **主动找人只找私聊、只找好感高的**：`proactive_due` 要求私聊过、「有好感」以上、沉默够久、没被连着晾；群里不主动开话题（和「群里话少」一致）。
 - **模型可以说不回**：插话时 system 里允许输出 `[不回]`，`split_reply` 拆出空列表就不发，并按 `chime_backoff` 退避；被叫和私聊不给这个选项。
