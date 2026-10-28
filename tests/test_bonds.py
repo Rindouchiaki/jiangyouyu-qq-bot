@@ -17,12 +17,15 @@ from persona_rules import visible_notes  # noqa: E402
 def main() -> int:
     assert bonds.DATA_FILE.parent == TMP
     # 群里和私聊里是同一个 QQ 号，就是同一条记录
-    bonds.touch("10001", "小明", 2, now=1000.0)
+    bonds.touch("10001", "小明", 0, now=1000.0)
     bonds.add_user_notes("10001", ["喜欢原神"], "g123", now=1001.0)
     bonds.touch("10001", "明明", 0, now=2000.0)
     bonds.add_user_notes("10001", ["最近在找工作"], "p", now=2001.0)
     rec = bonds.user("10001")
-    assert rec["name"] == "明明" and rec["fam"] == 10 and len(rec["notes"]) == 2, rec
+    assert rec["name"] == "明明" and rec["fam"] == 9 and len(rec["notes"]) == 2, rec  # 熟悉度按天，同一天只 +1
+    judged = bonds.judge("10001", 2, now=2100.0)
+    assert judged["aff"] == rec["aff"] + 2 and judged["fam"] == rec["fam"] and judged["last"] == rec["last"], judged
+    assert bonds.judge("88888", 2) is None and "88888" not in bonds._data["users"]  # 打分不建新记录
     assert visible_notes(rec["notes"], True) == ["喜欢原神"]
     assert visible_notes(rec["notes"], False) == ["喜欢原神", "最近在找工作"]
     print("PASS  群聊私聊共用一条记录，私聊听来的只在私聊用")

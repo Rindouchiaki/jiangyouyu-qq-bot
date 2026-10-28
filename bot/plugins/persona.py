@@ -55,6 +55,8 @@ import vision
 import web_search
 from persona_rules import (
     AFF_PESTER,
+    PESTER_AT_COUNT,
+    PESTER_AT_WINDOW,
     SEARCH_PRELUDES,
     SEARCH_PRELUDES_COLD,
     SLANG_EXPLAIN_PROMPT,
@@ -64,15 +66,14 @@ from persona_rules import (
     DERE_CHANCE,
     DEFAULT_GAME_PREFIXES,
     DIARY_GROUP_PROMPT,
-    DIARY_USER_PROMPT,
     SHY_COAXED,
     SHY_HIDE_SEC,
     SHY_WINDOW,
-    affinity_delta,
     attitude,
     chime_backoff,
     compose_messages,
     debounce_deadline,
+    diary_user_prompt,
     follow_decision,
     format_search_results,
     in_quiet_hours,
@@ -90,7 +91,7 @@ from persona_rules import (
     looks_self_disclosure,
     name_call_prob,
     parse_group_diary,
-    parse_notes,
+    parse_user_diary,
     parse_slang_candidates,
     parse_slang_meaning,
     results_mention,
@@ -490,6 +491,8 @@ _last_auto_sticker: dict[str, float] = defaultdict(float)
 _last_sticker_only: dict[str, float] = defaultdict(float)
 _recent_user_msgs: dict[str, deque] = defaultdict(lambda: deque(maxlen=12))
 _snub_until: dict[str, float] = {}
+# 嫌烦表现出不高兴以后，这个人又在群里 @ 了几次：键 (会话 key, QQ 号)，值 [不高兴的时间, 次数]
+_upset: dict[tuple[str, str], list] = {}
 # 害羞跑开：键是群会话 key（整群躲）或 "u" + QQ 号（只躲这个人，群里私聊都算）
 _hide_until: dict[str, float] = {}
 # 10 分钟内说害羞话题的时间：同上两种键，群里是大家共用一个池子
@@ -717,21 +720,46 @@ def _bond_touch(user_id: str, name: str, delta: int) -> dict:
         return bonds.user(user_id)
 
 
+def _count_pester_at(key: str, batch: list[dict], now: float) -> None:
+    """她表现出不高兴以后，同一个人 10 分钟内又 @ 她满 3 次才扣好感；重想时同一条不重复算。"""
+    for it in batch:
+        mark = (key, it["uid"])
+        upset = _upset.get(mark)
+        if not it["at"] or it.get("pester_seen") or not upset:
+            continue
+        it["pester_seen"] = True
+        if now - upset[0] > PESTER_AT_WINDOW:
+            _upset.pop(mark, None)
+            continue
+        upset[1] += 1
+        if upset[1] >= PESTER_AT_COUNT:
+            _upset.pop(mark, None)
+            _bond_touch(it["uid"], it["name"], AFF_PESTER)
+            logger.info(f"persona: {it['name']} 她不高兴了还追着 @ {PESTER_AT_COUNT} 次，好感 {AFF_PESTER}")
+
+
 async def _diary_user(user_id: str, name: str, lines: list[tuple[str, str]], src: str) -> None:
-    """从和这个人最近的几句里摘一两条以后用得上的事。"""
+    """从和这个人最近的几句里摘一两条以后用得上的事，顺便看整段给好感打分（看上下文，不按单句关键词）。"""
     talk = [f"{'我' if who == '我' else '对方'}：{text}" for who, text in lines if who in ("我", name)][-12:]
     if MOCK or not API_KEY or not any(t.startswith("对方") for t in talk):
         return
     try:
+        pre = bonds.user(user_id)
+        att = attitude(int(pre.get("aff", 0)), int(pre.get("fam", 0)))
         raw = await ask_llm(
-            [{"role": "system", "content": DIARY_USER_PROMPT}, {"role": "user", "content": "\n".join(talk)}],
-            60, temperature=0.2,
+            [{"role": "system", "content": diary_user_prompt(att)}, {"role": "user", "content": "\n".join(talk)}],
+            80, temperature=0.2,
         )
-        notes = parse_notes(raw, 2, bonds.NOTE_MAX_CHARS)
+        score, notes = parse_user_diary(raw, 2, bonds.NOTE_MAX_CHARS)
         if notes:
             bonds.add_user_notes(user_id, notes, src)
-            bonds.save(force=True)
             logger.info(f"persona: 小本本记下 {name}：{'；'.join(notes)}")
+        if score:
+            after = bonds.judge(user_id, score)
+            if after:
+                logger.info(f"persona: {name} 这段聊天好感 {score:+d}，{pre.get('aff')} → {after.get('aff')}")
+        if notes or score:
+            bonds.save(force=True)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"persona: 摘个人日记失败 {type(exc).__name__}: {exc}")
 
@@ -1129,6 +1157,8 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         # 群里刷屏时只看最后几条，免得把一屏不相干的话都塞进去
         new_msgs = new_msgs[-8:]
 
+    if is_group:
+        _count_pester_at(key, batch, now)
     if is_group and now < _snub_until.get(key, 0):
         logger.info("persona: 正在冷处理这段时间，不接话")
         return True
@@ -1151,7 +1181,9 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     same_user = [t for (uid, t, ts) in _recent_user_msgs[key] if uid == user_id]
     annoyed, why = judge_annoyance(same_user, PESTER_WINDOW, PESTER_COUNT)
     if is_group and annoyed:
-        pester = _bond_touch(user_id, name, AFF_PESTER)
+        # 这次只表现出不高兴、不扣好感；之后他还追着 @ 才扣（见 _count_pester_at）
+        pester = _bond_touch(user_id, name, 0)
+        _upset[(key, user_id)] = [now, 0]
         # 熟的人追着烦：别别扭扭地岔开；不熟的：二次元式地打发掉
         pester_att = attitude(int(pester.get("aff", 0)), int(pester.get("fam", 0)))
         snub_line = "…不想说这个了啦" if pester_att in ("有好感", "亲近") else "哼，不想聊了"
@@ -1226,25 +1258,23 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         addressed = True
         mode = "私聊"
 
-    # 害羞话题：低好感的人说只会让她不高兴（追着说第三次起掉好感），追太紧就跑开躲一阵
+    # 害羞话题：低好感的人说只会让她不高兴，追太紧就跑开躲一阵（只管怎么反应，好感由摘日记时看整段打分）
     shy_line = SHY_COAXED if coaxed else ""
-    shy_delta = None
     kind = None if coaxed or not addressed else shy_topic(text, NICKNAMES, focus["at"] or focus["called"])
     if kind:
         pre = bonds.user(user_id)
         pre_att = attitude(int(pre.get("aff", 0)), int(pre.get("fam", 0)))
         n_user = _shy_hit(f"u{user_id}", now)
         n_group = _shy_hit(key, now) if is_group else 0
-        shy_line, shy_delta, flee = shy_reaction(pre_att, n_user, n_group)
+        shy_line, flee = shy_reaction(pre_att, n_user, n_group)
         if flee:
             hide_key = f"u{user_id}" if flee == "user" else key
             _hide_until[hide_key] = now + SHY_HIDE_SEC
             _shy_log.pop(hide_key, None)
         logger.info(f"persona: 害羞话题（{kind}），{name} 第 {n_user} 次、本群 {n_group} 次{'，跑开躲起来' if flee else ''}")
 
-    # 跟她说话才算互动：好感、熟悉度按 QQ 号记，群里私聊是同一份
-    delta = shy_delta if shy_delta is not None else affinity_delta(text)
-    bond = _bond_touch(user_id, name, delta) if addressed else bonds.user(user_id)
+    # 跟她说话才算来往（熟悉度、冷落计时）；好感不按单句算，摘日记时看整段打分。按 QQ 号记，群里私聊是同一份
+    bond = _bond_touch(user_id, name, 0) if addressed else bonds.user(user_id)
     if not is_group:
         bonds.mark_private(user_id, now)
     att = attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
