@@ -1,4 +1,4 @@
-# 酱油鱼 · 一个住在 QQ 群里的二次元傲娇美少女
+# 酱油鱼 · 一个住在 QQ 群里的赛博鱼
 
 「酱油鱼」是一个跑在**本机 Windows** 上的 QQ 机器人人格：底子是 [SnowLuma](https://github.com/snowluma/snowluma)
 （把 QQ NT 转成 OneBot v11），脑袋是 [NoneBot2](https://nonebot.dev/) + 大模型，记忆放在白守（BaiShou）的
