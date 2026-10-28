@@ -45,6 +45,7 @@ jobs:
         run: |
           .venv\Scripts\python tests\test_persona_rules.py || exit /b 1
           .venv\Scripts\python tests\test_gscore_guard.py || exit /b 1
+          .venv\Scripts\python tests\test_bonds.py || exit /b 1
           .venv\Scripts\python tests\test_migrate_journal_tags.py
 
       - name: NoneBot 冒烟

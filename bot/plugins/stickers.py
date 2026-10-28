@@ -6,6 +6,8 @@
     /表情            随机一张
     /表情 搞笑       按分类或标签/文字匹配
     /表情 分类       看有哪些分类
+    /表情 收藏       看她最常用的几张表情和用途备注
+    /表情 备注 <id前几位> <用途>   手动给某张表情写用途（仅开发者）
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from nonebot.log import logger
 from nonebot.params import CommandArg
 
 BOT_UIN = os.getenv("BOT_UIN", "").strip()
+DEV_UIN = os.getenv("DEV_UIN", "").strip()
 COOLDOWN = float(os.getenv("STICKER_COOLDOWN", "3"))
 
 _last_used: dict[str, float] = {}
@@ -42,6 +45,23 @@ async def _handle(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         return
 
     keyword = arg.extract_plain_text().strip()
+
+    if keyword in ("收藏", "常用", "喜欢"):
+        favs = sticker_lib.favorites()
+        if not favs:
+            await stickers_cmd.finish("还没有常用的表情")
+        lines = [f"{it['id'][:6]} 用过{n.get('uses', 0)}次：{n.get('note') or it.get('category', '')}" for it, n in favs]
+        await stickers_cmd.finish("\n".join(lines))
+
+    if keyword.startswith("备注"):
+        if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
+            return
+        parts = keyword[2:].split(maxsplit=1)
+        item = sticker_lib.set_note(parts[0], parts[1]) if len(parts) == 2 else None
+        await stickers_cmd.finish(
+            f"记下了：{item['id'][:6]} → {parts[1][:sticker_lib.NOTE_MAX_CHARS]}" if item
+            else "用法：/表情 备注 <id前几位> <用途>（id 用 /表情 收藏 看，前几位要能唯一对上）"
+        )
 
     if keyword in ("分类", "列表", "tags"):
         cats = sticker_lib.categories()

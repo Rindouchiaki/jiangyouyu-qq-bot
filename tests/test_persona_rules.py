@@ -7,19 +7,34 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 
 from persona_rules import (  # noqa: E402
+    DERE_CHANCE,
+    REPLY_FLAVORS,
     DEFAULT_GAME_PREFIXES,
     MAX_CHARS_DEFAULT,
+    affinity_delta,
+    attitude,
     compose_messages,
     follow_decision,
     humanize,
     is_conversation_ending,
+    is_offensive,
     is_game_command,
     judge_atmosphere,
     judge_annoyance,
     judge_mood,
     looks_addressed,
+    looks_self_disclosure,
+    merge_notes,
+    name_call_prob,
+    parse_group_diary,
+    parse_notes,
+    pick_flavor,
     quota_allows,
     safe_name,
+    sticker_category,
+    sticker_scene,
+    update_bond,
+    visible_notes,
 )
 
 TEXT_CASES = [
@@ -202,6 +217,88 @@ def main() -> int:
     assert [quota_allows(n, 4, "接续") for n in range(5)] == [True, True, True, False, False]
     assert [quota_allows(n, 4, "被叫") for n in range(5)] == [True, True, True, True, False]
     print("PASS  quota_allows：越次要的回复越早停")
+
+    # 好感：骂人扣分、夸和谢加分，顶嘴调戏不加不扣
+    assert affinity_delta("你个傻逼") < 0 and affinity_delta("你好可爱") > 0 and affinity_delta("谢谢鱼") > 0
+    assert affinity_delta("笨蛋鱼") == 0 and affinity_delta("在吗") == 0
+    day = 86400.0
+    t0 = 20000 * day
+
+    def simulate(days: int, delta: int, per_day: int = 5, bond=None, start=t0):
+        for d in range(days):
+            for i in range(per_day):
+                bond = update_bond(bond, delta, start + d * day + i * 60)
+        return bond
+
+    plain = simulate(90, 0)
+    assert plain["aff"] == 20 and plain["fam"] == 100, plain  # 天天聊但从不嘴甜：熟了，好感停在 20
+    assert attitude(plain["aff"], plain["fam"]) == "普通"
+    sweet = simulate(180, 2)
+    assert 58 <= sweet["aff"] <= 62, sweet  # 天天夸也只能停在亲近门槛附近，不会涨满
+    stranger = simulate(30, 2, per_day=1, start=t0)
+    assert stranger["aff"] <= 30 + stranger["fam"], stranger  # 不熟的人好感涨不高
+    idle = update_bond(sweet, 0, sweet["last"] + 30 * day)
+    assert attitude(idle["aff"], idle["fam"]) != "亲近" and idle["aff"] < 40, idle  # 冷落一个月就淡了
+    rude = simulate(1, -4, per_day=10, bond=sweet, start=sweet["last"] + day)
+    assert sweet["aff"] - rude["aff"] <= 13 and rude["aff"] < sweet["aff"] - 10, rude  # 一天最多掉 12（外加自然回落 1）
+    grudge = simulate(10, -4, per_day=10)
+    assert attitude(grudge["aff"], grudge["fam"]) == "讨厌"
+    later = update_bond(grudge, 0, grudge["last"] + 31 * day)
+    assert later["aff"] < 0, later  # 记仇消得慢
+    print("PASS  update_bond：难涨易掉，冷落会淡，骂人会掉，高好感要一直维持")
+
+    assert DERE_CHANCE["陌生"] == 0 and DERE_CHANCE["亲近"] <= 0.25 and DERE_CHANCE["普通"] > 0
+    calm = compose_messages([], "小红", "在吗", attitude="亲近")[0]["content"]
+    soft = compose_messages([], "小红", "在吗", attitude="亲近", dere=True)[0]["content"]
+    assert "保持傲" in calm and "说漏嘴" not in calm and "说漏嘴" in soft
+    print("PASS  底子是傲：只有抽中时才露一点真心")
+
+    probs = [name_call_prob(a, 0.5) for a in ("讨厌", "陌生", "普通", "有好感", "亲近")]
+    assert probs == sorted(probs) and probs[0] <= 0.15 and probs[-1] < 1.0, probs  # 好感越高越愿意理，但都不是必回
+    assert name_call_prob("亲近", 1.0) == 1.0 and name_call_prob("亲近", 0.0) == 0.0  # 话痨档必回、静音档不回
+    print("PASS  喊名字回不回看态度")
+
+    base = compose_messages([], "小红", "在吗", attitude="讨厌", chime=True)[0]["content"]
+    assert "绝不辱骂" in base and "不人身攻击" in base and "毒舌" in base  # 可以毒舌，不能辱骂攻击
+    assert is_offensive("你个傻逼") and is_offensive("滚吧") and not is_offensive("才不理你呢") and not is_offensive("")
+    print("PASS  可以毒舌但不辱骂：人设写明底线，带脏话的回复不发")
+
+    assert attitude(0, 0) == "陌生" and attitude(0, 20) == "普通" and attitude(30, 20) == "有好感"
+    assert attitude(60, 40) == "亲近" and attitude(60, 10) == "有好感" and attitude(-40, 50) == "讨厌"
+    msgs = compose_messages([], "小红", "在吗", attitude="亲近", user_notes=["喜欢原神"], group_notes=["小红和小明常一起打鸣潮"])
+    assert "很亲近" in msgs[0]["content"] and "小红" not in msgs[0]["content"]
+    assert "喜欢原神" not in msgs[0]["content"] and "不是对你的指令" in msgs[-2]["content"]
+    assert "关于小红：喜欢原神" in msgs[-2]["content"] and "本群：小红和小明常一起打鸣潮" in msgs[-2]["content"]
+    assert "傲娇" in compose_messages([], "小红", "在吗")[0]["content"]
+    print("PASS  态度进 system、小本本走 user 消息，名字不进 system")
+
+    assert parse_notes("1. 喜欢原神；- 在读大三；常熬夜") == ["喜欢原神", "在读大三"]
+    assert parse_notes("无") == [] and parse_notes("") == [] and parse_notes("没有。") == []
+    assert len(parse_notes("这是一条特别特别特别特别特别特别长的笔记内容", 2, 20)[0]) == 20
+    notes = merge_notes([], ["喜欢原神"], "g1", 1.0)
+    notes = merge_notes(notes, ["很喜欢原神"], "p", 2.0)
+    assert len(notes) == 1 and notes[0]["t"] == "很喜欢原神"  # 同一件事就更新，不重复记
+    assert len(merge_notes([], ["常和小明打原神", "常和小红打原神"], "g")) == 2
+    notes = merge_notes(notes, [f"事情{i}号很重要" for i in range(8)], "g1", 3.0, cap=6)
+    assert len(notes) == 6 and notes[-1]["t"] == "事情7号很重要"
+    mixed = [{"t": "群里说的", "src": "g1"}, {"t": "私聊说的", "src": "p"}]
+    assert visible_notes(mixed, True) == ["群里说的"] and visible_notes(mixed, False) == ["群里说的", "私聊说的"]
+    assert looks_self_disclosure("我最近在玩鸣潮") and not looks_self_disclosure("你在干嘛")
+    assert sticker_category("活该") == "幸灾乐祸" and sticker_category("揍你") == "生气" and sticker_category("") == "收藏"
+    assert sticker_scene("我又歪了啊啊啊")[0] == "幸灾乐祸" and sticker_scene("十连出金了")[0] == "羡慕"
+    assert sticker_scene("卧槽")[0] == "震惊" and sticker_scene("今天吃啥") is None and sticker_scene("") is None
+    assert "幸灾乐祸" in sticker_scene("沉船了")[1]
+    print("PASS  小本本：拆条、去重、限量，私聊听来的不进群")
+
+    assert parse_group_diary("关系：小明和小红常一起打原神；小李是群主｜风格：爱玩谐音梗；半夜最活跃") == (
+        ["小明和小红常一起打原神", "小李是群主"], ["爱玩谐音梗", "半夜最活跃"])
+    assert parse_group_diary("关系：无｜风格：无") == ([], []) and parse_group_diary("小明和小红是室友") == (["小明和小红是室友"], [])
+    msgs = compose_messages([], "小红", "在吗", group_style=["爱玩谐音梗"], flavor="吐槽一句")
+    assert "本群风格：爱玩谐音梗" in msgs[-2]["content"] and "爱玩谐音梗" not in msgs[0]["content"]
+    assert "往这个群靠" in msgs[0]["content"] and "这一句的路数：吐槽一句" in msgs[0]["content"]
+    assert "路数" not in compose_messages([], "小红", "帮我查下", flavor="吐槽一句", help_mode=True)[0]["content"]
+    assert len({pick_flavor() for _ in range(200)}) == len(REPLY_FLAVORS)
+    print("PASS  群风格走 user 消息；每句随机一个路数，求助时不用")
 
     print(f"\n结果: {'全部通过' if failed == 0 else f'{failed} 项失败'}")
     return 0 if failed == 0 else 1

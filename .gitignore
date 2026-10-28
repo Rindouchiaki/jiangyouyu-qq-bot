@@ -21,6 +21,10 @@ tools/llama.cpp/
 tools/vl-model/
 tools/ffmpeg/
 stickers/ori/
+# 机器人在聊天里自己收藏的表情
+stickers/saved/
+stickers/saved.json
+stickers/notes.json
 downloads/
 _downloads/
 _research/

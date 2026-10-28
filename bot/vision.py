@@ -352,6 +352,11 @@ async def _fetch(seg) -> bytes | None:
         return None
 
 
+async def fetch_seg(seg) -> bytes | None:
+    """取图片段的原始字节（收藏表情用）。"""
+    return await _fetch(seg)
+
+
 # ---------------------------------------------------------------- 图卡
 async def image_card(event: MessageEvent) -> str:
     """把消息里的第一张图压成图卡；没有图返回空串。"""
