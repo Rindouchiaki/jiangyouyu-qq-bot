@@ -51,6 +51,32 @@ def command_text(texts: Iterable[str]) -> str:
     return "".join(ch for ch in joined if ch not in _BLANKS)
 
 
+# 核心各插件的常用指令：整句就是这么几个字时，是玩家在发指令，人设别接话
+# （带前缀的由 person 插件里的 GAME_CMD_PREFIXES 挡掉，这里补的是不带前缀也被核心认的写法）
+BARE_CORE = (
+    "绑定", "绑定uid", "绑定设备", "设备登录", "设备登陆", "绑定ck", "添加ck", "删除ck", "我的ck", "我的token",
+    "刷新面板", "刷新抽卡记录", "抽卡记录", "签到", "全部签到", "帮助", "面板", "体力", "更新",
+)
+# 米游社报错里写着「请进行[绑定设备]」，但那是要在核心私聊贴设备 JSON 的指令，照着一句「绑定设备」发没反应
+CONFUSING_HINT = {
+    "绑定设备": (
+        "绑定设备是米游社设备验证，要带 core 前缀贴设备 JSON：core绑定设备 {...}；"
+        "只绑游戏 UID 用 zzz绑定uid（星铁 sr绑定uid、原神 gs绑定uid）"
+    ),
+}
+
+
+def bare_core_command(texts: Iterable[str]) -> str | None:
+    """整句就是一条核心指令（不带前缀的写法）就原样返回，否则 None。"""
+    cmd = command_text(texts).lower()
+    return cmd if cmd in BARE_CORE else None
+
+
+def confusing_hint(texts: Iterable[str]) -> str | None:
+    """照着核心报错里的错词发的指令，给一句正确说法的提示。"""
+    return CONFUSING_HINT.get(command_text(texts).lower())
+
+
 def _private_cmd(cmd: str) -> str | None:
     """只在私聊用的凭据指令（ww添加token、zmd我的cred 等）原样返回「前缀+指令词」，不是返回 None。"""
     for prefix, words in PREFIXED_PRIVATE.items():

@@ -36,6 +36,7 @@ from nonebot.log import logger
 from nonebot.params import CommandArg
 
 import bonds
+import gscore_guard
 import memory
 import slang
 import sticker_lib
@@ -757,7 +758,9 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
                 _last_image_seg.pop(old_key, None)
 
     text = event.get_plaintext().strip()
-    if is_game_command(text, GAME_CMD_PREFIXES):
+    if is_game_command(text, GAME_CMD_PREFIXES) or gscore_guard.bare_core_command(
+        [str(seg.data.get("text", "")) for seg in event.get_message() if seg.type == "text"]
+    ):
         # 游戏指令由早柚核心回，人设不接话，也不进上下文和日记
         return
     if not text:

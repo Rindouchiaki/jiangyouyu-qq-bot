@@ -7,7 +7,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 
 from gscore_guard import (  # noqa: E402
     QR_CAPTION,
+    bare_core_command,
     command_text,
+    confusing_hint,
     is_group_send,
     is_login_command,
     login_hint,
@@ -70,6 +72,16 @@ def main() -> int:
     skland = "「终末地」 请使用森空岛APP扫码登录，二维码有效时间为2分钟。"
     assert scan_send({"message": [Seg("text", {"text": skland}), Seg("image", {"file": "base64://x"})]}) == (True, True)
     print("PASS  scan_send：转发节点里的二维码文案和图片、鸣潮登录链接都能找到")
+
+    # 不带前缀的核心指令：人设别接话；「绑定设备」是设备验证，照一句发没反应，给正确说法
+    assert bare_core_command(["绑定设备"]) == "绑定设备" and bare_core_command(["签到"]) == "签到"
+    assert bare_core_command(["设备登录"]) == "设备登录" and bare_core_command(["体力 "]) == "体力"
+    assert bare_core_command(["今天天气不错"]) is None
+    assert bare_core_command(["绑定设备 123"]) is None  # 带参数就不管，交给人设/核心
+    _hint = confusing_hint(["绑定设备"])
+    assert _hint is not None and "core绑定设备" in _hint and "zzz绑定uid" in _hint
+    assert confusing_hint(["zzz绑定设备"]) is None and confusing_hint(["绑定uid"]) is None
+    print("PASS  bare_core_command / confusing_hint：人设不抢核心指令")
 
     print("\n结果: 全部通过")
     return 0
