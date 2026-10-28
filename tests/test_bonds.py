@@ -42,7 +42,7 @@ def main() -> int:
     assert bonds.group("123")["style"][0]["t"] == "爱玩谐音梗"
     print("PASS  落盘后重新载入不丢")
 
-    assert bonds.user("99999") == {"aff": 10, "fam": 8, "notes": [], "topics": {}} and "99999" not in bonds._data["users"]
+    assert bonds.user("99999") == {"aff": 0, "fam": 8, "notes": [], "topics": {}} and "99999" not in bonds._data["users"]
     assert bonds.forget_user("10001") and not bonds.forget_user("10001")
     assert bonds.user("10001")["notes"] == [] and bonds.group("123")["notes"]
     assert bonds.clear_group("123") and bonds.group("123")["notes"] == []
@@ -54,21 +54,21 @@ def main() -> int:
 
     assert attitude(10, 8) == "普通" and attitude(0, 0) == "陌生"
     before, after = bonds.set_levels("88888", "新人", aff=30)
-    assert before["aff"] == 10 and after["aff"] == 30, (before, after)
+    assert before["aff"] == 0 and after["aff"] == 30, (before, after)
     before, after = bonds.set_levels("88888", fam=-5)
     assert after["fam"] == 0 and after["aff"] == 30, after
     before, after = bonds.set_levels("88888", aff=999, fam=999)
     assert after["aff"] == 100 and after["fam"] == 100, after
     print("PASS  /好感 手动调数值，越界夹紧，态度档跟着变")
 
-    # 老数据迁移：刚认识（好感 0~9、熟悉 <8）抬到礼貌底线，负数好感不动
+    # 老数据迁移：熟悉 <8 抬到初始值（初始好感现在是 0，好感不用抬），负数好感不动
     old = TMP / "old.json"
     old.write_text(
         '{"users": {"1": {"aff": 0, "fam": 0}, "2": {"aff": -40, "fam": 2}}, "groups": {}}',
         encoding="utf-8",
     )
     bonds.load(old)
-    assert bonds.user("1")["aff"] == 10 and bonds.user("1")["fam"] == 8
+    assert bonds.user("1")["aff"] == 0 and bonds.user("1")["fam"] == 8
     assert bonds.user("2")["aff"] == -40 and bonds.user("2")["fam"] == 8
     assert bonds._data.get("floor") == 1
     print("PASS  老数据里刚认识的人抬到礼貌底线，记仇的不动，只迁一次")
