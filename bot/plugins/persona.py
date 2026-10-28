@@ -6,7 +6,7 @@
 触发规则：
 - 被 @、或被叫外号（NICKNAMES）→ 必回，并记住"这段对话在聊"
 - 正聊着的时候（被叫过一次、还没超时）→ 不带关键词也接着回
-- 都没命中 → 以 REPLY_CHIME_PROB 概率自己插话，且要先过氛围判断
+- 都没命中 → 以 REPLY_CHIME_PROB 概率自己插话（聊到 PERSONA_INTERESTS 时翻倍），先过氛围判断，模型还能说不感兴趣
 - 出现收尾词（睡了/拜拜/先这样…）或超时 → 认为这段聊完，停止接续
 
 上下文：每个会话保留 HISTORY_SIZE 条，落盘到 data/history.json，重启后能接着聊。
@@ -54,9 +54,11 @@ from persona_rules import (
     DIARY_USER_PROMPT,
     affinity_delta,
     attitude,
+    chime_backoff,
     compose_messages,
     debounce_deadline,
     follow_decision,
+    interest_hits,
     humanize,
     is_conversation_ending,
     is_offensive,
@@ -157,6 +159,10 @@ REPLY_LATE_PROB = float(os.getenv("REPLY_LATE_PROB", "0.1"))
 RESTART_MAX = int(os.getenv("REPLY_RESTART_MAX", "2"))
 # 回话路数在一个会话里粘多久（秒）
 FLAVOR_TTL = float(os.getenv("FLAVOR_TTL", "600"))
+# 群里没人叫她时，聊到这些话题（topics.json 的类别）插话概率乘 INTEREST_BOOST；模型说没兴趣就退避
+INTERESTS = tuple(t.strip() for t in os.getenv("PERSONA_INTERESTS", "游戏,动画,吃喝,格斗,卡牌,音乐").split(",") if t.strip())
+INTEREST_BOOST = float(os.getenv("INTEREST_BOOST", "4"))
+CHIME_BACKOFF_BASE = float(os.getenv("CHIME_BACKOFF_BASE", "120"))
 
 _data_env = os.getenv("PERSONA_DATA_DIR", "").strip()
 _DATA_DIR = Path(_data_env) if _data_env else Path(__file__).resolve().parent.parent / "data"
@@ -775,6 +781,8 @@ class _Chat:
 
 _chats: dict[str, _Chat] = {}
 _flavor: dict[str, tuple[str, float]] = {}
+_chime_skips: dict[str, int] = defaultdict(int)
+_last_chime_try: dict[str, float] = defaultdict(float)
 
 
 def _pending_from(key: str, user_id: str) -> bool:
@@ -1040,6 +1048,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
 
     mode = ""
     addressed = False
+    interest: list[str] = []
 
     if is_group:
         if focus["at"] or focus["called"]:
@@ -1056,10 +1065,17 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
                 mode = f"接续·{why}"
             else:
                 _engaged.pop(key, None)
+                # 插话看兴趣：聊到她感兴趣的话题，冒泡的概率翻几倍；模型最后还能说「不回」
+                interest = interest_hits(topics.detect(batch_text), INTERESTS)
                 chime_prob = _chime_prob(key, mcfg)
+                if interest and chime_prob > 0:
+                    chime_prob = min(1.0, chime_prob * INTEREST_BOOST)
                 if chime_prob <= 0 or random.random() >= chime_prob:
                     return True
                 if now - _last_chime.get(key, 0) < CHIME_COOLDOWN_SEC or not _quota_ok("插话", key):
+                    return True
+                if now - _last_chime_try[key] < chime_backoff(_chime_skips[key], CHIME_BACKOFF_BASE):
+                    logger.debug(f"persona: 不插话（最近连着 {_chime_skips[key]} 次没兴趣，退避中）")
                     return True
                 label, allowed, reason = judge_atmosphere(list(history), batch[0]["gap"])
                 if not allowed:
@@ -1223,6 +1239,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         topics=bond_topics,
         slang=slang_note,
         new_msgs=new_msgs,
+        interests=INTERESTS if chime else (),
     )
 
     limit = HELP_MAX_TOKENS if help_mode else 120 if question else 100
@@ -1257,8 +1274,16 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         parts = [p for p in split_reply(raw, lines, per_line, total) if not (p[0] == "text" and is_offensive(p[1]))]
 
     if not parts:
-        logger.info("persona: 模型这次清完是空的，不发")
+        if chime:
+            # 模型自己说没兴趣：记一笔，下次想插嘴前多等一会儿
+            _chime_skips[key] += 1
+            _last_chime_try[key] = now
+            logger.info(f"persona: 看了一眼没兴趣，不插话（连续 {_chime_skips[key]} 次）")
+        else:
+            logger.info("persona: 模型这次清完是空的，不发")
         return True
+    if chime:
+        _chime_skips[key] = 0
 
     # 生成期间又有人说话了：在跟她说话的人补了话 → 带上重想；只是别人插话 → 被叫的照发（引用原消息），可有可无的不补
     def _stale() -> bool | None:
@@ -1337,7 +1362,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     logger.info(
         f"persona -> {reply}{' +表情' if sent_sticker else ''}（{mode}，{len(batch)} 条一起回，氛围 {label}，"
         f"情绪 {mood}·{mood_reason}，对象 {name}，态度 {'开发者' if is_dev else att}{'·露真心' if dere else ''}"
-        f"）"
+        f"{'，兴趣 ' + '/'.join(interest) if interest else ''}）"
     )
 
     # 聊够几轮、或者对方在说自己的事，就摘一次个人日记（同一人至少隔 10 分钟）

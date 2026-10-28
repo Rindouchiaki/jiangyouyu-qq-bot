@@ -464,6 +464,7 @@ def build_system_prompt(
     question: bool = False,
     topics: list[str] | None = None,
     slang: str = "",
+    interests: tuple[str, ...] = (),
 ) -> str:
     """在基础人设上补几条：我是谁、开发者是谁、记忆、什么气氛、什么情绪、对这个人什么态度。"""
     system = SYSTEM_PROMPT
@@ -526,9 +527,12 @@ def build_system_prompt(
 
     if chime:
         system += (
-            "\n\n这一句是你自己路过插的嘴：要短、要犀利，可以毒舌吐槽一句，但别伤人，"
-            "说完就撤，不解释、不追问、不等回复。"
+            "\n\n没人叫你，这是你自己在群里看到的：真有兴趣、接得上才插一句，要短、要犀利，"
+            "可以毒舌吐槽，但别伤人，说完就撤，不解释、不追问、不等回复。"
         )
+        if interests:
+            system += f"你感兴趣的是{'、'.join(interests)}这些，别的话题一般不插嘴。"
+        system += f"不感兴趣、接不上、或者人家在聊正事，就只输出 {SILENT_MARK}。"
 
     if help_mode:
         system += (
@@ -608,6 +612,7 @@ def compose_messages(
     topics: list[str] | None = None,
     slang: str = "",
     new_msgs: list[tuple[str, str]] | None = None,
+    interests: tuple[str, ...] = (),
 ) -> list[dict[str, str]]:
     """组装成 OpenAI 兼容的 messages。history 为 (昵称, 内容) 列表。
 
@@ -626,7 +631,7 @@ def compose_messages(
                 self_names, atmosphere, mood, dev_name, has_memory, chime,
                 help_mode=help_mode, hour=hour, attitude=attitude, bond=bond, dere=dere,
                 flavor=flavor, group_style=bool(group_style), question=question,
-                topics=topics, slang=slang,
+                topics=topics, slang=slang, interests=interests,
             ),
         }
     ]
@@ -1054,3 +1059,16 @@ def split_reply(
             texts += 1
             used += len(part)
     return out
+
+
+def chime_backoff(skips: int, base: float = 120.0, cap: float = 1800.0) -> float:
+    """模型连着几次说「不回」：下次再想插嘴前多等一会儿，翻倍到 cap 为止。"""
+    if skips <= 0:
+        return 0.0
+    return min(cap, base * (2 ** (skips - 1)))
+
+
+def interest_hits(topic_hits: list[str] | tuple[str, ...], interests: tuple[str, ...]) -> list[str]:
+    """这批消息聊到的话题里，哪些是她感兴趣的。"""
+    pool = set(interests)
+    return [t for t in topic_hits if t in pool]

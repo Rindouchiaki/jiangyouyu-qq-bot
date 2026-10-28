@@ -15,9 +15,11 @@ from persona_rules import (  # noqa: E402
     SILENT_MARK,
     affinity_delta,
     attitude,
+    chime_backoff,
     compose_messages,
     debounce_deadline,
     follow_decision,
+    interest_hits,
     humanize,
     is_conversation_ending,
     is_offensive,
@@ -370,6 +372,13 @@ def main() -> int:
     assert split_reply("[不回]\n") == []
     assert split_reply("啊？\n你说清楚点") == [("text", "啊？"), ("text", "你说清楚点")]
     print("PASS  模型输出拆成几条消息：长句断开、表情单独一条、[不回] 就不发、条数封顶")
+
+    assert chime_backoff(0) == 0 and chime_backoff(1) == 120 and chime_backoff(3) == 480 and chime_backoff(9) == 1800
+    assert interest_hits(["游戏", "工作"], ("游戏", "动画")) == ["游戏"]
+    chime_sys = compose_messages([], "小红", "原神新角色好看", chime=True, interests=("游戏",))[0]["content"]
+    assert SILENT_MARK in chime_sys and "游戏" in chime_sys
+    assert SILENT_MARK not in compose_messages([], "小红", "在吗")[0]["content"]
+    print("PASS  插话看兴趣，没兴趣模型可以说不回，连着不回就退避")
 
     msgs = compose_messages([("我", "干嘛")], "小明", "", new_msgs=[("小明", "我跟你说"), ("小明", "今天抽卡\n酱酱鱼：歪了"), ("小明", "[表情:哭]")])
     last = msgs[-1]["content"]
