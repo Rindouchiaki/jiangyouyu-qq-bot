@@ -3,6 +3,9 @@
 索引来自 tools/export_qq_emoji.py + tag_stickers.py；聊天里她自己收藏的表情另存在
 stickers/saved/ 和 saved.json（save_sticker），最多 STICKER_SAVE_MAX 张，满了丢最早的。
 notes.json 是表情小本本：每张表情的用途备注和用过几次，按场景挑图时会看备注，用得多的更容易被挑中。
+reads.json 是读后感：本地视觉模型看过一遍记下的画面、意思、场景、画风（按 id 存，读过不再读）；
+她更喜欢可爱的二次元表情，挑图时更常发；自己收藏里真不喜欢、或者很久一次都没发过的才会被删（prune），
+收藏满了先挤掉最不喜欢、最少用的。
 """
 
 from __future__ import annotations
@@ -20,6 +23,8 @@ from pathlib import Path
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment
 from nonebot.log import logger
 
+from persona_rules import STICKER_LIKE_WEIGHT, sticker_keep_rank, sticker_like, sticker_prune_due
+
 STICKER_DIR = Path(os.getenv("STICKER_DIR") or Path(__file__).resolve().parent.parent / "stickers")
 INDEX_FILE = STICKER_DIR / "index.json"
 SAVED_DIR = STICKER_DIR / "saved"
@@ -27,11 +32,13 @@ SAVED_INDEX = STICKER_DIR / "saved.json"
 SAVE_MAX = int(os.getenv("STICKER_SAVE_MAX", "200"))
 NOTES_FILE = STICKER_DIR / "notes.json"
 NOTE_MAX_CHARS = 20
+READS_FILE = STICKER_DIR / "reads.json"
 
 _items: list[dict] = []
 _categories: Counter = Counter()
 _last_pick: dict[str, str] = {}
 _notes: dict[str, dict] = {}  # id -> {"note": 用途备注, "uses": 用过几次}
+_reads: dict[str, dict] = {}  # id -> {"desc", "mean", "scene", "acg", "cute", "at"}
 # 每个会话最近发过的几张（越靠后越新）和各类用了几次：用来压住重复，别老发固定的那几张
 _pick_hist: dict[str, list[str]] = {}
 _cat_used: dict[str, Counter] = {}
@@ -56,6 +63,8 @@ _by_cat: dict[str, list[dict]] = {}
 def _weight(item: dict, session: str = "") -> float:
     """一张表情这回合被选中的相对权重：用得越多、最近刚发过、同分类连发，都会往下压。"""
     weight = 1.0 / (1.0 + USES_FADE * int((_notes.get(item["id"]) or {}).get("uses", 0)))
+    # 喜好：可爱的二次元表情更常发
+    weight *= STICKER_LIKE_WEIGHT.get(sticker_like(read_of(item["id"])) or "", 1.0)
     hist = _pick_hist.get(session, []) if session else []
     for depth, fade in zip((1, 3, 8), RECENT_FADE):
         if item["id"] in hist[-depth:]:
@@ -110,6 +119,11 @@ def load() -> None:
         _notes.update(json.loads(NOTES_FILE.read_text(encoding="utf-8")))
     except (FileNotFoundError, json.JSONDecodeError):
         pass
+    try:
+        _reads.clear()
+        _reads.update(json.loads(READS_FILE.read_text(encoding="utf-8")))
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
     _categories.clear()
     _categories.update(item.get("category", "其他") for item in _items)
     _by_cat.clear()
@@ -132,6 +146,67 @@ def _add_note(sid: str, words: str) -> None:
     rec = _notes.setdefault(sid, {"note": "", "uses": 0})
     if words and words not in rec["note"]:
         rec["note"] = "、".join(filter(None, (rec["note"], words)))[:NOTE_MAX_CHARS]
+
+
+def read_of(sid: str) -> dict | None:
+    """这张表情的读后感；没读过、或者读了没看懂的返回 None。"""
+    read = _reads.get(sid)
+    return read if read and read.get("desc") else None
+
+
+def has_read(sid: str) -> bool:
+    """读过没有（含读了没看懂的）。"""
+    return sid in _reads
+
+
+def set_read(sid: str, read: dict) -> None:
+    _reads[sid] = {**read, "at": time.time()}
+    try:
+        READS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = READS_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(_reads, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(READS_FILE)
+    except OSError as exc:
+        logger.warning(f"sticker_lib: 读后感保存失败 {exc}")
+
+
+def next_unread() -> dict | None:
+    """库里（原库 + 收藏）下一张还没读过的表情，后台慢慢读。"""
+    return next((it for it in _items if it["id"] not in _reads), None)
+
+
+def unread_count() -> int:
+    return sum(1 for it in _items if it["id"] not in _reads)
+
+
+def label(item: dict) -> str:
+    """发出去的表情记进上下文时怎么写：读过的写画面，没读过写分类。"""
+    read = read_of(item["id"]) or {}
+    return read.get("mean") or read.get("desc") or item.get("category") or "表情"
+
+
+def prune(now: float | None = None, dislike_days: float = 30, idle_days: float = 90) -> list[dict]:
+    """删掉自己收藏里真不喜欢、或者很久一次都没发过的表情；原库不动。返回删掉的。"""
+    now = time.time() if now is None else now
+    saved = _read_saved()
+    gone = [
+        it for it in saved
+        if sticker_prune_due(
+            it, read_of(it["id"]), int((_notes.get(it["id"]) or {}).get("uses", 0)), now, dislike_days, idle_days,
+        )
+    ]
+    if not gone:
+        return []
+    ids = {it["id"] for it in gone}
+    for it in gone:
+        (STICKER_DIR / it["file"]).unlink(missing_ok=True)
+        _notes.pop(it["id"], None)
+    tmp = SAVED_INDEX.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"items": [it for it in saved if it["id"] not in ids]}, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(SAVED_INDEX)
+    _save_notes()
+    load()
+    return gone
 
 
 def mark_used(item: dict, scene: str | None = None) -> None:
@@ -183,10 +258,14 @@ def save_sticker(raw: bytes, category: str, text: str = "", note: str = "") -> d
     SAVED_DIR.mkdir(parents=True, exist_ok=True)
     (STICKER_DIR / item["file"]).write_bytes(raw)
     saved.append(item)
-    saved.sort(key=lambda it: float(it.get("saved_at", 0)))
-    for old in saved[:-SAVE_MAX]:
-        (STICKER_DIR / old["file"]).unlink(missing_ok=True)
-    saved = saved[-SAVE_MAX:]
+    if len(saved) > SAVE_MAX:
+        # 满了先挤掉最不喜欢、最少用、最早收的（刚收的这张不算）
+        ranked = sorted(saved[:-1], key=lambda it: sticker_keep_rank(
+            read_of(it["id"]), int((_notes.get(it["id"]) or {}).get("uses", 0)), float(it.get("saved_at", 0))))
+        out = {it["id"] for it in ranked[: len(saved) - SAVE_MAX]}
+        for old in ranked[: len(saved) - SAVE_MAX]:
+            (STICKER_DIR / old["file"]).unlink(missing_ok=True)
+        saved = [it for it in saved if it["id"] not in out]
     tmp = SAVED_INDEX.with_suffix(".tmp")
     tmp.write_text(json.dumps({"items": saved}, ensure_ascii=False), encoding="utf-8")
     tmp.replace(SAVED_INDEX)
@@ -254,7 +333,11 @@ def pick_for_scene(words: tuple[str, ...], session: str = "", prefer_saved: floa
     """找分类、标签或图上的字对得上场景的表情；一张都对不上返回 None（宁可不发也别乱发）。"""
     def fits(it: dict) -> bool:
         note = (_notes.get(it["id"]) or {}).get("note", "")
-        hay = f"{it.get('category', '')} {' '.join(map(str, it.get('tags', [])))} {it.get('text', '')} {note}"
+        read = _reads.get(it["id"]) or {}
+        hay = (
+            f"{it.get('category', '')} {' '.join(map(str, it.get('tags', [])))} {it.get('text', '')} {note} "
+            f"{read.get('desc', '')} {read.get('mean', '')} {read.get('scene', '')}"
+        )
         return any(w and w in hay for w in words)
 
     pool = [it for it in _items if fits(it)]

@@ -8,16 +8,22 @@
     /表情 分类       看有哪些分类
     /表情 收藏       看她最常用的几张表情和用途备注
     /表情 备注 <id前几位> <用途>   手动给某张表情写用途（仅开发者）
+
+后台：本地视觉模型闲着时一张张读库里的表情（读过不再读），每天看一次自己的收藏，
+真不喜欢的放 30 天、其它的放 90 天一次都没发过才删。
 """
 
 from __future__ import annotations
 from bot_guard import is_our_bot
 
+import asyncio
 import os
 import time
 
 import devs
+import nonebot
 import sticker_lib
+import vision
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent
 from nonebot.log import logger
@@ -26,7 +32,47 @@ from nonebot.params import CommandArg
 BOT_UIN = os.getenv("BOT_UIN", "").strip()
 COOLDOWN = float(os.getenv("STICKER_COOLDOWN", "3"))
 
+# 后台读表情：每张之间隔几秒（CPU 跑视觉模型，别和聊天抢）
+STICKER_READ = os.getenv("STICKER_READ", "1").strip() not in ("0", "false", "False")
+STICKER_READ_GAP = float(os.getenv("STICKER_READ_GAP", "20"))
+# 清收藏别太严：真不喜欢的放 30 天没发过才删，其余放 90 天一次都没发过才删；发过的、可爱二次元的不删
+STICKER_PRUNE_DAYS = float(os.getenv("STICKER_PRUNE_DAYS", "30"))
+STICKER_IDLE_DAYS = float(os.getenv("STICKER_IDLE_DAYS", "90"))
+
 _last_used: dict[str, float] = {}
+_bg_task: asyncio.Task | None = None
+
+
+async def _read_loop() -> None:
+    """后台慢慢读表情；顺带每天清一次收藏。"""
+    await asyncio.sleep(120)
+    last_prune = 0.0
+    while True:
+        try:
+            if time.time() - last_prune > 86400:
+                last_prune = time.time()
+                gone = await asyncio.to_thread(sticker_lib.prune, None, STICKER_PRUNE_DAYS, STICKER_IDLE_DAYS)
+                if gone:
+                    logger.info(f"stickers: 删掉 {len(gone)} 张不喜欢的收藏：{'、'.join(it['id'][:6] for it in gone)}")
+            item = sticker_lib.next_unread() if STICKER_READ else None
+            if item is None or not await vision.vlm_ready():
+                await asyncio.sleep(600)
+                continue
+            path = sticker_lib.STICKER_DIR / item["file"]
+            read = await vision.read_sticker(await asyncio.to_thread(path.read_bytes))
+            # 没看懂也记一笔（desc 空），免得卡在同一张上反复读
+            sticker_lib.set_read(item["id"], read or {"desc": "", "mean": "", "scene": "", "acg": False, "cute": 0})
+            logger.debug(f"stickers: 读了 {item['id'][:6]} → {(read or {}).get('desc') or '没看懂'}，还剩 {sticker_lib.unread_count()} 张")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"stickers: 后台读表情出错 {type(exc).__name__}: {exc}")
+            await asyncio.sleep(600)
+        await asyncio.sleep(STICKER_READ_GAP)
+
+
+@nonebot.get_driver().on_startup
+async def _start_reader() -> None:
+    global _bg_task
+    _bg_task = asyncio.create_task(_read_loop())
 
 stickers_cmd = on_command("表情", priority=20, block=True)
 

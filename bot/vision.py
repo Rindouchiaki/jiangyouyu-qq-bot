@@ -3,8 +3,11 @@
 顺序：
 1. sha1 / dhash 命中表情库 → 直接给出类别和图上文字（0 计算）；
 2. 未命中 → Windows 自带 OCR（Windows.Media.Ocr，离线）读字；
-3. 还是没字 → 可选本地小视觉模型（Ollama，默认关）描述一句；
+3. 还是没字 → 本地视觉模型（默认 llama.cpp 的 Qwen3-VL）描述一句；
 4. 结果按 sha1 缓存，同一张图只算一次。
+
+表情（库里的、群友发的）另外让视觉模型「读」一遍：动图截几帧拼成一张给它看，记下画面、意思、
+适合的场景和画风（sticker_lib 的读后感，按 id 存，读过不再读），图卡就用这个，之后不再花算力。
 
 全部本机完成，不调用任何在线识图接口。
 """
@@ -18,6 +21,8 @@ import io
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -30,12 +35,15 @@ from nonebot.adapters.onebot.v11 import MessageEvent
 from nonebot.log import logger
 from PIL import Image
 
+import sticker_lib
+from persona_rules import STICKER_READ_ANIM, STICKER_READ_PROMPT, parse_sticker_read, sticker_card
+
 IMG_CARD_ENABLED = os.getenv("IMAGE_CARD_ENABLED", "1") not in ("0", "false", "False")
 IMG_CARD_MAX = int(os.getenv("IMAGE_CARD_MAX_CHARS", "60"))
 IMG_FETCH_MAX_MB = float(os.getenv("IMAGE_FETCH_MAX_MB", "5"))
 IMG_OCR_TIMEOUT = float(os.getenv("IMAGE_OCR_TIMEOUT", "20"))
-VLM_ENABLED = os.getenv("VLM_ENABLED", "0") not in ("0", "false", "False")
-VLM_PROVIDER = os.getenv("VLM_PROVIDER", "ollama").strip().lower()   # ollama | openai(llama.cpp)
+VLM_ENABLED = os.getenv("VLM_ENABLED", "1") not in ("0", "false", "False")
+VLM_PROVIDER = os.getenv("VLM_PROVIDER", "openai").strip().lower()   # openai(llama.cpp) | ollama
 VLM_MODEL = os.getenv("VLM_MODEL", "qwen2.5vl:3b")
 VLM_URL = os.getenv("VLM_URL", "http://127.0.0.1:11434")
 VLM_OPENAI_URL = os.getenv("VLM_OPENAI_URL", "http://127.0.0.1:11435").rstrip("/")
@@ -48,6 +56,8 @@ CACHE_DIR = Path(os.getenv("VISION_CACHE_DIR", str(BASE_DIR / "data" / "vision")
 HASH_CACHE = Path(os.getenv("STICKER_HASH_CACHE", str(BASE_DIR / "data" / "sticker_hashes.json")))
 CARD_CACHE = CACHE_DIR / "cards.json"
 CARD_CACHE_MAX = 3000
+# 图卡格式变了就加一：旧缓存作废（v2 起表情用读后感）
+CARD_VERSION = 2
 
 _hashes: dict[str, str] = {}       # sha1 -> sticker id
 _dhashes: dict[str, list[int]] = {}  # sticker id -> 多帧 dhash（静图一帧，动图最多几帧）
@@ -232,10 +242,15 @@ async def _ocr(png_bytes: bytes) -> str:
     path.write_bytes(png_bytes)
     try:
         shell = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-        proc = await asyncio.create_subprocess_exec(
-            shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(OCR_SCRIPT), "-Path", str(path),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(OCR_SCRIPT), "-Path", str(path),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+        except OSError as exc:
+            # 认不了字也别耽误后面让视觉模型看
+            logger.warning(f"vision: OCR 起不来 {type(exc).__name__}: {exc}")
+            return ""
         try:
             out, err = await asyncio.wait_for(proc.communicate(), timeout=IMG_OCR_TIMEOUT)
         except asyncio.TimeoutError:
@@ -273,7 +288,11 @@ async def _vlm_ok() -> bool:
 
 
 async def _describe(png_bytes: bytes) -> str:
-    prompt = "用不超过二十个字描述这张图，只说要紧的，不要客套话。"
+    return _clean_text(await _vlm_ask(png_bytes, "用不超过二十个字描述这张图，只说要紧的，不要客套话。", 60))
+
+
+async def _vlm_ask(png_bytes: bytes, prompt: str, max_tokens: int) -> str:
+    """问本地视觉模型一句，返回原文（失败返回空串）。"""
     b64 = base64.b64encode(png_bytes).decode()
     try:
         if VLM_PROVIDER == "openai":
@@ -286,29 +305,143 @@ async def _describe(png_bytes: bytes) -> str:
                         {"type": "text", "text": prompt},
                     ],
                 }],
-                "max_tokens": 60,
+                "max_tokens": max_tokens,
                 "temperature": 0.2,
                 "stream": False,
             }
             async with httpx.AsyncClient(timeout=VLM_TIMEOUT) as client:
                 r = await client.post(f"{VLM_OPENAI_URL}/v1/chat/completions", json=payload)
                 r.raise_for_status()
-                text = r.json()["choices"][0]["message"]["content"]
-                return _clean_text(text or "")
+                return r.json()["choices"][0]["message"]["content"] or ""
         payload = {
             "model": VLM_MODEL,
             "prompt": prompt,
             "images": [b64],
             "stream": False,
-            "options": {"temperature": 0.2, "num_predict": 60},
+            "options": {"temperature": 0.2, "num_predict": max_tokens},
         }
         async with httpx.AsyncClient(timeout=VLM_TIMEOUT) as client:
             r = await client.post(f"{VLM_URL}/api/generate", json=payload)
             r.raise_for_status()
-            return _clean_text(r.json().get("response", ""))
+            return r.json().get("response", "") or ""
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"vision: 本地视觉模型失败 {type(exc).__name__}: {exc}")
         return ""
+
+
+# ---------------------------------------------------------------- 读表情
+SHEET_CELL = 256
+
+
+def _ffmpeg_exe() -> str:
+    """一键启动会把 tools\\ffmpeg\\bin 放进 PATH；没有就用 imageio-ffmpeg 自带的那份。"""
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _ffmpeg_frames(raw: bytes, n_frames: int, k: int) -> list[Image.Image]:
+    """用 ffmpeg 把动图均匀抽 k 帧（完整合成后的画面，不是 GIF 里只存了变化部分的那种帧）。"""
+    exe = _ffmpeg_exe()
+    if not exe:
+        return []
+    picks = "+".join(f"eq(n\\,{i})" for i in _frame_indices(n_frames, k))
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "in.gif"
+        src.write_bytes(raw)
+        cmd = [
+            exe, "-v", "error", "-i", str(src),
+            "-vf", f"select={picks}", "-vsync", "0", "-frames:v", str(k),
+            str(Path(tmp) / "f%02d.png"),
+        ]
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=30, check=True)
+        except (OSError, subprocess.SubprocessError):
+            return []
+        frames = []
+        for path in sorted(Path(tmp).glob("f*.png")):
+            with Image.open(path) as im:
+                frames.append(im.convert("RGBA").copy())
+        return frames
+
+
+def _pil_frames(img: Image.Image, n_frames: int, k: int) -> list[Image.Image]:
+    frames = []
+    for idx in _frame_indices(n_frames, k):
+        try:
+            img.seek(idx)
+        except (EOFError, ValueError):
+            break
+        frames.append(img.convert("RGBA").copy())
+    return frames
+
+
+def _sheet_png(raw: bytes, img: Image.Image, n_frames: int) -> bytes:
+    """给视觉模型看的一张图：静图放大到能看清；动图截 4 帧拼成 2x2，透明底垫白。"""
+    k = min(4, n_frames)
+    frames = (_ffmpeg_frames(raw, n_frames, k) if n_frames > 1 else []) or _pil_frames(img, n_frames, k)
+    if not frames:
+        img.seek(0)
+        frames = [img.convert("RGBA")]
+    cols = 1 if len(frames) == 1 else 2
+    rows = (len(frames) + cols - 1) // cols
+    sheet = Image.new("RGB", (SHEET_CELL * cols, SHEET_CELL * rows), "white")
+    for i, frame in enumerate(frames):
+        frame = frame.copy()
+        scale = SHEET_CELL / max(frame.size)
+        frame = frame.resize((max(1, int(frame.width * scale)), max(1, int(frame.height * scale))), Image.Resampling.LANCZOS)
+        x = (i % cols) * SHEET_CELL + (SHEET_CELL - frame.width) // 2
+        y = (i // cols) * SHEET_CELL + (SHEET_CELL - frame.height) // 2
+        sheet.paste(frame, (x, y), frame)
+    buf = io.BytesIO()
+    sheet.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+async def read_sticker(raw: bytes) -> dict | None:
+    """让视觉模型读一张表情：画面、意思、场景、画风、可不可爱。没开、没起来或没看懂返回 None。"""
+    if not VLM_ENABLED or not await _vlm_ok():
+        return None
+    try:
+        with Image.open(io.BytesIO(raw)) as img:
+            img.load()
+            n_frames = getattr(img, "n_frames", 1) or 1
+            png = await asyncio.to_thread(_sheet_png, raw, img, n_frames)
+    except (OSError, ValueError) as exc:
+        logger.debug(f"vision: 读表情时打不开图 {type(exc).__name__}")
+        return None
+    prompt = STICKER_READ_PROMPT.format(anim=STICKER_READ_ANIM if n_frames > 1 else "")
+    return parse_sticker_read(await _vlm_ask(png, prompt, 120))
+
+
+def in_library(raw: bytes) -> bool:
+    """这张图是不是原库里的表情（按 sha1 / 多帧 dhash 认）。"""
+    try:
+        with Image.open(io.BytesIO(raw)) as img:
+            img.load()
+            return _match_sticker(raw, img) is not None
+    except (OSError, ValueError):
+        return False
+
+
+async def vlm_ready() -> bool:
+    return VLM_ENABLED and await _vlm_ok()
+
+
+async def _read_or_cached(sid: str, raw: bytes) -> dict | None:
+    """读后感按 id 只读一次（后台读过但没看懂的不在这里重读）。"""
+    if sticker_lib.has_read(sid):
+        return sticker_lib.read_of(sid)
+    read = await read_sticker(raw)
+    if read:
+        sticker_lib.set_read(sid, read)
+    return read
 
 
 # ---------------------------------------------------------------- 取图
@@ -418,11 +551,12 @@ async def card_for_seg(seg) -> str:
 
     sha1 = hashlib.sha1(raw).hexdigest()
     cached = _cards.get(sha1)
-    if cached and time.time() - cached.get("at", 0) < 86400 * 7:
+    if cached and cached.get("v") == CARD_VERSION and time.time() - cached.get("at", 0) < 86400 * 7:
         return cached.get("card", "")
 
     data = getattr(seg, "data", None) or {}
     hint_anim = str(data.get("sub_type", "")) == "1" or "动画表情" in str(data.get("summary", ""))
+    is_sticker = str(data.get("sub_type", "")) == "1" or "表情" in str(data.get("summary", ""))
 
     card = "[图片]"
     try:
@@ -435,7 +569,11 @@ async def card_for_seg(seg) -> str:
             if sticker:
                 cat = sticker.get("category") or "表情"
                 text = _clean_text(sticker.get("text") or "")
-                if animated or sticker.get("animated"):
+                lib_file = STICKER_DIR / sticker["file"]
+                read = await _read_or_cached(sticker["id"], lib_file.read_bytes() if lib_file.is_file() else raw)
+                if read:
+                    card = sticker_card(read, text, bool(animated or sticker.get("animated")))
+                elif animated or sticker.get("animated"):
                     card = f"[表情:动图｜{cat}｜{text[:20]}]" if len(text) >= 2 else f"[表情:动图｜{cat}]"
                 else:
                     card = f"[表情:{cat}｜{text[:20]}]" if len(text) >= 2 else f"[表情:{cat}]"
@@ -444,7 +582,10 @@ async def card_for_seg(seg) -> str:
                     text = await _ocr_animated(img, n_frames)
                 else:
                     text = _clean_text(await _ocr(_frame_png(img, 0)))
-                if len(text) >= 2:
+                read = await _read_or_cached(sha1[:16], raw) if is_sticker or animated else None
+                if read:
+                    card = sticker_card(read, text, animated)
+                elif len(text) >= 2:
                     kind = "截图" if (width > 600 and (width / max(height, 1) > 1.2 or height / max(width, 1) > 1.2)) else "图"
                     head = "动图" if animated else "图片"
                     card = f"[{head}:{kind}｜{text[:IMG_CARD_MAX]}]"
@@ -455,7 +596,7 @@ async def card_for_seg(seg) -> str:
     except (OSError, ValueError) as exc:
         logger.warning(f"vision: 图片解析失败 {type(exc).__name__}: {exc}")
 
-    _cards[sha1] = {"at": time.time(), "card": card}
+    _cards[sha1] = {"at": time.time(), "card": card, "v": CARD_VERSION}
     _save_cards()
     return card
 
