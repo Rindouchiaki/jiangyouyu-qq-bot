@@ -17,7 +17,9 @@ import time
 from pathlib import Path
 
 import devs
-from persona_rules import INITIAL_AFF, INITIAL_FAM, bond_view, dev_floor, merge_notes, new_bond, update_bond
+from persona_rules import (
+    INITIAL_AFF, INITIAL_FAM, bond_view, dev_floor, merge_notes, new_bond, note_active_hour, update_bond,
+)
 
 # 初始好感度迁移标记：老数据里「刚认识」的人抬到礼貌底线，只做一次
 FLOOR_VERSION = 1
@@ -239,12 +241,13 @@ def add_group_style(gid: str, texts: list[str], now: float | None = None) -> int
 
 
 def mark_private(uid: str, now: float | None = None) -> None:
-    """对方私聊找我了：记下时间，主动找他没回的次数清零（lp / pu，见 persona_rules.proactive_due）。"""
+    """对方私聊找我了：记下时间和常私聊的钟点，主动找他没回的次数清零（lp / hrs / pu，见 persona_rules.proactive_due）。"""
     with _lock:
         rec = _data["users"].get(str(uid))
         if rec is None:
             return
         rec["lp"] = now or time.time()
+        rec.update(note_active_hour(rec, rec["lp"]))
         rec["pu"] = 0
         _state["dirty"] = True
 
