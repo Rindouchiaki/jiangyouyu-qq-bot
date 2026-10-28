@@ -66,6 +66,7 @@ from persona_rules import (
     DERE_CHANCE,
     DEFAULT_GAME_PREFIXES,
     DIARY_GROUP_PROMPT,
+    HATE_AFF,
     SHY_COAXED,
     SHY_HIDE_SEC,
     SHY_WINDOW,
@@ -788,7 +789,7 @@ async def _maybe_save_sticker(seg, card: str, user_id: str, context: str = "") -
     """群友发了库里没有的表情，按喜好收藏（可爱的二次元最容易收）；讨厌的人发的不收。用途按场景记进表情备注。"""
     data = getattr(seg, "data", None) or {}
     is_sticker = str(data.get("sub_type", "")) == "1" or "表情" in str(data.get("summary", ""))
-    if not is_sticker or int(bonds.user(user_id).get("aff", 0)) <= -30:
+    if not is_sticker or int(bonds.user(user_id).get("aff", 0)) <= HATE_AFF:
         return
     raw = await vision.fetch_seg(seg)
     if not raw or await asyncio.to_thread(vision.in_library, raw):
@@ -1184,7 +1185,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         # 这次只表现出不高兴、不扣好感；之后他还追着 @ 才扣（见 _count_pester_at）
         pester = _bond_touch(user_id, name, 0)
         _upset[(key, user_id)] = [now, 0]
-        # 熟的人追着烦：别别扭扭地岔开；不熟的：二次元式地打发掉
+        # 喜欢的人追着烦：别别扭扭地岔开；好感不高的：二次元式地打发掉
         pester_att = attitude(int(pester.get("aff", 0)), int(pester.get("fam", 0)))
         snub_line = "…不想说这个了啦" if pester_att in ("有好感", "亲近") else "哼，不想聊了"
         _snub_until[key] = now + SNUB_SECONDS
