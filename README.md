@@ -135,6 +135,7 @@ git clone https://github.com/Rindouchiaki/jiangyouyu-qq-bot.git
 
 ## 文档
 
+- [`docs/使用手册.md`](docs/使用手册.md)：**装好之后怎么用**——群友指令、主人指令、模式档位、记忆、识图、排错
 - [`docs/部署指南.md`](docs/部署指南.md)：从零部署、从旧目录迁移、日常使用和常见问题
 - [`docs/SnowLuma-QQ机器人调查报告.md`](docs/SnowLuma-QQ机器人调查报告.md)：SnowLuma 是什么、怎么部署、和各家的对比
 - [`docs/SnowLuma-参数与原理.md`](docs/SnowLuma-参数与原理.md)：OneBot 网络、反向 WS、token、WebUI 那些坑
