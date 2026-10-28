@@ -1068,8 +1068,10 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         slang=slang_note,
     )
 
+    limit = HELP_MAX_TOKENS if help_mode else 64 if question else 48
+    chars = MAX_CHARS_HELP if help_mode else MAX_CHARS_QUESTION if question else MAX_CHARS
     try:
-        raw = await ask_llm(messages, HELP_MAX_TOKENS if help_mode else 64 if question else 48)
+        raw = await ask_llm(messages, limit)
     except urllib.error.HTTPError as exc:
         logger.warning(f"persona: LLM HTTP {exc.code} {exc.reason}")
         return
@@ -1077,12 +1079,28 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         logger.warning(f"persona: LLM 调用失败 {type(exc).__name__}: {exc}")
         return
 
-    reply = humanize(raw, MAX_CHARS_HELP if help_mode else MAX_CHARS_QUESTION if question else MAX_CHARS)
+    reply = humanize(raw, chars)
     if not reply:
+        logger.info("persona: 模型这句清完是空的，不发")
         return
     if is_offensive(reply):
-        logger.warning(f"persona: 这句带攻击性，不发：{reply}")
-        return
+        # 偶尔被带出脏话：不静默丢掉，改成重说一句，免得看着像机器人没反应
+        logger.warning(f"persona: 这句带攻击性，重说：{reply}")
+        retry = [dict(m) for m in messages]
+        retry[0] = {
+            "role": "system",
+            "content": str(retry[0].get("content", ""))
+            + "\n刚才那句带了脏话或人身攻击，重说一句；语气可以冲，但不许出现脏字、骂人的词。",
+        }
+        try:
+            raw = await ask_llm(retry, limit)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"persona: 重说失败 {type(exc).__name__}: {exc}")
+            return
+        reply = humanize(raw, chars)
+        if not reply or is_offensive(reply):
+            logger.warning("persona: 重说还是带攻击性，不发")
+            return
 
     # 接续/插话本来就可有可无：这期间别人已经插了新话，就别补旧的一句，否则看着像答错人
     if is_group and not mode.startswith("被叫") and _last_message_at.get(key, 0.0) > started_at:
