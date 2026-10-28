@@ -1,11 +1,13 @@
 """persona_rules 的离线校验：不连 QQ、不调模型，直接验证净化与氛围判断。"""
 
+import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 
 from persona_rules import (  # noqa: E402
+    DEFAULT_GAME_PREFIXES,
     MAX_CHARS_DEFAULT,
     compose_messages,
     follow_decision,
@@ -182,7 +184,14 @@ def main() -> int:
     assert is_game_command(" bbb查询", prefixes) and is_game_command("扫码登录", prefixes)
     assert not is_game_command("绝区零好玩吗", prefixes) and not is_game_command("", prefixes)
     assert not is_game_command("酱油鱼 sr深渊", prefixes)
+    assert is_game_command("扫码 登录", prefixes) and is_game_command("sr 深渊", prefixes)
     print("PASS  is_game_command：核心指令人设不接")
+
+    # 代码默认前缀要覆盖锁文件里每个插件的前缀，否则装了插件人设还会抢答
+    lock = json.loads((Path(__file__).resolve().parents[1] / "external.lock.json").read_text(encoding="utf-8"))
+    wanted = {p for item in lock["git"].values() for p in item.get("prefixes", [])}
+    assert wanted <= set(DEFAULT_GAME_PREFIXES), wanted - set(DEFAULT_GAME_PREFIXES)
+    print("PASS  DEFAULT_GAME_PREFIXES：覆盖锁文件里所有插件的前缀")
 
     # 额度 4：插话/配图 2 条停，接续 3 条停，被叫 4 条停
     assert [quota_allows(n, 4, "插话") for n in range(5)] == [True, True, False, False, False]

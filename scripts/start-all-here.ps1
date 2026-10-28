@@ -13,7 +13,7 @@
       .\scripts\启动全部.ps1 -Stop            # 全停
       .\scripts\启动全部.ps1 -NoVl            # 不启本地视觉模型（省 1GB 内存）
       .\scripts\启动全部.ps1 -NoAutoLoad      # SnowLuma 不自动注入 QQ 账号
-      .\scripts\启动全部.ps1 -NoCore          # 不启早柚核心（星铁/绝区零/崩坏3 查询）
+      .\scripts\启动全部.ps1 -NoCore          # 不启早柚核心（米哈游等游戏的查询）
       .\scripts\启动全部.ps1 -NoQQ            # 不去拉起 QQ
 
 .NOTES
@@ -164,7 +164,7 @@ if ($NoCore) {
 } else {
     $env:PYTHONIOENCODING = 'utf-8'
     $env:PYTHONUTF8 = '1'
-    Write-Host '启动早柚核心（星铁/绝区零/崩坏3 查询）...' -ForegroundColor Yellow
+    Write-Host '启动早柚核心（游戏查询）...' -ForegroundColor Yellow
     # 全局 ErrorActionPreference=Stop，起不来也不能拦住后面的 NoneBot
     try {
         $p = Start-Process -FilePath $uv.Source -ArgumentList 'run', 'core' -WorkingDirectory $coreDir `

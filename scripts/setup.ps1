@@ -8,7 +8,7 @@
     3. bot\persona.env：没有就从样例生成，问几项必填的
     4. Python 3.12 虚拟环境 + 依赖（requirements.lock 锁定的版本），ffmpeg 放到 tools\ffmpeg\bin
     5. SnowLuma：没装就下载 external.lock.json 锁定的版本并校验 sha256；生成 onebot.json（随机 token），和 persona.env 的 token 对齐
-    6. 早柚核心 + 星铁/绝区零/崩坏3 插件，装 external.lock.json 锁定的提交
+    6. 早柚核心 + external.lock.json 里列的游戏插件，装锁定的提交，再装各插件自己的依赖
     已经装了的外部组件默认不动，只提示和锁定版本不一致；-Update 才把它们换到锁定版本（「一键更新.cmd」用）。
     最常用的是双击仓库根目录的「一键部署.cmd」（= 本脚本 -Start）。
 
@@ -37,7 +37,9 @@ $root = $script:Root
 $envFile = $script:EnvFile
 $PythonVersion = '3.12'
 $lock = Get-ExternalLock
-$CorePlugins = @('StarRailUID', 'ZZZeroUID', 'BBBUID')
+# 早柚核心的游戏插件：锁文件 git 里除了核心本身的每一项
+$CorePlugins = @($lock.git.PSObject.Properties.Name | Where-Object { $_ -ne 'gsuid_core' })
+$CoreGames = ($CorePlugins | ForEach-Object { $lock.git.$_.game }) -join ' / '
 
 function Step([string]$Text) { Write-Host ''; Write-Host "== $Text" -ForegroundColor Cyan }
 function Info([string]$Text) { Write-Host "   $Text" -ForegroundColor DarkGray }
@@ -221,6 +223,16 @@ foreach ($key in $required.Keys) {
     if ($value) { Set-EnvValue $key $value; Ok "$key 已填" }
     else { Warn "$key 没填：之后打开 bot\persona.env 填上再启动" }
 }
+# 新加了游戏插件时，旧 persona.env 里写死的 GAME_CMD_PREFIXES 补上新前缀，否则人设会抢答新游戏的指令
+$prefixLine = (Read-EnvFile)['GAME_CMD_PREFIXES']
+if ($prefixLine) {
+    $have = @($prefixLine.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $missing = @($CorePlugins | ForEach-Object { $lock.git.$_.prefixes } | Where-Object { $have -notcontains $_ })
+    if ($missing) {
+        Set-EnvValue 'GAME_CMD_PREFIXES' (($have + $missing) -join ',')
+        Ok ("人设避让的指令前缀补上了：{0}" -f ($missing -join '、'))
+    }
+}
 
 # ------------------------------------------------------------------ 4) Python 环境
 Step "NoneBot 的 Python $PythonVersion 环境和依赖"
@@ -307,7 +319,7 @@ if ($firstRun -and -not (Read-EnvFile)['SNOWLUMA_WEBUI_PASSWORD']) {
 }
 
 # ------------------------------------------------------------------ 6) 早柚核心
-Step '早柚核心（星铁 / 绝区零 / 崩坏3 查询）'
+Step "早柚核心（$CoreGames 查询）"
 $coreDir = $cfg.Core
 if ($NoCore) {
     Info '跳过（-NoCore）'
@@ -320,6 +332,15 @@ if ($NoCore) {
     foreach ($name in $CorePlugins) { [void](Sync-GitRepo $name (Join-Path $pluginDir $name)) }
     Push-Location $coreDir
     try { Invoke-Native uv @('sync', '--python', $interp) '安装早柚核心依赖' } finally { Pop-Location }
+    # 插件自己的依赖（比如鸣潮要 opencv）：核心只在用它的指令装插件时才装，我们是 git 拉的，要自己装；
+    # 放在 uv sync 后面，sync 会删掉核心 lock 里没有的包
+    $corePy = Join-Path $coreDir '.venv\Scripts\python.exe'
+    foreach ($name in $CorePlugins) {
+        $proj = Join-Path $pluginDir "$name\pyproject.toml"
+        if (Test-Path -LiteralPath $proj) {
+            Invoke-Native uv @('pip', 'install', '--python', $corePy, '-r', $proj) "安装 $name 的依赖"
+        }
+    }
     Ok '早柚核心已就绪'
 }
 

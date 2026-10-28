@@ -1,6 +1,7 @@
-# 每天查一次外部依赖（pip 包、SnowLuma、早柚核心和三个插件）有没有新版本。
+# 每天查一次外部依赖（pip 包、SnowLuma、早柚核心和各游戏插件）有没有新版本。
 # 有就改锁文件，在 Windows 上用新版本从零部署、启动整套、跑冒烟测试，全过了才开 / 更新 PR。
 # 合并 PR 后在跑机器人的电脑上双击「一键更新.cmd」。
+# 手动 Run workflow 勾上 validate_only：用所选分支锁的版本从零部署 + 冒烟，不查新版本、不开 PR（改了插件或部署脚本时合并前跑）。
 # 需要仓库设置：Settings → Actions → General → Workflow permissions 勾选
 # 「Allow GitHub Actions to create and approve pull requests」。
 name: 依赖自动更新
@@ -9,6 +10,11 @@ on:
   schedule:
     - cron: "17 21 * * *"   # 北京时间每天 05:17
   workflow_dispatch:
+    inputs:
+      validate_only:
+        description: 只验证（不管有没有新版本都从零部署跑一遍，不开 PR），给改了部署 / 插件的分支用
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -32,18 +38,20 @@ jobs:
 
       - name: 查新版本、改锁文件
         id: check
+        # 只验证时用分支自己锁的版本，不去查新的
+        if: ${{ !inputs.validate_only }}
         shell: cmd
         env:
           GH_TOKEN: ${{ github.token }}
         run: uv run --no-project --python 3.12 tools\update_deps.py --summary "%RUNNER_TEMP%\pr.md"
 
       - name: 用新版本从零部署（和朋友电脑上的一键部署走同一个脚本）
-        if: steps.check.outputs.changed == 'true'
+        if: steps.check.outputs.changed == 'true' || inputs.validate_only
         shell: cmd
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1 -Yes
 
       - name: 测试用配置
-        if: steps.check.outputs.changed == 'true'
+        if: steps.check.outputs.changed == 'true' || inputs.validate_only
         shell: powershell
         run: |
           . .\scripts\common.ps1
@@ -55,7 +63,7 @@ jobs:
           Set-EnvValue BAISHOU_VAULT "$env:RUNNER_TEMP\vault"
 
       - name: 启动整套
-        if: steps.check.outputs.changed == 'true'
+        if: steps.check.outputs.changed == 'true' || inputs.validate_only
         shell: cmd
         # 输出写文件：后台服务会继承标准输出，直接接在步骤的管道上步骤就结束不了
         run: |
@@ -65,12 +73,12 @@ jobs:
           exit /b %code%
 
       - name: 冒烟测试（含早柚核心）
-        if: steps.check.outputs.changed == 'true'
+        if: steps.check.outputs.changed == 'true' || inputs.validate_only
         shell: cmd
         run: .venv\Scripts\python tests\smoke_stack.py --core --core-dir gsuid_core --core-wait 900
 
       - name: 单元测试
-        if: steps.check.outputs.changed == 'true'
+        if: steps.check.outputs.changed == 'true' || inputs.validate_only
         shell: cmd
         run: |
           .venv\Scripts\python tests\test_persona_rules.py || exit /b 1
@@ -78,7 +86,7 @@ jobs:
           .venv\Scripts\python tests\test_migrate_journal_tags.py
 
       - name: 停止
-        if: always() && steps.check.outputs.changed == 'true'
+        if: always() && (steps.check.outputs.changed == 'true' || inputs.validate_only)
         shell: cmd
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\stop-all.ps1 > NUL 2>&1 < NUL & exit /b 0
 
@@ -91,7 +99,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: 开 / 更新 PR
-        if: steps.check.outputs.changed == 'true'
+        if: steps.check.outputs.changed == 'true' && !inputs.validate_only
         uses: peter-evans/create-pull-request@v8
         with:
           branch: deps/auto-update

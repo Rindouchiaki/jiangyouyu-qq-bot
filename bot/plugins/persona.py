@@ -35,6 +35,7 @@ import memory
 import sticker_lib
 import vision
 from persona_rules import (
+    DEFAULT_GAME_PREFIXES,
     compose_messages,
     follow_decision,
     humanize,
@@ -82,9 +83,9 @@ ENGAGE_FOLLOW_WINDOW = float(os.getenv("ENGAGE_FOLLOW_WINDOW", "45"))
 ENGAGE_MAX_TURNS = int(os.getenv("ENGAGE_MAX_TURNS", "4"))
 STICKER_COOLDOWN = float(os.getenv("STICKER_COOLDOWN", "3"))
 AT_USER = os.getenv("REPLY_AT_USER", "1") == "1"
-# 早柚核心的指令前缀；「绝区零」「崩坏3」这类中文前缀不放进来，免得平常聊这两个游戏时人设也闭嘴
+# 早柚核心的指令前缀，默认值见 persona_rules.DEFAULT_GAME_PREFIXES
 GAME_CMD_PREFIXES = tuple(
-    p.strip() for p in os.getenv("GAME_CMD_PREFIXES", "sr,zzz,bbb,扫码登录,扫码登陆").split(",") if p.strip()
+    p.strip() for p in os.getenv("GAME_CMD_PREFIXES", ",".join(DEFAULT_GAME_PREFIXES)).split(",") if p.strip()
 )
 PROB_CALLED = float(os.getenv("REPLY_PROB_CALLED", "0.5"))
 PROB_FOLLOW = float(os.getenv("REPLY_PROB_FOLLOW", "0.15"))

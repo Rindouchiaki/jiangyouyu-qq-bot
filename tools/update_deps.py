@@ -5,7 +5,7 @@ r"""查外部依赖有没有新版本，有就改锁文件并写好 PR 说明。
     python tools/update_deps.py --summary pr.md        # 顺便写 PR 说明
 锁的是：
 - requirements.lock：requirements.txt 范围内的最新版（uv pip compile，按 Windows / Python 3.12 解析）
-- external.lock.json：SnowLuma 最新 release（含 sha256）、早柚核心和三个插件默认分支的最新提交
+- external.lock.json：SnowLuma 最新 release（含 sha256）、早柚核心和各游戏插件默认分支的最新提交
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ def check_git(lock: dict, notes: list[str]) -> list[str]:
             detail += f"，{cmp.get('total_commits', len(msgs))} 个提交：" + "；".join(m.replace("|", "/") for m in msgs)
         except Exception as exc:  # noqa: BLE001
             print(f"compare {name} 失败：{exc}", file=sys.stderr)
-        lock["git"][name] = {"repo": cur["repo"], "commit": new}
+        lock["git"][name] = {**cur, "commit": new}
         notes.append(f"| {name} | `{cur['commit'][:7]}` → `{new[:7]}` | {detail} |")
         changed.append(name)
     return changed
@@ -133,7 +133,7 @@ def main() -> int:
 
     if args.summary:
         lines = [
-            "外部依赖有新版本，CI 已经在 Windows 上用新版本**从零部署并跑完冒烟测试**（启动 SnowLuma、早柚核心 + 三个插件、NoneBot，"
+            "外部依赖有新版本，CI 已经在 Windows 上用新版本**从零部署并跑完冒烟测试**（启动 SnowLuma、早柚核心和各游戏插件、NoneBot，"
             "模拟 QQ 消息验证回复、扫码登录不进群、临时会话回复、二维码文案）。",
             "",
             "## 合并后怎么更新",

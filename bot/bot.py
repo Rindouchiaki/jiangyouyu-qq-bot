@@ -55,7 +55,7 @@ try:
 except Exception as exc:  # noqa: BLE001
     nonebot.logger.warning(f"B站解析插件加载失败 {type(exc).__name__}: {exc}")
 
-# 早柚核心连接插件：把消息转给另起的核心进程（星铁/绝区零/崩坏3 查询），核心没开也不影响人设
+# 早柚核心连接插件：把消息转给另起的核心进程（游戏查询，插件列表见 external.lock.json），核心没开也不影响人设
 try:
     nonebot.load_plugin("GenshinUID")
 except Exception as exc:  # noqa: BLE001

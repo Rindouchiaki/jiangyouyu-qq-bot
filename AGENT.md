@@ -17,7 +17,7 @@
 - **目录**：仓库就是运行目录，`.venv`、`bot/persona.env`、`bot/data`、`logs`、`SnowLuma`、`gsuid_core` 都在仓库里（后几个已 gitignore）。脚本统一 dot-source `scripts/common.ps1` 取路径，装在别处的用 persona.env 的 `SNOWLUMA_DIR` / `GSCORE_DIR` / `TOOLS_DIR` / `STICKER_DIR` / `LOG_DIR` 指过去；代码里的默认路径也按仓库算，不要再写死盘符。
 - **部署**：`scripts/setup.ps1` 要能重复跑（已装的跳过、已有的配置不覆盖），新增的安装步骤也照这个写；改了部署流程同步更新 `docs/部署指南.md`。
 - **依赖**：新增第三方包写进 `requirements.txt`（写范围），再跑 `python tools/update_deps.py` 重新生成 `requirements.lock`；外部组件的版本只改 `external.lock.json`（平时由自动更新 PR 改）。
-- **游戏功能**：星铁 / 绝区零 / 崩坏3 的查询都交给早柚核心的插件，本仓库只管连接和人设避让，不再自己写游戏接口。
+- **游戏功能**：游戏查询都交给早柚核心的插件（列表在 `external.lock.json`，加新游戏照 `docs/早柚核心接入.md` 第六节），本仓库只管连接、登录拦截和人设避让，不再自己写游戏接口。
 - **权限判断**：开发者专用指令一律写成 `if not DEV_UIN or str(event.get_user_id()) != DEV_UIN: return`，未配置时拒绝所有人，不要写成 `if DEV_UIN and ...`。
 - **纯逻辑放 `bot/persona_rules.py`**：不依赖 NoneBot，方便离线测。
 - **提交**：一个问题一个分支一个 PR，squash merge；提交信息用 `fix(范围): 中文说明`。
@@ -69,6 +69,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #31 | 脚本和代码默认路径写死作者本机 `Z:\snowluma\stack\nonebot`，和仓库布局对不上；`OCR_SCRIPT` 默认指到仓库外；脚本里写死 token 占位符 | 仓库即运行目录：新增 `scripts/common.ps1`，各脚本从 persona.env 读路径和 `ONEBOT_ACCESS_TOKEN` / `SNOWLUMA_WEBUI_PASSWORD`；停止脚本按目录 + 子进程树找进程；删掉重复的 `start-all.ps1`；表情、OCR、抽卡文案默认指仓库里的目录。Windows 上实测启动 / 自检 / 停止（SnowLuma 用假进程代替） |
 | #32 | 部署要手动开好几个终端、按文档一步步敲命令，朋友照着装容易漏 | `scripts/setup.ps1`（幂等）+ 根目录 `一键部署.cmd` / `一键启动.cmd` / `一键停止.cmd`：自动装 uv、Python 3.12、依赖、ffmpeg、SnowLuma、早柚核心和三个插件，生成随机 token 的 `onebot.json` 并和 persona.env 对齐；发现 `Z:\snowluma` 旧安装时可沿用（拷配置 / 数据 / 表情原图，SnowLuma、核心、tools 原地用）。新增 `docs/部署指南.md` |
 | #33 | 外部依赖不锁版本（pip 只有范围、核心和插件 clone 最新、SnowLuma 装 latest 且不校验哈希），更新全靠手动 | `requirements.lock` + `external.lock.json` 锁定确切版本，一键部署按锁安装（SnowLuma 校验 sha256）；`update-deps.yml` 每天查新版本，在 Windows 上从零部署 + 启动整套 + 冒烟测试通过才开 PR；合并后双击 `一键更新.cmd`（`update.ps1`：拉代码 → 停服务 → `setup.ps1 -Update` → 重启），SnowLuma 原地升级并备份旧文件。另加 `ci.yml`（脚本语法、单测、NoneBot 冒烟）和 Actions 版本的 Dependabot |
+| #35 | 要加原神 | 核心插件 GenshinUID（前缀 `gs`，米游社扫码和星铁等共用）。顺带把加游戏变成「锁文件加一项 + 文档」：`external.lock.json` 的插件项带 `game` / `prefixes` / `help`，一键部署按它装插件并装各插件自己的依赖，给旧 `persona.env` 补前缀；冒烟测试对每个插件发帮助；`update-deps.yml` 加 `validate_only` 手动验证分支。CI 验证时发现人设对「扫码 登录」（带空格）会插话：`is_game_command` 改为和核心一样不看空白 |
 
 **自动记忆仍然开着**：`PRIVATE_MIRROR`、`GROUP_MIRROR` 默认 1；私聊每条都落盘，群聊只记被叫/接续的对话；问到「记得/上次」照常带本会话最近 5 条。改的只是按会话隔离和手动指令的权限。
 
