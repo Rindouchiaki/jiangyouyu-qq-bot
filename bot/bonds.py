@@ -207,6 +207,34 @@ def add_group_style(gid: str, texts: list[str], now: float | None = None) -> int
     return len(texts)
 
 
+def mark_private(uid: str, now: float | None = None) -> None:
+    """对方私聊找我了：记下时间，主动找他没回的次数清零（lp / pu，见 persona_rules.proactive_due）。"""
+    with _lock:
+        rec = _data["users"].get(str(uid))
+        if rec is None:
+            return
+        rec["lp"] = now or time.time()
+        rec["pu"] = 0
+        _state["dirty"] = True
+
+
+def mark_proactive(uid: str, now: float | None = None) -> None:
+    """我主动找了他一次：记时间，没回的次数 +1，他一回就清零。"""
+    with _lock:
+        rec = _data["users"].get(str(uid))
+        if rec is None:
+            return
+        rec["pa"] = now or time.time()
+        rec["pu"] = int(rec.get("pu") or 0) + 1
+        _state["dirty"] = True
+
+
+def private_contacts() -> list[tuple[str, dict]]:
+    """私聊过的人（只读副本），主动找人时从这里挑。"""
+    with _lock:
+        return [(uid, dict(rec)) for uid, rec in _data["users"].items() if rec.get("lp")]
+
+
 def forget_user(uid: str) -> bool:
     """开发者删某人的记录（/小本本 删除）：整条删掉（群日记里提到他的不动，那是群里公开说过的）。"""
     with _lock:

@@ -13,6 +13,7 @@
 每条 ≤ REPLY_MAX_CHARS 字、一次最多 REPLY_MAX_LINES 条，去掉 emoji / 括号动作 / AI 字样。
 
 联网（web_search.py）：有人跟她说话、像是要查东西时把 DeepSeek 搜索交给模型，模型自己决定查不查。
+主动找人：私聊过、好感高的人沉默一阵后偶尔主动发一两句（PROACTIVE_*）。
 学新梗：跟着日记一起从聊天里挑没见过的说法，没把握的查一下，存进 slang 学到的词表。
 
 小本本（bonds.py）：每个群友按 QQ 号一份好感度、熟悉度和简短日记，群聊私聊共用；
@@ -66,6 +67,7 @@ from persona_rules import (
     debounce_deadline,
     follow_decision,
     format_search_results,
+    in_quiet_hours,
     interest_hits,
     humanize,
     is_conversation_ending,
@@ -83,6 +85,7 @@ from persona_rules import (
     parse_slang_candidates,
     parse_slang_meaning,
     pick_flavor,
+    proactive_due,
     quota_allows,
     reaction_delay,
     safe_name,
@@ -180,6 +183,15 @@ SEARCH_PRELUDE_PROB = float(os.getenv("SEARCH_PRELUDE_PROB", "0.6"))
 # 学新梗：跟着群日记 / 个人日记一起挑，没把握的每天最多查几个
 SLANG_LEARN = os.getenv("SLANG_LEARN", "1").strip() not in ("0", "false", "False")
 SLANG_SEARCH_DAILY = int(os.getenv("SLANG_SEARCH_DAILY", "20"))
+# 主动找人：只找私聊过、好感「有好感」以上的人（开发者不看好感）
+PROACTIVE_ENABLE = os.getenv("PROACTIVE_ENABLE", "1").strip() not in ("0", "false", "False")
+PROACTIVE_CHECK_SEC = float(os.getenv("PROACTIVE_CHECK_SEC", "600"))
+PROACTIVE_PROB = float(os.getenv("PROACTIVE_PROB", "0.15"))
+PROACTIVE_MIN_SILENCE_H = float(os.getenv("PROACTIVE_MIN_SILENCE_H", "6"))
+PROACTIVE_MIN_GAP_H = float(os.getenv("PROACTIVE_MIN_GAP_H", "20"))
+PROACTIVE_MAX_UNANSWERED = int(os.getenv("PROACTIVE_MAX_UNANSWERED", "2"))
+PROACTIVE_DAILY_MAX = int(os.getenv("PROACTIVE_DAILY_MAX", "3"))
+PROACTIVE_QUIET = os.getenv("PROACTIVE_QUIET", "1-9").strip()
 
 _data_env = os.getenv("PERSONA_DATA_DIR", "").strip()
 _DATA_DIR = Path(_data_env) if _data_env else Path(__file__).resolve().parent.parent / "data"
@@ -1153,6 +1165,8 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
 
     # 跟她说话才算互动：好感、熟悉度按 QQ 号记，群里私聊是同一份
     bond = _bond_touch(user_id, name, affinity_delta(text)) if addressed else bonds.user(user_id)
+    if not is_group:
+        bonds.mark_private(user_id, now)
     is_dev = bool(DEV_UIN) and user_id == DEV_UIN
     att = attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
 
@@ -1542,6 +1556,94 @@ async def _learn_slang(lines: list[tuple[str, str]]) -> None:
                 continue
         if slang.add_learned(term, meaning, how):
             logger.info(f"persona: 学到新梗 {term}={meaning}（{how}）")
+
+
+# ---------------------------------------------------------------- 主动找人
+_proactive_day = {"date": "", "n": 0}
+_proactive_task: list[asyncio.Task] = []
+
+
+async def _proactive_tick() -> None:
+    now = time.time()
+    if MOCK or not API_KEY or in_quiet_hours(datetime.now().hour, PROACTIVE_QUIET):
+        return
+    if _mode_name("private") == "静音":
+        return
+    today = datetime.now().strftime("%Y-%m-%d")
+    if _proactive_day["date"] != today:
+        _proactive_day.update(date=today, n=0)
+    if _proactive_day["n"] >= PROACTIVE_DAILY_MAX:
+        return
+    cands = []
+    for uid, rec in bonds.private_contacts():
+        st = _chats.get(f"private_{uid}")
+        if st and st.pending:
+            continue
+        att = attitude(int(rec.get("aff", 0)), int(rec.get("fam", 0)))
+        if proactive_due(
+            rec, now, att, bool(DEV_UIN) and uid == DEV_UIN,
+            PROACTIVE_MIN_SILENCE_H * 3600, PROACTIVE_MIN_GAP_H * 3600, PROACTIVE_MAX_UNANSWERED,
+        ):
+            cands.append((uid, rec, att))
+    # 每次检查只按概率找一个人，冒泡的时间点就不规律
+    if not cands or random.random() >= PROACTIVE_PROB:
+        return
+    uid, rec, att = random.choice(cands)
+    try:
+        bot = nonebot.get_bot(BOT_UIN) if BOT_UIN else nonebot.get_bot()
+    except Exception:  # noqa: BLE001
+        return
+    key = f"private_{uid}"
+    name = DEV_NAME if DEV_UIN and uid == DEV_UIN else str(rec.get("name") or "他")
+    messages = compose_messages(
+        list(_history[key]), name, "", self_names=NICKNAMES, dev_name=DEV_NAME or None,
+        hour=datetime.now().hour, attitude=att, bond=(int(rec.get("aff", 0)), int(rec.get("fam", 0))),
+        user_notes=visible_notes(rec.get("notes"), False), topics=bonds.top_topics(uid),
+        flavor=_sticky_flavor(key, att), proactive=True,
+    )
+    try:
+        raw = await ask_llm(messages, 100, stop=None)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"persona: 主动找人失败 {type(exc).__name__}: {exc}")
+        return
+    parts = [t for kind, t in split_reply(raw, 2, MAX_CHARS, REPLY_TOTAL_CHARS) if kind == "text" and not is_offensive(t)]
+    if not parts:
+        return
+    _proactive_day["n"] += 1
+    bonds.mark_proactive(uid, now)
+    bonds.save(force=True)
+    for i, line in enumerate(parts):
+        await _sleep(typing_delay(line, TYPING_SEC_PER_CHAR, TYPING_MAX_SEC) if i else 0)
+        try:
+            await bot.send_private_msg(user_id=int(uid), message=line)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"persona: 主动私聊发不出去 {type(exc).__name__}: {exc}")
+            return
+        _history[key].append(("我", line))
+    _last_reply[key] = time.time()
+    _save_history(force=True)
+    logger.info(f"persona: 主动找 {name} 聊了两句：{' / '.join(parts)}（态度 {att}，今天第 {_proactive_day['n']} 次）")
+
+
+async def _proactive_loop() -> None:
+    await asyncio.sleep(120)
+    while True:
+        try:
+            await _proactive_tick()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"persona: 主动找人检查出错 {type(exc).__name__}: {exc}")
+        await asyncio.sleep(PROACTIVE_CHECK_SEC)
+
+
+@nonebot.get_driver().on_startup
+async def _start_proactive() -> None:
+    if PROACTIVE_ENABLE and not _proactive_task:
+        # 留引用，免得任务被回收（见 AGENTS.md #8）
+        _proactive_task.append(asyncio.create_task(_proactive_loop()))
+        logger.info(
+            f"persona: 主动找人已开（好感「有好感」以上、私聊沉默 {PROACTIVE_MIN_SILENCE_H:.0f} 小时后，"
+            f"每天最多 {PROACTIVE_DAILY_MAX} 次，{PROACTIVE_QUIET} 点不打扰）"
+        )
 
 
 mode_cmd = on_command("模式", priority=16, block=True)

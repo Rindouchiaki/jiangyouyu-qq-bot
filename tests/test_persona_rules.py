@@ -20,6 +20,7 @@ from persona_rules import (  # noqa: E402
     debounce_deadline,
     follow_decision,
     format_search_results,
+    in_quiet_hours,
     interest_hits,
     humanize,
     is_conversation_ending,
@@ -38,6 +39,7 @@ from persona_rules import (  # noqa: E402
     parse_slang_candidates,
     parse_slang_meaning,
     pick_flavor,
+    proactive_due,
     quota_allows,
     reaction_delay,
     safe_name,
@@ -407,6 +409,21 @@ def main() -> int:
     assert parse_slang_candidates("无") == []
     assert parse_slang_meaning("不确定") == "" and parse_slang_meaning("「猫的昵称」") == "猫的昵称"
     print("PASS  学新梗：拆候选、认识的不要、没把握的标出来去查")
+
+    assert in_quiet_hours(3, "1-9") and not in_quiet_hours(12, "1-9")
+    assert in_quiet_hours(23, "23-7") and in_quiet_hours(2, "23-7") and not in_quiet_hours(8, "23-7")
+    assert not in_quiet_hours(3, "乱写")
+    now = 1_000_000.0
+    rec = {"lp": now - 7 * 3600, "pa": 0, "pu": 0}
+    assert proactive_due(rec, now, "亲近") and not proactive_due(rec, now, "普通")
+    assert proactive_due(rec, now, "普通", is_dev=True)
+    assert not proactive_due({**rec, "pu": 2}, now, "亲近")
+    assert not proactive_due({**rec, "lp": now - 3600}, now, "亲近")
+    assert not proactive_due({**rec, "pa": now - 3600}, now, "亲近")
+    assert not proactive_due({}, now, "亲近")
+    proactive_msgs = compose_messages([], "小明", "", proactive=True)
+    assert "突然想找小明" in proactive_msgs[-1]["content"] and "主动" not in proactive_msgs[-1]["content"]
+    print("PASS  主动找人：好感够、沉默够久、没被连着晾才找，深夜不打扰")
 
     print(f"\n结果: {'全部通过' if failed == 0 else f'{failed} 项失败'}")
     return 0 if failed == 0 else 1

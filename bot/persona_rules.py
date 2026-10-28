@@ -466,6 +466,7 @@ def build_system_prompt(
     slang: str = "",
     can_search: bool = False,
     interests: tuple[str, ...] = (),
+    proactive: bool = False,
 ) -> str:
     """在基础人设上补几条：我是谁、开发者是谁、记忆、什么气氛、什么情绪、对这个人什么态度。"""
     system = SYSTEM_PROMPT
@@ -534,6 +535,13 @@ def build_system_prompt(
         if interests:
             system += f"你感兴趣的是{'、'.join(interests)}这些，别的话题一般不插嘴。"
         system += f"不感兴趣、接不上、或者人家在聊正事，就只输出 {SILENT_MARK}。"
+
+    if proactive:
+        system += (
+            "\n\n现在没人跟你说话，是你自己突然想找他聊两句：一两条就好，像随手发的消息。"
+            "可以说说你在干嘛、接上次聊的事、或者问问小本本上记的他的事；"
+            "别发「在吗」「好久不见」这种开场白，别解释为什么找他。"
+        )
 
     if can_search:
         system += (
@@ -623,6 +631,7 @@ def compose_messages(
     new_msgs: list[tuple[str, str]] | None = None,
     can_search: bool = False,
     interests: tuple[str, ...] = (),
+    proactive: bool = False,
 ) -> list[dict[str, str]]:
     """组装成 OpenAI 兼容的 messages。history 为 (昵称, 内容) 列表。
 
@@ -642,6 +651,7 @@ def compose_messages(
                 help_mode=help_mode, hour=hour, attitude=attitude, bond=bond, dere=dere,
                 flavor=flavor, group_style=bool(group_style), question=question,
                 topics=topics, slang=slang, can_search=can_search, interests=interests,
+                proactive=proactive,
             ),
         }
     ]
@@ -668,7 +678,9 @@ def compose_messages(
         messages.append({"role": "user", "content": "\n".join(lines)})
     # 每条压成一行，防止正文里换行伪造「酱酱鱼：…」这类别人的发言
     lines = [f"{who}：{' '.join(str(text).split())}" for who, text in new_msgs]
-    if len(lines) == 1:
+    if proactive:
+        messages.append({"role": "user", "content": f"（没人说话。你突然想找{user_name}聊两句）"})
+    elif len(lines) == 1:
         messages.append({"role": "user", "content": lines[0]})
     else:
         messages.append({"role": "user", "content": "（新消息）\n" + "\n".join(lines)})
@@ -1162,3 +1174,37 @@ def parse_slang_meaning(raw: str, max_chars: int = 20) -> str:
     if not t or "不确定" in t:
         return ""
     return t[:max_chars]
+
+
+# ---------------------------------------------------------------- 主动找人
+def in_quiet_hours(hour: int, spec: str = "1-8") -> bool:
+    """「1-8」= 凌晨 1 点到 8 点前不打扰；支持跨零点的「23-7」，写错就当没有免打扰。"""
+    try:
+        start, end = (int(x) for x in spec.split("-", 1))
+    except (ValueError, AttributeError):
+        return False
+    if start == end:
+        return False
+    return start <= hour < end if start < end else hour >= start or hour < end
+
+
+def proactive_due(
+    rec: dict,
+    now: float,
+    att: str | None,
+    is_dev: bool = False,
+    min_silence: float = 6 * 3600,
+    min_gap: float = 20 * 3600,
+    max_unanswered: int = 2,
+) -> bool:
+    """这个人现在能不能主动找：私聊过、好感够、沉默够久、离上次主动够久、没被连着晾。"""
+    last_private = float(rec.get("lp") or 0)
+    if last_private <= 0:
+        return False
+    if not is_dev and att not in ("有好感", "亲近"):
+        return False
+    if int(rec.get("pu") or 0) >= max_unanswered:
+        return False
+    if now - last_private < min_silence:
+        return False
+    return now - float(rec.get("pa") or 0) >= min_gap

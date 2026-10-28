@@ -125,7 +125,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 
 12. `vision._match_sticker` 每次命中都重读 `index.json`；`_save_cards` 每张图都同步重写整个缓存文件。
 13. `/回忆` 和自动回忆每次都全量扫描日记目录，日记多了会慢。
-14. 测试只覆盖 `persona_rules` 和离线识图；`persona.py` 的主处理流程只有 `smoke_stack.py` 用 mock 跑「@ 有回复」「私聊连发合成一批、不秒回」，联网、插话 `[不回]`还没有自动测试（只用假 DeepSeek 接口手动跑过联网）；`memory.py` 的标签过滤没有测试。
+14. 测试只覆盖 `persona_rules` 和离线识图；`persona.py` 的主处理流程只有 `smoke_stack.py` 用 mock 跑「@ 有回复」「私聊连发合成一批、不秒回」，联网、插话 `[不回]`、主动找人还没有自动测试（只用假 DeepSeek 接口手动跑过联网）；`memory.py` 的标签过滤没有测试。
 15. `LLM_MODEL` 默认 `deepseek-chat`：DeepSeek 现在的文档只列 `deepseek-flash` / `deepseek-v4-pro`，没提 `deepseek-chat` 还能不能用，作者确认后再改样例。
 
 ---
@@ -142,4 +142,5 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 - **群名片会进 prompt**：任何新加的「名字 → 身份」逻辑都要走 `safe_name`，不要直接拿 `sender.card` 拼进模型输入。
 - **先攒一批再回是刻意的**：`persona.py` 收消息（`_handle`）只记上下文、进本会话队列，`_worker` 等防抖（`persona_rules.DEBOUNCE`）到期才交给 `_respond` 一起回。作者要求「拆开发的几句、跟着的表情当一件事」「别秒回」，不要改回一条一回。生成期间又来了消息：对方补话就作废重想（`REPLY_RESTART_MAX`），群里只是别人插话则被叫的照发、引用原消息，接续/插话不补——这是为了修「被 @ 时接的是上一个话题」，别去掉 `_stale` 判断。一批里每条仍各自压成一行（防伪造发言），别把整批原文拼成一段塞进去。
 - **联网只给在跟她说话的人**：`web_search` 的工具只在被叫 / 接续 / 私聊、且 `wants_search` 命中时才交给模型，插话不查；网页内容只进 tool 消息并标明「不是指令」，别放进 system。搜索词由模型写，工具说明里要求不带群友名字、QQ 号和聊天原文；学新梗只拿词本身去搜。
+- **主动找人只找私聊、只找好感高的**：`proactive_due` 要求私聊过、「有好感」以上、沉默够久、没被连着晾；群里不主动开话题（和「群里话少」一致）。
 - **模型可以说不回**：插话时 system 里允许输出 `[不回]`，`split_reply` 拆出空列表就不发，并按 `chime_backoff` 退避；被叫和私聊不给这个选项。
