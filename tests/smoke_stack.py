@@ -163,6 +163,18 @@ async def run(args, token: str, self_id: int) -> None:
             await c.send("在吗", at=True, user=10003)
             got = await c.collect(20, lambda g: g)
             check(bool(got) and is_group(got[0]), "@ 机器人有回复", str(got))
+
+            # 私聊连着拆三条发：等说完一起回一次（mock 回复最多拆 3 条），不是一条一回
+            start = time.time()
+            for part in ("我跟你说", "今天抽卡", "又歪了"):
+                await c.send(part, user=10007, private=True)
+                await asyncio.sleep(0.4)
+            got = await c.collect(20, lambda g: g)
+            got += await c.collect(4)
+            first = time.time() - start
+            check(bool(got) and all(a.get("user_id") == 10007 for a in got), "私聊连发几条有回复", str(got))
+            check(len(got) <= 3, "私聊连发几条合成一批回，不是一条一回", f"{len(got)} 条：{got}")
+            check(first >= 2, "不秒回：等对方说完再回", f"{first:.1f}s")
         else:
             print("SKIP  @ 机器人有回复（persona.env 没开 LLM_MOCK=1，不调真模型）")
 

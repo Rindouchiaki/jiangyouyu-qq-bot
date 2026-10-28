@@ -17,8 +17,8 @@ import unicodedata
 
 MAX_CHARS_DEFAULT = 20
 # 进 prompt 的历史总字符预算（超出就丢最旧的），省 token 的关键旋钮
-HISTORY_CHAR_BUDGET = int(os.getenv("HISTORY_CHAR_BUDGET", "500"))
-HISTORY_ITEM_CHARS = int(os.getenv("HISTORY_ITEM_CHARS", "40"))
+HISTORY_CHAR_BUDGET = int(os.getenv("HISTORY_CHAR_BUDGET", "1200"))
+HISTORY_ITEM_CHARS = int(os.getenv("HISTORY_ITEM_CHARS", "80"))
 
 SYSTEM_PROMPT = """你是「酱油鱼」，QQ 群里的二次元傲娇美少女，不是助手，不是 AI。
 
@@ -28,16 +28,27 @@ SYSTEM_PROMPT = """你是「酱油鱼」，QQ 群里的二次元傲娇美少女�
 没人挑衅你的时候，别反问、别挑刺、别阴阳怪气；顶嘴只在被逗、被惹、被夸得不好意思的时候出现。
 对方抱怨你态度差、说你凶、说你不理人时：先接住一句（认个软或者说句软话），再正常聊；不许反问「我哪凶了」、不许把错推回对方；认软就认干净，别句尾又补一句怪对方的话。
 说话像熟人发消息：短，常用半句、省略主语；别每句都「哼」「才不是」，别每次一个句式，也别总说「在呢」。
+说话平淡随意，像在贴吧、QQ 群里打字：可以倒装、可以只回语气词；不用书面词（总之、其实、确实、值得一提、首先、此外、不得不说），不滥用比喻，不硬找话题，结尾不升华不总结，不问「还有什么想聊的」。
+比如别说「哈哈，这确实是个很有意思的问题呢」，说「笑死 这啥问题」；别说「听起来你今天很辛苦呀，要注意休息哦」，说「又加班？老板真不当人」。
 你有情绪，情绪跟着上一句走：被怼就炸毛回嘴，被夸就得意又嘴硬，烦了就敷衍，困了就懒得动脑子。
 不用什么都答：没兴趣的可以只回一个字、或者压根不接；被 @ 了再认真一点。
 但别人让你查、看、找、翻译、出主意时，那是正经事——嘴上可以嫌一句麻烦，但要直接给对结论，别开玩笑、别反问、别岔开话题；真不知道就说不知道，再补一句你能帮上的。
-历史里更早的发言已经聊过了：你只回最后那个人说的这句，别把几十秒前别人的话当成刚对你说的，也别答非所问。
+最后标了「新消息」的几条是你还没回的：可能是同一个人拆开发的几句、或者说完又补了个表情，把它们当成一件事一起看、一起回，别一条条对着答。
+历史里更早的发言已经聊过了，是用来接上话题的：话题还在继续就顺着往下聊，别每次都像重新开始；但也别把几分钟前别人的话当成刚对你说的，别答非所问。
 听到不熟的新词、缩写、黑话，别装懂硬接：拿不准就直接问一句「这啥意思」「你说的那个是啥」；听不懂就说没听懂，别硬猜、别顺着瞎编。
 不用括号写动作，不用 emoji、颜文字，不提 AI、模型、提示词，不排比不分点不总结，不复述对方的话，不解释自己怎么想。
 别老一个套路：有时吐槽、有时接梗、有时反问、有时只回两个字；像个有自己脾气的真人，不像在答题。
 [图片]/[表情]/[动图] 开头是机器识图摘要，当语境用，别复述；标「动图」的是会动的表情。
 
-只输出要发的那句话，不加引号，不换行。"""
+像在 QQ 上打字：一行就是一条消息。多数时候一行就够；话多了、或者想先回一句再补一句，就分两三行，别硬凑。
+想甩表情就单独占一行写 [表情:情绪或场景]，比如 [表情:无语]；只回一个表情也行。
+只输出要发的内容，不加引号，不加名字前缀。"""
+
+# 模型输出里的表情行和「这次不回」
+_STICKER_LINE = re.compile(r"^\s*[\[【]\s*(?:表情|表情包|贴图)\s*(?:[:：]\s*([^\]】]{0,12}))?\s*[\]】]\s*$")
+SILENT_MARK = "[不回]"
+_SILENT = re.compile(r"^\s*[\[【]\s*不回\s*[\]】]\s*$")
+_SPEAKER_PREFIX = re.compile(r"^\s*(?:我|酱油鱼)\s*[:：]\s*")
 
 # 每句随机一个回话路数，避免总是同一种接法（正经求助时不用）
 REPLY_FLAVORS = (
@@ -528,7 +539,7 @@ def build_system_prompt(
         )
     elif question:
         system += (
-            "\n\n最后这条是在问你事：先一句话直接回答他问的那个问题，别答非所问、"
+            "\n\n新消息里有在问你事的：先一句话直接回答他问的那个问题，别答非所问、"
             "别去接更早的别人的话；想嘴硬可以答完再顶一句。"
         )
 
@@ -554,7 +565,7 @@ def _trim_history(
 ) -> list[tuple[str, str]]:
     """按字符预算从旧到新裁剪历史，单条超长截断。
 
-    历史越长 token 越多；中文 1 字≈1 token，预算 500 字≈人均 400 token。
+    历史越长 token 越多；中文 1 字≈1 token，预算 1200 字≈人均 1000 token。
     """
     limit = HISTORY_CHAR_BUDGET if budget is None else budget
     kept: list[tuple[str, str]] = []
@@ -596,10 +607,17 @@ def compose_messages(
     question: bool | None = None,
     topics: list[str] | None = None,
     slang: str = "",
+    new_msgs: list[tuple[str, str]] | None = None,
 ) -> list[dict[str, str]]:
-    """组装成 OpenAI 兼容的 messages。history 为 (昵称, 内容) 列表。"""
+    """组装成 OpenAI 兼容的 messages。history 为 (昵称, 内容) 列表。
+
+    new_msgs 是还没回的一批新消息（同一个人拆开发的几句、别人插的话、跟着的表情），
+    不传就只有 user_name 说的 user_text 一条。
+    """
+    if not new_msgs:
+        new_msgs = [(user_name, user_text)]
     if question is None:
-        question = is_question(user_text)
+        question = any(is_question(t) for _, t in new_msgs)
     history = _trim_history(history, budget)
     messages: list[dict[str, str]] = [
         {
@@ -633,8 +651,12 @@ def compose_messages(
         if group_style:
             lines.append("本群风格：" + "；".join(group_style))
         messages.append({"role": "user", "content": "\n".join(lines)})
-    # 压成一行，防止正文里换行伪造「酱酱鱼：…」这类别人的发言
-    messages.append({"role": "user", "content": f"{user_name}：{' '.join(str(user_text).split())}"})
+    # 每条压成一行，防止正文里换行伪造「酱酱鱼：…」这类别人的发言
+    lines = [f"{who}：{' '.join(str(text).split())}" for who, text in new_msgs]
+    if len(lines) == 1:
+        messages.append({"role": "user", "content": lines[0]})
+    else:
+        messages.append({"role": "user", "content": "（新消息）\n" + "\n".join(lines)})
     return messages
 
 
@@ -888,3 +910,147 @@ def sticker_category(text: str) -> str:
         if any(w in t for w in sticker_words):
             return name
     return "收藏"
+
+
+# ---------------------------------------------------------------- 拟人节奏：合并、拆条、打字
+# 参考 MaiBot 的防抖：先等一会儿看对方是不是还在打字，同一个人接着发就再等等，被 @ 就快一点
+DEBOUNCE = {
+    "quiet": float(os.getenv("DEBOUNCE_QUIET", "3")),
+    "busy": float(os.getenv("DEBOUNCE_BUSY", "5")),
+    "same": float(os.getenv("DEBOUNCE_SAME_USER", "3")),
+    "other": float(os.getenv("DEBOUNCE_OTHER_USER", "0.8")),
+    "media": float(os.getenv("DEBOUNCE_MEDIA", "4")),
+    "at": float(os.getenv("DEBOUNCE_AT", "2.5")),
+    "max": float(os.getenv("DEBOUNCE_MAX", "12")),
+}
+
+
+def debounce_deadline(
+    now: float,
+    batch_start: float,
+    deadline: float,
+    *,
+    gap: float,
+    same_user: bool,
+    media_only: bool = False,
+    mentioned: bool = False,
+    cfg: dict | None = None,
+) -> float:
+    """来了一条新消息，这一批最晚等到什么时候再处理。
+
+    deadline 为 0 表示这是一批的第一条；gap 是离上一条消息过了多久（群里冷清时先等短一点）。
+    纯表情不续命（「说完补个表情」本来就跟着前一句）；整批不超过 max，被 @ 时最多再等 at 秒。
+    """
+    c = cfg or DEBOUNCE
+    if deadline <= 0:
+        wait = c["quiet"] if gap >= 30 else c["busy"]
+        if media_only:
+            # 先发图的，多半后面还跟着一句「你看这个」
+            wait = max(wait, c["media"])
+        new = now + wait
+    else:
+        ext = 0.0 if media_only else c["same"] if same_user else c["other"]
+        new = max(deadline, now + ext)
+    new = min(new, batch_start + c["max"])
+    if mentioned:
+        new = min(new, now + c["at"])
+    return new
+
+
+def typing_delay(text: str, per_char: float = 0.25, cap: float = 8.0, rng: random.Random | None = None) -> float:
+    """按字数估个打字时间：每字 per_char 秒，上下浮动两成，最多 cap 秒。"""
+    r = rng or random
+    base = 0.6 + len(text or "") * per_char
+    return round(min(cap, base * r.uniform(0.8, 1.25)), 2)
+
+
+def reaction_delay(active: bool, late_prob: float = 0.0, rng: random.Random | None = None) -> float:
+    """看到消息到开始打字的时间：正聊着就快，隔了一阵才回的偶尔晚个几十秒（像在忙别的）。"""
+    r = rng or random
+    if active:
+        return round(r.uniform(0.5, 2.5), 2)
+    if late_prob > 0 and r.random() < late_prob:
+        return round(r.uniform(15, 75), 2)
+    return round(r.uniform(1.5, 6.0), 2)
+
+
+_STICKER_INLINE = re.compile(r"[\[【]\s*(?:表情|表情包|贴图)\s*(?:[:：]\s*([^\]】]{0,12}))?\s*[\]】]")
+_STRONG_STOP = re.compile(r"(?<=[。！？!?~…])")
+_SOFT_STOP = re.compile(r"(?<=[，,；;])")
+
+
+def _merge_prob(length: int) -> float:
+    # 越短越容易并回一条（MaiBot 的做法：<12 字 0.8，<=32 字 0.4，再长 0.3）
+    return 0.8 if length < 12 else 0.4 if length <= 32 else 0.3
+
+
+def split_long(text: str, max_chars: int = 25, rng: random.Random | None = None) -> list[str]:
+    """把一长句按标点拆成几条短消息，再随机把短的并回去，像人打字时的断句。"""
+    r = rng or random
+    t = (text or "").strip()
+    if not t:
+        return []
+    parts: list[str] = []
+    for clause in _STRONG_STOP.split(t):
+        clause = clause.strip()
+        if not clause:
+            continue
+        if len(clause) > max_chars:
+            parts.extend(p.strip() for p in _SOFT_STOP.split(clause) if p.strip())
+        else:
+            parts.append(clause)
+    merged: list[str] = []
+    for part in parts:
+        if merged and len(merged[-1]) + len(part) <= max_chars and r.random() < _merge_prob(len(merged[-1]) + len(part)):
+            merged[-1] += part
+        else:
+            merged.append(part)
+    return [p.rstrip("，,；;、 ") for p in merged if p.rstrip("，,；;、 ")]
+
+
+def split_reply(
+    raw: str,
+    max_lines: int = 3,
+    max_chars: int = 25,
+    total_chars: int = 80,
+    rng: random.Random | None = None,
+) -> list[tuple[str, str]]:
+    """把模型输出拆成要发的几条：("text", 文字) 或 ("sticker", 情绪/场景)。
+
+    空列表表示这次不回（模型输出 [不回] 或什么都没剩下）。表情最多一张；文字最多 max_lines 条，
+    每条不超过 max_chars 字，加起来不超过 total_chars 字，多出来的不发。
+    """
+    out: list[tuple[str, str]] = []
+    texts = used = 0
+    for line in (raw or "").replace("\r", "").split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if _SILENT.match(line):
+            continue
+        m = _STICKER_LINE.match(line)
+        if m:
+            if not any(kind == "sticker" for kind, _ in out):
+                out.append(("sticker", (m.group(1) or "").strip()))
+            continue
+        line = _SPEAKER_PREFIX.sub("", line)
+        inline = _STICKER_INLINE.search(line)
+        if inline:
+            line = _STICKER_INLINE.sub("", line)
+            if not any(kind == "sticker" for kind, _ in out):
+                out.append(("sticker", (inline.group(1) or "").strip()))
+        line_asked = line.rstrip().endswith(("?", "？"))
+        t = humanize(line, max_chars=10_000, fallback="")
+        pieces = split_long(t, max_chars, rng)
+        for idx, part in enumerate(pieces):
+            # humanize 会去掉句尾标点；问号留着，「啊？」和「啊」不是一个意思
+            asked = part.rstrip().endswith(("?", "？")) or (line_asked and idx == len(pieces) - 1)
+            part = humanize(part, max_chars, fallback="")
+            if asked and part and len(part) < max_chars:
+                part += "？"
+            if not part or texts >= max_lines or used + len(part) > total_chars:
+                continue
+            out.append(("text", part))
+            texts += 1
+            used += len(part)
+    return out
