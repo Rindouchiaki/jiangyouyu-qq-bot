@@ -35,7 +35,8 @@ git clone https://github.com/Rindouchiaki/jiangyouyu-qq-bot.git
 - [`docs/使用手册.md`](docs/使用手册.md)：装好之后怎么用——指令、档位、好感、记忆、识图、参数
 - [`docs/早柚核心接入.md`](docs/早柚核心接入.md)：游戏查询的安装、配置和群友用法
 - [`docs/架构与运维.md`](docs/架构与运维.md)：端口、数据位置、排障顺序
-- [`AGENTS.md`](AGENTS.md)：给接手的人和 AI 助手：代码约定、修改记录、设计取舍
+- [`AGENTS.md`](AGENTS.md)：给接手的人和 AI 助手：代码约定、待确认的问题、设计取舍
+- [`CHANGELOG.md`](CHANGELOG.md)：每个 PR 修了什么，最新的在最上面
 
 ## 说明
 
