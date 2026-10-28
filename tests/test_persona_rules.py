@@ -3,6 +3,7 @@
 import json
 import random
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
@@ -17,15 +18,21 @@ from persona_rules import (  # noqa: E402
     DERE_CHANCE,
     REPLY_FLAVORS,
     DEFAULT_GAME_PREFIXES,
+    AFF_PESTER,
+    CLOSE_FAM,
     INITIAL_AFF,
+    INITIAL_FAM,
+    PESTER_AT_COUNT,
     MAX_CHARS_DEFAULT,
     SILENT_MARK,
-    affinity_delta,
     attitude,
     chime_backoff,
     compose_messages,
     debounce_deadline,
+    bond_view,
     dev_floor,
+    diary_user_prompt,
+    idle_loss,
     parse_sticker_read,
     follow_decision,
     format_search_results,
@@ -46,6 +53,7 @@ from persona_rules import (  # noqa: E402
     name_call_prob,
     parse_group_diary,
     parse_notes,
+    parse_user_diary,
     parse_slang_candidates,
     parse_slang_meaning,
     pick_flavor,
@@ -253,54 +261,77 @@ def main() -> int:
     assert [quota_allows(n, 4, "被叫") for n in range(5)] == [True, True, True, True, False]
     print("PASS  quota_allows：越次要的回复越早停")
 
-    # 好感：骂人扣分、夸和谢加分，顶嘴调戏不加不扣
-    assert affinity_delta("你个傻逼") < 0 and affinity_delta("你好可爱") > 0 and affinity_delta("谢谢鱼") > 0
-    assert affinity_delta("笨蛋鱼") == 0 and affinity_delta("在吗") == 0
+    # 好感：模型看整段打分，熟悉度按天，正常来往不掉，冷落 48 小时起每天掉 1、2、3
     day = 86400.0
-    t0 = 20000 * day
+    t0 = datetime(2026, 10, 1, 12).timestamp()
 
-    def simulate(days: int, delta: int, per_day: int = 5, bond=None, start=t0):
+    def chat(days: int, score: int, bond=None, start=t0, dev: bool = False):
+        """每天说几句话，摘日记时模型给 score 分。"""
         for d in range(days):
-            for i in range(per_day):
-                bond = update_bond(bond, delta, start + d * day + i * 60)
+            for i in range(3):
+                bond = update_bond(bond, 0, start + d * day + i * 60, dev=dev)
+            if score:
+                bond = update_bond(bond, score, start + d * day + 300, dev=dev, met=False)
         return bond
 
-    plain = simulate(90, 0)
-    assert plain["aff"] == 20 and plain["fam"] == 100, plain  # 天天聊但从不嘴甜：熟了，好感停在 20
-    assert attitude(plain["aff"], plain["fam"]) == "普通"
-    sweet = simulate(180, 2)
-    assert 58 <= sweet["aff"] <= 62, sweet  # 天天夸也只能停在亲近门槛附近，不会涨满
-    stranger = simulate(30, 2, per_day=1, start=t0)
-    assert stranger["aff"] <= 30 + stranger["fam"], stranger  # 不熟的人好感涨不高
-    idle = update_bond(sweet, 0, sweet["last"] + 30 * day)
-    assert attitude(idle["aff"], idle["fam"]) != "亲近" and idle["aff"] < 40, idle  # 冷落一个月就淡了
-    rude = simulate(1, -4, per_day=10, bond=sweet, start=sweet["last"] + day)
-    assert sweet["aff"] - rude["aff"] <= 13 and rude["aff"] < sweet["aff"] - 10, rude  # 一天最多掉 12（外加自然回落 1）
-    grudge = simulate(10, -4, per_day=10)
+    new = update_bond(None, 0, t0)
+    assert (new["aff"], new["fam"]) == (INITIAL_AFF, INITIAL_FAM + 1), new  # 只是说话不涨好感，熟悉度当天 +1
+    assert update_bond(new, 0, t0 + 60)["fam"] == new["fam"]  # 同一天再说不再加
+    judged = update_bond(new, 2, t0 + 120, met=False)
+    assert judged["fam"] == new["fam"] and judged["last"] == new["last"]  # 事后打分不算来往
+    capped = new
+    for i in range(5):
+        capped = update_bond(capped, 2, t0 + i * 60, met=False)
+    assert capped["aff"] == INITIAL_AFF + 3, capped  # 好感 30 以下一天最多涨 3
+    plain = chat(60, 0)
+    assert plain["aff"] == INITIAL_AFF and attitude(plain["aff"], plain["fam"]) == "普通"  # 光说话不涨
+    warm = chat(10, 2)
+    assert attitude(warm["aff"], warm["fam"]) == "有好感", warm  # 好好聊一两周到有好感
+    close = chat(30, 2)
+    assert attitude(close["aff"], close["fam"]) == "亲近", close  # 坚持一个月左右到亲近
+    kept = chat(30, 0, bond=close, start=close["last"] + day)
+    assert kept["aff"] == close["aff"], kept  # 一直在来往就守得住，不会自己掉
+    assert attitude(80, CLOSE_FAM - 1) == "有好感" and attitude(60, CLOSE_FAM) == "亲近"  # 亲近要熟悉度 30
+    assert [idle_loss(h * 3600) for h in (47, 48, 72, 96, 120)] == [0, 1, 3, 6, 9]  # 每天 1、2、3，之后每天 3
+    back = update_bond(close, 0, close["last"] + 4 * day)
+    assert back["aff"] == close["aff"] - 6, back  # 4 天没来往掉 1+2+3
+    view = bond_view(close, close["last"] + 4 * day)
+    assert view["aff"] == back["aff"] and view["last"] == close["last"]  # 只读看也算上冷落，但不落盘
+    gone = update_bond(close, 0, close["last"] + 60 * day)
+    assert gone["aff"] == INITIAL_AFF, gone  # 冷落再久也只掉回初始值
+    rude = close
+    for i in range(10):
+        rude = update_bond(rude, -2, close["last"] + day + i * 60, met=False)
+    assert close["aff"] - rude["aff"] == 12, rude  # 一天最多掉 12
+    grudge = chat(20, -2)
     assert attitude(grudge["aff"], grudge["fam"]) == "讨厌"
     later = update_bond(grudge, 0, grudge["last"] + 31 * day)
-    assert later["aff"] < 0, later  # 记仇消得慢
-    print("PASS  update_bond：难涨易掉，冷落会淡，骂人会掉，高好感要一直维持")
+    assert grudge["aff"] < later["aff"] < 0, later  # 记仇消得慢
+    night = datetime(2026, 10, 2, 23, 59).timestamp()
+    night_bond = update_bond(update_bond(None, 0, night), 0, night + 120)
+    assert night_bond["fam"] == INITIAL_FAM + 2, night_bond  # 按本机时间零点换天
+    print("PASS  update_bond：难涨，正常来往守得住，冷落 48 小时起掉，按本机零点换天")
 
-    # 开发者：保底「有好感」，涨×2、掉÷2，不受「30 + 熟悉度」封顶
+    # 摘日记顺便打分：看整段，冲着别的人和事抱怨不算，要好感的话不算；不熟的人夸不加分
+    assert parse_user_diary("好感：+1｜记：喜欢原神；在读大三") == (1, ["喜欢原神", "在读大三"])
+    assert parse_user_diary("好感：-2｜记：无") == (-2, []) and parse_user_diary("好感: 5 | 记: 常熬夜") == (2, ["常熬夜"])
+    assert parse_user_diary("喜欢原神") == (0, ["喜欢原神"]) and parse_user_diary("") == (0, [])
+    assert "不算对我" in diary_user_prompt("普通") and "要好感" in diary_user_prompt("亲近")
+    assert "不熟" in diary_user_prompt("普通") and "不熟" not in diary_user_prompt("有好感")
+    assert AFF_PESTER < 0 and PESTER_AT_COUNT == 3
+    print("PASS  parse_user_diary / diary_user_prompt：好感看整段打分")
+
+    # 开发者：保底「有好感」，涨×2、掉÷2
     dev_new = update_bond(None, 0, t0, dev=True)
     assert attitude(dev_new["aff"], dev_new["fam"]) == "有好感", dev_new
-    fan, dev_fan = simulate(1, 2), None
-    for i in range(5):
-        dev_fan = update_bond(dev_fan, 2, t0 + i * 60, dev=True)
-    assert dev_fan["aff"] - 25 > fan["aff"] - INITIAL_AFF and dev_fan["aff"] == 35, (dev_fan, fan)  # 涨得比群友快
-    dev_sweet = None
-    for d in range(60):
-        dev_sweet = update_bond(dev_sweet, 2, t0 + d * day, dev=True)
-    assert dev_sweet["aff"] > 30 + dev_sweet["fam"], dev_sweet  # 熟悉度不封顶
-    dev_rude = update_bond(dev_sweet, 0, dev_sweet["last"] + day, dev=True)
+    dev_fan = update_bond(dev_new, 2, t0 + 60, dev=True, met=False)
+    assert dev_fan["aff"] == 29, dev_fan  # 涨两倍
+    dev_rude = chat(1, 0, bond=chat(40, 2, dev=True), start=t0 + 41 * day, dev=True)
+    top = dev_rude["aff"]
     for i in range(10):
-        dev_rude = update_bond(dev_rude, -4, dev_rude["last"] + 60, dev=True)
-    assert dev_sweet["aff"] - dev_rude["aff"] <= 7, dev_rude  # 一天最多掉 6（外加自然回落 1）
-    dev_grudge = None
-    for d in range(30):
-        for i in range(10):
-            dev_grudge = update_bond(dev_grudge, -4, t0 + d * day + i * 60, dev=True)
+        dev_rude = update_bond(dev_rude, -2, dev_rude["last"] + 60, dev=True, met=False)
+    assert top - dev_rude["aff"] == 6, dev_rude  # 一天最多掉 6
+    dev_grudge = chat(30, -2, dev=True)
     dev_idle = update_bond(dev_grudge, 0, dev_grudge["last"] + 90 * day, dev=True)
     assert attitude(dev_grudge["aff"], dev_grudge["fam"]) == "有好感" == attitude(dev_idle["aff"], dev_idle["fam"])
     assert dev_floor({"aff": -50, "fam": 0}) == {"aff": 25, "fam": 8}
@@ -333,7 +364,7 @@ def main() -> int:
     assert "不想理你" in ATTITUDE_LINES["讨厌"] and "所以呢" not in ATTITUDE_LINES["讨厌"]
     print("PASS  弱气是内在：不熟的装凶回嘴，熟的委屈不回嘴；讨厌的人求助可以啧一声不帮")
 
-    # 害羞话题：认得出、按好感反应，追问会躲，低好感第三次起掉好感
+    # 害羞话题：认得出、按好感反应，追问会躲（不直接改好感）
     me = ("酱油鱼", "鱼鱼")
     assert shy_topic("你喜欢我吗") == "问" and shy_topic("想我没") == "问" and shy_topic("你是不是傲娇") == "说傲娇"
     assert shy_topic("鱼鱼好可爱", me) == "夸" and shy_topic("早点睡哦你") == "关心" and shy_topic("抱抱") == "夸"
@@ -345,11 +376,9 @@ def main() -> int:
     rng = random.Random(1)
     soft_n = sum("小声" in shy_reaction("亲近", 1, rng=rng)[0] for _ in range(200))
     assert 100 < soft_n < 180, soft_n  # 亲近多数小声软软地否认
-    assert shy_reaction("普通", 1)[1:] == (0, "") and "更不高兴" in shy_reaction("普通", 2)[0]
-    assert shy_reaction("普通", 2)[1:] == (0, "")  # 第二次只是更不高兴，不掉好感
-    assert shy_reaction("普通", 3)[1:] == (-2, "user") and shy_reaction("陌生", 4)[1] == -2
-    assert shy_reaction("有好感", 1)[1] is None and shy_reaction("亲近", 3)[1:] == (None, "user")  # 好感高不掉，但照样躲
-    assert shy_reaction("有好感", 1, 5)[1:] == (None, "group") and shy_reaction("普通", 1, 5)[1:] == (0, "group")  # 跟风的人不掉好感
+    assert shy_reaction("普通", 1)[1] == "" and "更不高兴" in shy_reaction("普通", 2)[0]
+    assert shy_reaction("普通", 3)[1] == "user" and shy_reaction("亲近", 3)[1] == "user"  # 追 3 次躲这个人
+    assert shy_reaction("有好感", 1, 5)[1] == "group"  # 一个群被问满 5 次整群躲
     assert is_coaxing("好啦不逗你了，出来嘛") and is_coaxing("对不起") and not is_coaxing("在吗")
     shy_msg = compose_messages([], "小红", "你喜欢我吗", attitude="亲近", shy="被戳中了", dere=True)[0]["content"]
     assert "被戳中了" in shy_msg and "突然冒一句傲娇" not in shy_msg  # 害羞话题优先

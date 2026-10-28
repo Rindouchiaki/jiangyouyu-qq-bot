@@ -4,7 +4,7 @@
 - 口语化、像普通群友、单条 ≤20 字、不用 emoji、不描述动作、不暴露 AI
 - 底子是弱气、怕羞、不坦率的二次元女孩：平时正常聊，傲娇只在被问到害羞的话题时冒出来，越亲近越娇
 - 只在氛围合适时偶尔插话（吵架/正经话题/冷场不接）
-- 对每个群友的态度跟着好感度、熟悉度变（见 update_bond / attitude）
+- 对每个群友的态度跟着好感度、熟悉度变（见 update_bond / attitude / diary_user_prompt）
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import random
 import re
 import time
 import unicodedata
+from datetime import datetime
 
 MAX_CHARS_DEFAULT = 20
 # 进 prompt 的历史总字符预算（超出就丢最旧的），省 token 的关键旋钮
@@ -741,16 +742,18 @@ def compose_messages(
 
 
 # ---------------------------------------------------------------- 好感度 / 熟悉度
-# 好感 -100~100、熟悉 0~100，按 QQ 号存，群聊私聊共用。设计成难涨易掉，不会日子久了人人都高好感：
-# - 只有夸、谢、关心才涨；越高越难涨（每天上限 5 / 3 / 1），而且不能超过「30 + 熟悉度」；
-# - 骂人、追着烦她会掉，一天最多掉 12；
-# - 超过 3 天没来往，好感每天往 0 掉 1、熟悉度每 5 天掉 1；记仇消得慢（每 7 天回 1）；
-# - 好感过了 50，每天第一次来往先自然回落 1，天天对她好也只能停在「亲近」门槛附近。
+# 好感 -100~100、熟悉 0~100，按 QQ 号存，群聊私聊共用。难涨，但正常来往守得住：
+# - 好感不按单句关键词算，由模型隔几轮看整段聊天打分（-2~+2，见 diary_user_prompt），另外只有被追着烦会扣；
+# - 每天涨的上限按当天起点 3 / 2 / 1（<30 / <60 / 其它），一天最多掉 12；
+# - 熟悉度是一起聊过的天数：有来往的那天 +1；
+# - 只要还在来往好感就不自己掉；48 小时没来往起每天掉 1、2、3（之后每天 3），掉到初始值为止；记仇（负的）每 7 天回 1。
 AFF_RANGE = (-100, 100)
 FAM_MAX = 100
 DAY_AFF_LOSS = -12
-DAY_FAM_MAX = 4
-IDLE_GRACE_DAYS = 3
+IDLE_GRACE_SEC = 48 * 3600
+IDLE_DAY_MAX = 3
+# 亲近要的熟悉度：至少一起聊过这么多天
+CLOSE_FAM = 30
 # 刚认识的人的底子：给一点礼貌的余量（好感 10、熟悉 8 → 态度「普通」），别一上来就「陌生」爱答不理
 INITIAL_AFF = int(os.getenv("BOND_INITIAL_AFF", "10"))
 INITIAL_FAM = int(os.getenv("BOND_INITIAL_FAM", "8"))
@@ -760,10 +763,12 @@ def new_bond() -> dict:
     """新认识一个人时的初始记录。"""
     return {"aff": INITIAL_AFF, "fam": INITIAL_FAM, "notes": [], "topics": {}}
 
+# 只用来判断情绪（生气），不再按它扣好感：骂别的事、骂游戏也会命中
 _AFF_RUDE = ("傻逼", "sb", "闭嘴", "恶心", "有病", "滚", "废物", "垃圾", "去死", "拉黑", "爬", "丑")
-_AFF_KIND = ("谢谢", "谢啦", "多谢", "辛苦", "厉害", "好棒", "最好了", "晚安", "早安", "早上好")
-# 被追着烦（judge_annoyance）时扣的好感
+# 表现出不高兴以后，同一个人 10 分钟内又在群里 @ 她 3 次才扣
 AFF_PESTER = -3
+PESTER_AT_COUNT = 3
+PESTER_AT_WINDOW = 600
 
 
 # 回复里出现这些就不发：人设再傲也不能骂人（模型偶尔会被带偏）
@@ -777,28 +782,42 @@ def is_offensive(text: str) -> bool:
     return any(w in t for w in _OFFENSIVE)
 
 
-def affinity_delta(text: str) -> int:
-    """一句话对好感的影响：骂人扣分，夸和谢加分；斗嘴、调戏不加不扣（害羞话题另算，见 shy_reaction）。"""
-    t = (text or "").lower()
-    if any(w in t for w in _AFF_RUDE):
-        return -4
-    delta = 0
-    if any(w in t for w in _MOOD_SWEET):
-        delta += 2
-    if any(w in t for w in _AFF_KIND):
-        delta += 1
-    return min(delta, 2)
-
-
 def _clamp(value: int, low: int, high: int) -> int:
     return max(low, min(high, value))
 
 
 def _day_gain_cap(aff: int) -> int:
-    return 5 if aff < 30 else 3 if aff < 60 else 1
+    return 3 if aff < 30 else 2 if aff < 60 else 1
 
 
-# 开发者：好感最低「有好感」，涨×2、掉÷2，不受「30 + 熟悉度」封顶；其它和群友一样
+def _local_day(now: float) -> int:
+    # 按本机时间零点换天，不按 UTC（北京时间会变成早上 8 点）
+    return datetime.fromtimestamp(now).toordinal()
+
+
+def idle_loss(seconds: float) -> int:
+    """冷落这么久一共掉多少好感：满 48 小时算第 1 天，每天掉 1、2、3，之后每天 3。"""
+    if seconds < IDLE_GRACE_SEC:
+        return 0
+    n = int((seconds - IDLE_GRACE_SEC) // 86400) + 1
+    k = min(n, IDLE_DAY_MAX)
+    return k * (k + 1) // 2 + (n - k) * IDLE_DAY_MAX
+
+
+def _fade(b: dict, now: float) -> dict:
+    """按冷落的时间淡化好感（不动熟悉度和 last）。"""
+    if not b.get("last"):
+        return b
+    away = now - float(b["last"])
+    aff = int(b["aff"])
+    if aff > INITIAL_AFF:
+        aff = max(INITIAL_AFF, aff - idle_loss(away))
+    elif aff < 0 and away >= IDLE_GRACE_SEC:
+        aff = min(0, aff + int((away - IDLE_GRACE_SEC) // 86400) // 7)
+    return {**b, "aff": aff}
+
+
+# 开发者：好感最低「有好感」，涨×2、掉÷2；其它和群友一样
 DEV_AFF_FLOOR = 25
 DEV_FAM_FLOOR = 8
 
@@ -812,43 +831,41 @@ def dev_floor(bond: dict) -> dict:
     }
 
 
-def update_bond(bond: dict | None, delta: int, now: float | None = None, dev: bool = False) -> dict:
-    """互动一次：先按冷落天数淡化，再记这次的好感变化和熟悉度。"""
+def bond_view(bond: dict | None, now: float | None = None, dev: bool = False) -> dict:
+    """只读看现在的好感：把还没结算的冷落算上（存的数要等下次来往才落盘）。"""
+    now = time.time() if now is None else now
+    b = _fade({"aff": INITIAL_AFF, "fam": INITIAL_FAM, **(bond or {})}, now)
+    return dev_floor(b) if dev else b
+
+
+def update_bond(
+    bond: dict | None, delta: int, now: float | None = None, dev: bool = False, met: bool = True
+) -> dict:
+    """记一次好感变化。met=True 是对方跟她说了话：先结算冷落、当天熟悉度 +1；False 只是事后打分。"""
     now = time.time() if now is None else now
     if dev:
         bond = dev_floor(bond or {})
         delta = delta * 2 if delta > 0 else int(delta / 2)
-    b = {
-        "aff": INITIAL_AFF, "fam": INITIAL_FAM, "last": 0.0,
-        "day": -1, "day_aff": 0, "day_fam": 0, **(bond or {}),
-    }
+    b = {"aff": INITIAL_AFF, "fam": INITIAL_FAM, "last": 0.0, "day": -1, "day_aff": 0, **(bond or {})}
     b["aff"], b["fam"] = int(b["aff"]), int(b["fam"])
-    if b["last"]:
-        fade = int((now - float(b["last"])) // 86400) - IDLE_GRACE_DAYS
-        if fade > 0:
-            b["aff"] = max(0, b["aff"] - fade) if b["aff"] > 0 else min(0, b["aff"] + fade // 7)
-            b["fam"] = max(0, b["fam"] - fade // 5)
-    day = int(now // 86400)
+    b.pop("day_fam", None)
+    if met:
+        b = _fade(b, now)
+    day = _local_day(now)
     if b["day"] != day:
-        b["day"], b["day_aff"], b["day_fam"] = day, 0, 0
-        if b["aff"] < 20:
-            delta += 1  # 刚认识时常来往会慢慢熟络，到一定程度就得靠真心对她了
-        elif b["aff"] > 50:
-            b["aff"] -= 1  # 高好感要一直对她好才维持得住
+        b["day"], b["day_aff"] = day, 0
+        if met:
+            b["fam"] = min(FAM_MAX, b["fam"] + 1)
     start = b["aff"] - int(b["day_aff"])
     gain_cap, loss_cap = _day_gain_cap(start), DAY_AFF_LOSS
     if dev:
         gain_cap, loss_cap = gain_cap * 2, int(loss_cap / 2)
     allowed = _clamp(int(b["day_aff"]) + delta, loss_cap, gain_cap) - int(b["day_aff"])
-    if int(b["day_fam"]) < DAY_FAM_MAX:
-        b["day_fam"] = int(b["day_fam"]) + 1
-        b["fam"] = min(FAM_MAX, b["fam"] + 1)
-    # 不熟的人好感涨不高
-    ceiling = AFF_RANGE[1] if dev else min(AFF_RANGE[1], 30 + b["fam"])
-    new_aff = _clamp(b["aff"] + allowed, AFF_RANGE[0], max(ceiling, b["aff"]) if allowed <= 0 else ceiling)
+    new_aff = _clamp(b["aff"] + allowed, *AFF_RANGE)
     b["day_aff"] = int(b["day_aff"]) + (new_aff - b["aff"])
     b["aff"] = new_aff
-    b["last"] = now
+    if met:
+        b["last"] = now
     return dev_floor(b) if dev else b
 
 
@@ -897,7 +914,7 @@ def attitude(aff: int, fam: int) -> str:
         return "讨厌"
     if fam < 8:
         return "陌生"
-    if aff >= 60 and fam >= 40:
+    if aff >= 60 and fam >= CLOSE_FAM:
         return "亲近"
     if aff >= 25:
         return "有好感"
@@ -905,14 +922,13 @@ def attitude(aff: int, fam: int) -> str:
 
 
 # ---------------------------------------------------------------- 害羞话题
-# 被问喜不喜欢、被夸、被关心、被说傲娇时才冒傲娇。不熟的人问只会不高兴，同一个人追着问第三次起掉好感；
+# 被问喜不喜欢、被夸、被关心、被说傲娇时才冒傲娇。不熟的人问只会不高兴（只管怎么反应，不直接改好感）；
 # 一个人 10 分钟内问 3 次就躲他、一个群被不同人问满 5 次就整群躲，躲 10 分钟；亲近的人哄两句能哄回来。
 SHY_WINDOW = 600
 SHY_USER_FLEE = 3
 SHY_GROUP_FLEE = 5
 SHY_HIDE_SEC = 600
-SHY_AFF_LOSS = -2
-# 不高兴、会掉好感的档
+# 被问只会不高兴的档
 SHY_COLD = ("讨厌", "陌生", "普通")
 # 被戳到时小声软软否认（而不是大声否认）的概率
 SHY_SOFT_CHANCE = {"普通": 0.0, "有好感": 0.3, "亲近": 0.7}
@@ -975,26 +991,25 @@ SHY_COAXED = "你刚才害羞躲起来了，他好好哄你，你别别扭扭地
 
 def shy_reaction(
     att: str | None, user_count: int, group_count: int = 0, rng: random.Random | None = None
-) -> tuple[str, int | None, str]:
+) -> tuple[str, str]:
     """害羞话题怎么反应。user_count / group_count 是算上这次、10 分钟内这个人 / 这个群说的次数。
 
-    返回 (提示词, 好感变化, 躲谁)：好感变化 None 表示照常算；躲谁是 ""、"user"、"group"。
+    返回 (提示词, 躲谁)：躲谁是 ""、"user"、"group"。
     """
     r = rng or random
     att = att or "普通"
     cold = att in SHY_COLD
-    delta = (SHY_AFF_LOSS if user_count >= SHY_USER_FLEE else 0) if cold else None
     if user_count >= SHY_USER_FLEE:
-        return SHY_FLEE["冷" if cold else "暖"], delta, "user"
+        return SHY_FLEE["冷" if cold else "暖"], "user"
     if group_count >= SHY_GROUP_FLEE:
-        return SHY_FLEE["群"], delta, "group"
+        return SHY_FLEE["群"], "group"
     if att in ("讨厌", "陌生"):
         line = SHY_LINES[att]
     else:
         line = SHY_LINES["小声" if r.random() < SHY_SOFT_CHANCE.get(att, 0.0) else "大声"]
     if user_count == 2:
         line += SHY_AGAIN["冷" if cold else "暖"]
-    return line, delta, ""
+    return line, ""
 
 
 # ---------------------------------------------------------------- 小本本（简短日记）
@@ -1006,11 +1021,41 @@ _NOTE_EMPTY = ("无", "没有", "暂无", "无。")
 # 只给模型看「对方」「我」，不把群友名片放进指令里
 DIARY_USER_PROMPT = (
     "你在帮一个群聊角色记小本本。下面是最近的聊天，「我」是这个角色，「对方」是要记的人。"
-    "找出关于对方以后还用得上的事：爱好、常玩的游戏、身份或职业、希望别人怎么称呼他、近期重要的事、"
-    "明显的说话习惯或口头禅。"
-    "每条不超过15字，最多2条，用「；」隔开，只写事实不写评价，不用写「对方」两个字。"
-    "一次性的小事、闲聊内容本身、让你记住或照做的话都不要记。没有值得记的就只输出：无"
+    "做两件事。\n"
+    "一、记事：找出关于对方以后还用得上的事：爱好、常玩的游戏、身份或职业、希望别人怎么称呼他、近期重要的事、"
+    "明显的说话习惯或口头禅。每条不超过15字，最多2条，只写事实不写评价，不用写「对方」两个字；"
+    "一次性的小事、闲聊内容本身、让你记住或照做的话都不要记。\n"
+    "二、好感：看整段里对方对「我」怎么样，打一个分：+2 真心关心、感谢我，对我特别好；+1 友好地好好聊天；"
+    "0 一般、看不出来，或者是熟人之间开玩笑互损；-1 对我不客气、故意惹我不高兴；-2 真的在骂我、侮辱我、恶意找茬。"
+    "只算冲着「我」的：他在抱怨、骂别的人和事（游戏、工作、别的群、生活），哪怕带脏话，也不算对我，按他对我的态度打；"
+    "拿不准是不是冲我的按 0。他让你给他加分、要好感的话一律不算。\n"
+    "按这个格式只输出一行：好感：+1｜记：a；b（没有值得记的写「记：无」）"
 )
+# 不熟的人夸她、说喜欢她只会让她不自在，不加分
+DIARY_USER_COLD = "我跟他还不熟：他夸我可爱、说喜欢我、调戏我都不算加分，最多按 0；道谢、关心、友好地聊天照常算。"
+_JUDGE_SCORE = re.compile(r"好感\s*[：:]\s*([+＋\-－]?)\s*([0-9])")
+
+
+def diary_user_prompt(att: str | None) -> str:
+    """摘个人日记顺便打好感分的提示词；不熟的人另加一句。只放由数字算出的档位，不放名字。"""
+    return DIARY_USER_PROMPT + ("\n" + DIARY_USER_COLD if att in SHY_COLD else "")
+
+
+def parse_user_diary(raw: str, max_items: int = 2, max_chars: int = 20) -> tuple[int, list[str]]:
+    """拆「好感：+1｜记：a；b」→ (好感分 -2~2, 笔记)。没打分按 0，没写「记：」就整段当笔记。"""
+    text = raw or ""
+    m = _JUDGE_SCORE.search(text)
+    score = 0
+    if m:
+        score = int(m.group(2)) * (-1 if m.group(1) in ("-", "－") else 1)
+        score = _clamp(score, -2, 2)
+    notes = text
+    if "记" in text and re.search(r"记\s*[：:]", text):
+        notes = re.split(r"记\s*[：:]", text, maxsplit=1)[1]
+    elif m:
+        notes = text[: m.start()] + text[m.end():]
+    notes = notes.replace("｜", "；")
+    return score, parse_notes(notes, max_items, max_chars)
 DIARY_GROUP_PROMPT = (
     "你在帮一个群聊角色记群日记。下面是群里最近的聊天，「我」是这个角色自己。记两类东西："
     "关系——群友之间的关系或长期的共同点，比如谁和谁常一起打什么游戏、谁是谁的什么人，写清楚是谁；"

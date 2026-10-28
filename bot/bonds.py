@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 import devs
-from persona_rules import INITIAL_AFF, INITIAL_FAM, dev_floor, merge_notes, new_bond, update_bond
+from persona_rules import INITIAL_AFF, INITIAL_FAM, bond_view, dev_floor, merge_notes, new_bond, update_bond
 
 # 初始好感度迁移标记：老数据里「刚认识」的人抬到礼貌底线，只做一次
 FLOOR_VERSION = 1
@@ -89,8 +89,8 @@ def user(uid: str) -> dict:
     """只读拿一份（没有就是初始值），不会建记录。"""
     with _lock:
         rec = dict(_data["users"].get(str(uid)) or new_bond())
-    # 开发者好感最低「有好感」：旧记录、/好感 手动调低的也按保底算
-    return dev_floor(rec) if devs.is_dev(uid) else rec
+    # 冷落掉的好感要等下次来往才落盘，这里先算上；开发者按保底算（旧记录、/好感 手动调低的也是）
+    return bond_view(rec, dev=devs.is_dev(uid))
 
 
 def find_user(text: str) -> list[str]:
@@ -117,6 +117,17 @@ def touch(uid: str, name: str, delta: int, now: float | None = None) -> dict:
         rec.update(update_bond(rec, delta, now, dev=devs.is_dev(uid)))
         rec["name"] = name
         _data["users"][str(uid)] = rec
+        _state["dirty"] = True
+        return dict(rec)
+
+
+def judge(uid: str, delta: int, now: float | None = None) -> dict | None:
+    """模型看完一段聊天给的好感分：只改好感，不算一次来往（熟悉度、冷落计时不动）。没记录的人不建。"""
+    with _lock:
+        rec = _data["users"].get(str(uid))
+        if rec is None:
+            return None
+        rec.update(update_bond(rec, delta, now, dev=devs.is_dev(uid), met=False))
         _state["dirty"] = True
         return dict(rec)
 
@@ -203,7 +214,7 @@ def known_people(ids: object) -> list[tuple[str, dict]]:
     wanted = {str(i) for i in ids}
     with _lock:
         recs = [(uid, dict(rec)) for uid, rec in _data["users"].items() if uid in wanted]
-    recs = [(uid, dev_floor(rec) if devs.is_dev(uid) else rec) for uid, rec in recs]
+    recs = [(uid, bond_view(rec, dev=devs.is_dev(uid))) for uid, rec in recs]
     return sorted(recs, key=lambda pair: -int(pair[1].get("fam", 0)))
 
 
@@ -253,7 +264,7 @@ def private_contacts() -> list[tuple[str, dict]]:
     """私聊过的人（只读副本），主动找人时从这里挑。"""
     with _lock:
         recs = [(uid, dict(rec)) for uid, rec in _data["users"].items() if rec.get("lp")]
-    return [(uid, dev_floor(rec) if devs.is_dev(uid) else rec) for uid, rec in recs]
+    return [(uid, bond_view(rec, dev=devs.is_dev(uid))) for uid, rec in recs]
 
 
 def forget_user(uid: str) -> bool:
