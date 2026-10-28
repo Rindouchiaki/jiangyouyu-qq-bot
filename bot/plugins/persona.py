@@ -54,6 +54,7 @@ from persona_rules import (
     is_conversation_ending,
     is_offensive,
     is_game_command,
+    is_question,
     judge_annoyance,
     judge_atmosphere,
     judge_mood,
@@ -86,6 +87,8 @@ MOCK = os.getenv("LLM_MOCK", "0") == "1"
 MAX_CHARS = int(os.getenv("REPLY_MAX_CHARS", "20"))
 # 正经求助（查/看/找/翻译）放宽到一两句话，不然「帮我看看这个」只能挤出十几个字
 MAX_CHARS_HELP = int(os.getenv("REPLY_MAX_CHARS_HELP", "80"))
+# 直接问事（啥/怎么/能不能/问号）放宽一点，不然「还有啥游戏能绑定uid」答不完整
+MAX_CHARS_QUESTION = int(os.getenv("REPLY_MAX_CHARS_QUESTION", "40"))
 HELP_MAX_TOKENS = int(os.getenv("REPLY_HELP_MAX_TOKENS", "160"))
 HISTORY_SIZE = int(os.getenv("HISTORY_SIZE", "24"))
 COOLDOWN_SEC = float(os.getenv("REPLY_COOLDOWN", "8"))
@@ -978,6 +981,7 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         logger.debug(f"persona: 上下文 {len(past)} 条，末条 {past[-1][0]}: {past[-1][1][:24]}")
 
     help_mode = wants_help(text)
+    question = is_question(text) and not help_mode
     scene = sticker_scene(text)
     # 群里碰到明显场景时有时只甩一张对得上的表情，偶尔也随手甩张无厘头的：像真人冒个泡，也少说话少露馅
     item = None
@@ -1047,7 +1051,7 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     )
 
     try:
-        raw = await ask_llm(messages, HELP_MAX_TOKENS if help_mode else 48)
+        raw = await ask_llm(messages, HELP_MAX_TOKENS if help_mode else 64 if question else 48)
     except urllib.error.HTTPError as exc:
         logger.warning(f"persona: LLM HTTP {exc.code} {exc.reason}")
         return
@@ -1055,7 +1059,7 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         logger.warning(f"persona: LLM 调用失败 {type(exc).__name__}: {exc}")
         return
 
-    reply = humanize(raw, MAX_CHARS_HELP if help_mode else MAX_CHARS)
+    reply = humanize(raw, MAX_CHARS_HELP if help_mode else MAX_CHARS_QUESTION if question else MAX_CHARS)
     if not reply:
         return
     if is_offensive(reply):

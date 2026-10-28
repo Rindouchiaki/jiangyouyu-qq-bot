@@ -16,7 +16,10 @@ import threading
 import time
 from pathlib import Path
 
-from persona_rules import merge_notes, update_bond
+from persona_rules import INITIAL_AFF, INITIAL_FAM, merge_notes, new_bond, update_bond
+
+# 初始好感度迁移标记：老数据里「刚认识」的人抬到礼貌底线，只做一次
+FLOOR_VERSION = 1
 
 _data_env = os.getenv("PERSONA_DATA_DIR", "").strip()
 DATA_FILE = (Path(_data_env) if _data_env else Path(__file__).resolve().parent / "data") / "bonds.json"
@@ -41,7 +44,25 @@ def load(path: Path | None = None) -> None:
             raw = {}
         _data["users"] = raw.get("users") if isinstance(raw.get("users"), dict) else {}
         _data["groups"] = raw.get("groups") if isinstance(raw.get("groups"), dict) else {}
-        _state["dirty"] = False
+        _data["floor"] = raw.get("floor", 0)
+        _state["dirty"] = _raise_floor()
+
+
+def _raise_floor() -> bool:
+    """老数据里好感低、还没混熟的人抬到礼貌底线（好感 0 以下的不动，那是真被惹到了）。
+
+    只做一次，用 floor 字段记账，之后新建的记录直接就是新底线。
+    """
+    if int(_data.get("floor") or 0) >= FLOOR_VERSION:
+        return False
+    for rec in _data["users"].values():
+        aff, fam = int(rec.get("aff", 0)), int(rec.get("fam", 0))
+        if 0 <= aff < INITIAL_AFF:
+            rec["aff"] = INITIAL_AFF
+        if fam < INITIAL_FAM:
+            rec["fam"] = INITIAL_FAM
+    _data["floor"] = FLOOR_VERSION
+    return True
 
 
 def save(force: bool = False) -> None:
@@ -57,9 +78,9 @@ def save(force: bool = False) -> None:
 
 
 def user(uid: str) -> dict:
-    """只读拿一份（没有就是空的默认值），不会建记录。"""
+    """只读拿一份（没有就是初始值），不会建记录。"""
     with _lock:
-        return dict(_data["users"].get(str(uid)) or {"aff": 0, "fam": 0, "notes": []})
+        return dict(_data["users"].get(str(uid)) or new_bond())
 
 
 def touch(uid: str, name: str, delta: int, now: float | None = None) -> dict:
@@ -73,11 +94,28 @@ def touch(uid: str, name: str, delta: int, now: float | None = None) -> dict:
         return dict(rec)
 
 
+def set_levels(
+    uid: str, name: str = "", aff: int | None = None, fam: int | None = None
+) -> tuple[dict, dict]:
+    """开发者手动调好感/熟悉度（/好感）：给 None 的项不动。返回 (改前, 改后)。"""
+    with _lock:
+        rec = _data["users"].setdefault(str(uid), new_bond())
+        before = dict(rec)
+        if name:
+            rec["name"] = name
+        if aff is not None:
+            rec["aff"] = max(-100, min(100, int(aff)))
+        if fam is not None:
+            rec["fam"] = max(0, min(100, int(fam)))
+        _state["dirty"] = True
+        return before, dict(rec)
+
+
 def add_user_notes(uid: str, texts: list[str], src: str, now: float | None = None) -> int:
     if not texts:
         return 0
     with _lock:
-        rec = _data["users"].setdefault(str(uid), {"aff": 0, "fam": 0, "notes": []})
+        rec = _data["users"].setdefault(str(uid), new_bond())
         rec["notes"] = merge_notes(rec.get("notes"), [t[:NOTE_MAX_CHARS] for t in texts], src, now, USER_NOTE_CAP)
         _state["dirty"] = True
     return len(texts)

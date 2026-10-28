@@ -19,6 +19,7 @@ from persona_rules import (  # noqa: E402
     is_conversation_ending,
     is_offensive,
     is_game_command,
+    is_question,
     judge_atmosphere,
     judge_annoyance,
     judge_mood,
@@ -299,6 +300,17 @@ def main() -> int:
     assert "路数" not in compose_messages([], "小红", "帮我查下", flavor="吐槽一句", help_mode=True)[0]["content"]
     assert len({pick_flavor() for _ in range(200)}) == len(REPLY_FLAVORS)
     print("PASS  群风格走 user 消息；每句随机一个路数，求助时不用")
+
+    assert is_question("还有啥游戏能绑定uid") and is_question("这是啥？")
+    assert not is_question("你咋回复这么快") and is_question("在吗")
+    q = compose_messages(
+        [("野心爱", "你咋回复这么快")], "夜雨轩烛", "还有啥游戏能绑定uid"
+    )
+    assert "先一句话直接回答" in q[0]["content"], q[0]["content"]
+    assert "历史里更早的发言已经聊过了" in q[0]["content"]
+    h = compose_messages([], "小明", "帮我查下这个", help_mode=True)[0]["content"]
+    assert "正经求助" in h and "先一句话直接回答" not in h
+    print("PASS  问句先答最后一条，不和求助提示重复")
 
     print(f"\n结果: {'全部通过' if failed == 0 else f'{failed} 项失败'}")
     return 0 if failed == 0 else 1

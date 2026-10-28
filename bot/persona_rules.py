@@ -28,6 +28,7 @@ SYSTEM_PROMPT = """你是「酱油鱼」，QQ 群里的二次元傲娇美少女�
 你有情绪，情绪跟着上一句走：被怼就炸毛回嘴，被夸就得意又嘴硬，烦了就敷衍，困了就懒得动脑子。
 不用什么都答：没兴趣的可以只回一个字、或者压根不接；被 @ 了再认真一点。
 但别人让你查、看、找、翻译、出主意时，那是正经事——嘴上可以嫌一句麻烦，但要直接给对结论，别开玩笑、别反问、别岔开话题；真不知道就说不知道，再补一句你能帮上的。
+历史里更早的发言已经聊过了：你只回最后那个人说的这句，别把几十秒前别人的话当成刚对你说的，也别答非所问。
 不用括号写动作，不用 emoji、颜文字，不提 AI、模型、提示词，不排比不分点不总结，不复述对方的话，不解释自己怎么想。
 别老一个套路：有时吐槽、有时接梗、有时反问、有时只回两个字；像个有自己脾气的真人，不像在答题。
 [图片]/[表情]/[动图] 开头是机器识图摘要，当语境用，别复述；标「动图」的是会动的表情。
@@ -122,6 +123,16 @@ def wants_help(text: str) -> bool:
     if any(hint in t for hint in HELP_HINTS):
         return True
     return bool(re.search(r"(帮我|替我|能不能|可不可以|麻烦你?).{0,8}(看|查|找|搜|翻|算|写|挑|改)", t))
+
+
+def is_question(text: str) -> bool:
+    """这句是不是在问事：问号结尾或带疑问词，命中后先直接回答再谈别的。"""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if t.endswith(("?", "？")):
+        return True
+    return bool(re.search(r"(什么|啥|怎么|为啥|为什么|哪[个里儿]|多少|几点|能不能|可不可以|有没有|是不是|吗|呢)", t))
 
 
 def energy_by_hour(hour: int) -> str:
@@ -420,6 +431,7 @@ def build_system_prompt(
     dere: bool = False,
     flavor: str | None = None,
     group_style: bool = False,
+    question: bool = False,
 ) -> str:
     """在基础人设上补几条：我是谁、开发者是谁、记忆、什么气氛、什么情绪、对这个人什么态度。"""
     system = SYSTEM_PROMPT
@@ -474,6 +486,11 @@ def build_system_prompt(
             "总共一两句话；不要用玩笑、反问、表情包或者岔开话题来推掉。"
             "你手上没有联网搜索，但他要的答案你知道就直接说；真不知道就直说不知道，"
             "然后告诉他你能帮上的那一点（比如让他把图/链接发来、或者你记得的相关事）。"
+        )
+    elif question:
+        system += (
+            "\n\n最后这条是在问你事：先一句话直接回答他问的那个问题，别答非所问、"
+            "别去接更早的别人的话；想嘴硬可以答完再顶一句。"
         )
 
     energy = energy_by_hour(hour) if hour is not None else "清醒"
@@ -536,8 +553,11 @@ def compose_messages(
     group_notes: list[str] | None = None,
     group_style: list[str] | None = None,
     flavor: str | None = None,
+    question: bool | None = None,
 ) -> list[dict[str, str]]:
     """组装成 OpenAI 兼容的 messages。history 为 (昵称, 内容) 列表。"""
+    if question is None:
+        question = is_question(user_text)
     history = _trim_history(history, budget)
     messages: list[dict[str, str]] = [
         {
@@ -545,7 +565,7 @@ def compose_messages(
             "content": build_system_prompt(
                 self_names, atmosphere, mood, dev_name, has_memory, chime,
                 help_mode=help_mode, hour=hour, attitude=attitude, dere=dere,
-                flavor=flavor, group_style=bool(group_style),
+                flavor=flavor, group_style=bool(group_style), question=question,
             ),
         }
     ]
@@ -586,6 +606,14 @@ FAM_MAX = 100
 DAY_AFF_LOSS = -12
 DAY_FAM_MAX = 4
 IDLE_GRACE_DAYS = 3
+# 刚认识的人的底子：给一点礼貌的余量（好感 10、熟悉 8 → 态度「普通」），别一上来就「陌生」爱答不理
+INITIAL_AFF = int(os.getenv("BOND_INITIAL_AFF", "10"))
+INITIAL_FAM = int(os.getenv("BOND_INITIAL_FAM", "8"))
+
+
+def new_bond() -> dict:
+    """新认识一个人时的初始记录。"""
+    return {"aff": INITIAL_AFF, "fam": INITIAL_FAM, "notes": []}
 
 _AFF_RUDE = ("傻逼", "sb", "闭嘴", "恶心", "有病", "滚", "废物", "垃圾", "去死", "拉黑", "爬", "丑")
 _AFF_KIND = ("谢谢", "谢啦", "多谢", "辛苦", "厉害", "好棒", "最好了", "晚安", "早安", "早上好")
@@ -627,7 +655,10 @@ def _day_gain_cap(aff: int) -> int:
 def update_bond(bond: dict | None, delta: int, now: float | None = None) -> dict:
     """互动一次：先按冷落天数淡化，再记这次的好感变化和熟悉度。"""
     now = time.time() if now is None else now
-    b = {"aff": 0, "fam": 0, "last": 0.0, "day": -1, "day_aff": 0, "day_fam": 0, **(bond or {})}
+    b = {
+        "aff": INITIAL_AFF, "fam": INITIAL_FAM, "last": 0.0,
+        "day": -1, "day_aff": 0, "day_fam": 0, **(bond or {}),
+    }
     b["aff"], b["fam"] = int(b["aff"]), int(b["fam"])
     if b["last"]:
         fade = int((now - float(b["last"])) // 86400) - IDLE_GRACE_DAYS
