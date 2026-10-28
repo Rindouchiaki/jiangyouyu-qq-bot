@@ -62,6 +62,9 @@ from persona_rules import (
     DEFAULT_GAME_PREFIXES,
     DIARY_GROUP_PROMPT,
     DIARY_USER_PROMPT,
+    SHY_COAXED,
+    SHY_HIDE_SEC,
+    SHY_WINDOW,
     affinity_delta,
     attitude,
     chime_backoff,
@@ -72,6 +75,7 @@ from persona_rules import (
     in_quiet_hours,
     interest_hits,
     humanize,
+    is_coaxing,
     is_conversation_ending,
     is_offensive,
     is_game_command,
@@ -93,6 +97,8 @@ from persona_rules import (
     reaction_delay,
     slang_play_ok,
     safe_name,
+    shy_reaction,
+    shy_topic,
     split_reply,
     sticker_category,
     sticker_scene,
@@ -473,6 +479,10 @@ _last_auto_sticker: dict[str, float] = defaultdict(float)
 _last_sticker_only: dict[str, float] = defaultdict(float)
 _recent_user_msgs: dict[str, deque] = defaultdict(lambda: deque(maxlen=12))
 _snub_until: dict[str, float] = {}
+# 害羞跑开：键是群会话 key（整群躲）或 "u" + QQ 号（只躲这个人，群里私聊都算）
+_hide_until: dict[str, float] = {}
+# 10 分钟内说害羞话题的时间：同上两种键，群里是大家共用一个池子
+_shy_log: dict[str, deque] = defaultdict(deque)
 _last_reply: dict[str, float] = defaultdict(float)
 _last_chime: dict[str, float] = defaultdict(float)
 _last_message_at: dict[str, float] = {}
@@ -1057,6 +1067,15 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     _enqueue(bot, key, item, gap)
 
 
+def _shy_hit(k: str, now: float) -> int:
+    """记一次害羞话题，返回 10 分钟内的次数（算上这次）。"""
+    q = _shy_log[k]
+    q.append(now)
+    while q and now - q[0] > SHY_WINDOW:
+        q.popleft()
+    return len(q)
+
+
 async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool = False) -> bool:
     """处理攒好的一批消息。返回 False = 生成期间又来了要紧的新消息，这稿作废、带上新消息重想。"""
     now = time.time()
@@ -1090,6 +1109,20 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     if is_group and now < _snub_until.get(key, 0):
         logger.info("persona: 正在冷处理这段时间，不接话")
         return True
+
+    # 害羞跑开了：躲着的时候人设不说话、被 @ 也不理（游戏查询不经过人设，照常）；亲近的人好好哄能哄回来
+    coaxed = False
+    hide_keys = [k for k in ((key,) if is_group else ()) + (f"u{user_id}",) if now < _hide_until.get(k, 0)]
+    if hide_keys:
+        pre = bonds.user(user_id)
+        if attitude(int(pre.get("aff", 0)), int(pre.get("fam", 0))) == "亲近" and is_coaxing(text):
+            for k in hide_keys:
+                _hide_until.pop(k, None)
+            coaxed = True
+            logger.info(f"persona: 被 {name} 哄回来了")
+        else:
+            logger.info(f"persona: 害羞躲着，不说话（{'整群' if key in hide_keys else name}）")
+            return True
 
     # --- 被追问到烦：先冷淡答题，再主动收尾 ---
     same_user = [t for (uid, t, ts) in _recent_user_msgs[key] if uid == user_id]
@@ -1167,8 +1200,25 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         addressed = True
         mode = "私聊"
 
+    # 害羞话题：低好感的人说只会让她不高兴（追着说第三次起掉好感），追太紧就跑开躲一阵
+    shy_line = SHY_COAXED if coaxed else ""
+    shy_delta = None
+    kind = None if coaxed or not addressed else shy_topic(text, NICKNAMES, focus["at"] or focus["called"])
+    if kind:
+        pre = bonds.user(user_id)
+        pre_att = attitude(int(pre.get("aff", 0)), int(pre.get("fam", 0)))
+        n_user = _shy_hit(f"u{user_id}", now)
+        n_group = _shy_hit(key, now) if is_group else 0
+        shy_line, shy_delta, flee = shy_reaction(pre_att, n_user, n_group)
+        if flee:
+            hide_key = f"u{user_id}" if flee == "user" else key
+            _hide_until[hide_key] = now + SHY_HIDE_SEC
+            _shy_log.pop(hide_key, None)
+        logger.info(f"persona: 害羞话题（{kind}），{name} 第 {n_user} 次、本群 {n_group} 次{'，跑开躲起来' if flee else ''}")
+
     # 跟她说话才算互动：好感、熟悉度按 QQ 号记，群里私聊是同一份
-    bond = _bond_touch(user_id, name, affinity_delta(text)) if addressed else bonds.user(user_id)
+    delta = shy_delta if shy_delta is not None else affinity_delta(text)
+    bond = _bond_touch(user_id, name, delta) if addressed else bonds.user(user_id)
     if not is_group:
         bonds.mark_private(user_id, now)
     att = attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
@@ -1300,7 +1350,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         addressed and web_search.enabled() and wants_search(text) and web_search.allow(user_id)[0]
     )
 
-    # 每句按态度抽签：露不露真心、带不带「喵」「…」这类语气（开发者也按好感档，不另算）
+    # 平时按态度抽签：突然冒不冒一句傲娇、带不带「喵」「…」（都很少；害羞话题走 shy_line，开发者也按好感档）
     dere = random.random() < DERE_CHANCE.get(att or "普通", 0.0)
     cute = random.random() < CUTE_CHANCE.get(att or "普通", 0.0)
     # 小本本：跟她说话时才带（插话不带，省 token）
@@ -1330,6 +1380,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         bond=(int(bond.get("aff", 0)), int(bond.get("fam", 0))),
         dere=dere,
         cute=cute,
+        shy=shy_line,
         user_notes=user_notes,
         group_notes=group_notes,
         group_style=group_style,

@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 from persona_rules import (  # noqa: E402
     ATTITUDE_LINES,
     CUTE_CHANCE,
+    SHY_COAXED,
     DERE_CHANCE,
     REPLY_FLAVORS,
     DEFAULT_GAME_PREFIXES,
@@ -25,6 +26,7 @@ from persona_rules import (  # noqa: E402
     follow_decision,
     format_search_results,
     in_quiet_hours,
+    is_coaxing,
     interest_hits,
     humanize,
     is_conversation_ending,
@@ -50,6 +52,8 @@ from persona_rules import (  # noqa: E402
     safe_name,
     slang_play_ok,
     split_long,
+    shy_reaction,
+    shy_topic,
     split_reply,
     sticker_category,
     sticker_scene,
@@ -294,22 +298,46 @@ def main() -> int:
     print("PASS  开发者：保底「有好感」，涨得快、掉得慢")
 
     assert set(DERE_CHANCE) == set(ATTITUDE_LINES)  # 开发者不再单开一档
-    assert DERE_CHANCE["讨厌"] == DERE_CHANCE["陌生"] == 0 and DERE_CHANCE["亲近"] == 0.5
-    assert DERE_CHANCE["亲近"] > DERE_CHANCE["有好感"] > DERE_CHANCE["普通"] > 0  # 越亲近越容易露真心
+    # 平时正常聊，突然冒一句傲娇很少见（亲近也只有 10%）
+    assert DERE_CHANCE["讨厌"] == DERE_CHANCE["陌生"] == 0 and DERE_CHANCE["亲近"] <= 0.1
+    assert DERE_CHANCE["亲近"] > DERE_CHANCE["有好感"] > DERE_CHANCE["普通"] > 0
     calm = compose_messages([], "小红", "在吗", attitude="亲近")[0]["content"]
-    soft = compose_messages([], "小红", "在吗", attitude="亲近", dere=True)[0]["content"]
-    assert "露出真心" not in calm and "露出真心" in soft and "语气还是软的" in calm
-    assert "端着傲就好" in compose_messages([], "小红", "在吗", attitude="普通")[0]["content"]
-    print("PASS  傲是面具：普通端着傲，有好感以上傲得软，抽中才露真心")
+    pop = compose_messages([], "小红", "在吗", attitude="亲近", dere=True)[0]["content"]
+    assert "突然冒一句傲娇" not in calm and "突然冒一句傲娇" in pop and "不用特意傲娇" in calm
+    assert "热情" in ATTITUDE_LINES["亲近"] and "傲" not in ATTITUDE_LINES["普通"]  # 平时态度看积极性，不是句句傲
+    print("PASS  平时正常聊：态度看热不热情，抽中才突然冒一句傲娇")
+
+    # 害羞话题：认得出、按好感反应，追问会躲，低好感第三次起掉好感
+    me = ("酱油鱼", "鱼鱼")
+    assert shy_topic("你喜欢我吗") == "问" and shy_topic("想我没") == "问" and shy_topic("你是不是傲娇") == "说傲娇"
+    assert shy_topic("鱼鱼好可爱", me) == "夸" and shy_topic("早点睡哦你") == "关心" and shy_topic("抱抱") == "夸"
+    assert shy_topic("明天一起玩原神吗", me, direct=True) == "关心"
+    assert shy_topic("这猫好可爱") is None and shy_topic("我喜欢原神") is None and shy_topic("我想我们去吃饭") is None
+    assert shy_topic("明天一起玩原神吗") is None and shy_topic("") is None
+    assert "不傲娇" in shy_reaction("陌生", 1)[0] and "不傲娇" in shy_reaction("讨厌", 1)[0]
+    assert "大声否认" in shy_reaction("普通", 1)[0]
+    rng = random.Random(1)
+    soft_n = sum("小声" in shy_reaction("亲近", 1, rng=rng)[0] for _ in range(200))
+    assert 100 < soft_n < 180, soft_n  # 亲近多数小声软软地否认
+    assert shy_reaction("普通", 1)[1:] == (0, "") and "更不高兴" in shy_reaction("普通", 2)[0]
+    assert shy_reaction("普通", 2)[1:] == (0, "")  # 第二次只是更不高兴，不掉好感
+    assert shy_reaction("普通", 3)[1:] == (-2, "user") and shy_reaction("陌生", 4)[1] == -2
+    assert shy_reaction("有好感", 1)[1] is None and shy_reaction("亲近", 3)[1:] == (None, "user")  # 好感高不掉，但照样躲
+    assert shy_reaction("有好感", 1, 5)[1:] == (None, "group") and shy_reaction("普通", 1, 5)[1:] == (0, "group")  # 跟风的人不掉好感
+    assert is_coaxing("好啦不逗你了，出来嘛") and is_coaxing("对不起") and not is_coaxing("在吗")
+    shy_msg = compose_messages([], "小红", "你喜欢我吗", attitude="亲近", shy="被戳中了", dere=True)[0]["content"]
+    assert "被戳中了" in shy_msg and "突然冒一句傲娇" not in shy_msg  # 害羞话题优先
+    assert "哄你" in SHY_COAXED
+    print("PASS  害羞话题：按好感反应，追问会躲，低好感第三次起掉好感，亲近的人能哄回来")
 
     # 「喵」「呐」「…」：讨厌、陌生不带，抽中才带
     assert "讨厌" not in CUTE_CHANCE and "陌生" not in CUTE_CHANCE
-    assert CUTE_CHANCE["亲近"] > CUTE_CHANCE["有好感"] > CUTE_CHANCE["普通"] > 0
+    assert CUTE_CHANCE["亲近"] > CUTE_CHANCE["有好感"] > CUTE_CHANCE["普通"] > 0 and CUTE_CHANCE["亲近"] <= 0.1
     cute = compose_messages([], "小红", "在吗", attitude="亲近", cute=True)[0]["content"]
     plain_tone = compose_messages([], "小红", "在吗", attitude="亲近")[0]["content"]
     cold = compose_messages([], "小红", "在吗", attitude="陌生")[0]["content"]
     assert "我也不知道喵" in cute and "别带「喵」" in plain_tone and "我也不知道喵" not in cold and "别带「喵」" not in cold
-    assert "不用「…」" in ATTITUDE_LINES["陌生"] and "红着脸" in ATTITUDE_LINES["亲近"]
+    assert "不用「…」" in ATTITUDE_LINES["陌生"]
     assert humanize("才没有很喜欢你呢...") == "才没有很喜欢你呢…" and humanize("……才不是") == "…才不是"
     assert humanize("知道啦~") == "知道啦~"
     shy = [t for kind, t in split_reply("…才、才没有很想你呢…") if kind == "text"]
