@@ -77,7 +77,6 @@ from persona_rules import (
     diary_user_prompt,
     follow_decision,
     format_search_results,
-    in_quiet_hours,
     interest_hits,
     humanize,
     is_coaxing,
@@ -215,7 +214,6 @@ PROACTIVE_SILENCE_MIN = float(os.getenv("PROACTIVE_SILENCE_MIN", "40"))
 PROACTIVE_MIN_GAP_H = float(os.getenv("PROACTIVE_MIN_GAP_H", "3"))
 PROACTIVE_MAX_UNANSWERED = int(os.getenv("PROACTIVE_MAX_UNANSWERED", "2"))
 PROACTIVE_DAILY_MAX = int(os.getenv("PROACTIVE_DAILY_MAX", "6"))
-PROACTIVE_QUIET = os.getenv("PROACTIVE_QUIET", "1-9").strip()
 
 _data_env = os.getenv("PERSONA_DATA_DIR", "").strip()
 _DATA_DIR = Path(_data_env) if _data_env else Path(__file__).resolve().parent.parent / "data"
@@ -1692,7 +1690,7 @@ _proactive_task: list[asyncio.Task] = []
 
 async def _proactive_tick() -> None:
     now = time.time()
-    if MOCK or not API_KEY or in_quiet_hours(datetime.now().hour, PROACTIVE_QUIET):
+    if MOCK or not API_KEY:
         return
     if _mode_name("private") == "静音":
         return
@@ -1769,7 +1767,7 @@ async def _start_proactive() -> None:
         _proactive_task.append(asyncio.create_task(_proactive_loop()))
         logger.info(
             f"persona: 主动找人已开（只找亲近的人，平时常聊的钟点里没说话满 {PROACTIVE_SILENCE_MIN:.0f} 分钟，"
-            f"同一人隔 {PROACTIVE_MIN_GAP_H:.0f} 小时，每天最多 {PROACTIVE_DAILY_MAX} 次，{PROACTIVE_QUIET} 点不打扰）"
+            f"同一人隔 {PROACTIVE_MIN_GAP_H:.0f} 小时，每天最多 {PROACTIVE_DAILY_MAX} 次）"
         )
 
 

@@ -1539,17 +1539,7 @@ def parse_slang_meaning(raw: str, max_chars: int = 20) -> str:
 
 
 # ---------------------------------------------------------------- 主动找人
-def in_quiet_hours(hour: int, spec: str = "1-8") -> bool:
-    """「1-8」= 凌晨 1 点到 8 点前不打扰；支持跨零点的「23-7」，写错就当没有免打扰。"""
-    try:
-        start, end = (int(x) for x in spec.split("-", 1))
-    except (ValueError, AttributeError):
-        return False
-    if start == end:
-        return False
-    return start <= hour < end if start < end else hour >= start or hour < end
-
-
+# 不设固定的免打扰时段：只在对方平时常聊的钟点找，半夜睡觉的人那几个钟点没记录，自然不会去找
 # 平时常聊的钟点：每个钟点一天只记一次，满 HABIT_MIN 天、且不少于最常聊那个钟点的 1/4 才算
 HABIT_MIN = int(os.getenv("PROACTIVE_HABIT_MIN", "3"))
 HABIT_CAP = 60
