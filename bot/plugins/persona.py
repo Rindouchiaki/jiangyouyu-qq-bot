@@ -907,10 +907,11 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     # 跟她说话才算互动：好感、熟悉度按 QQ 号记，群里私聊是同一份
     bond = _bond_touch(user_id, name, affinity_delta(text)) if addressed else bonds.user(user_id)
     is_dev = bool(DEV_UIN) and user_id == DEV_UIN
-    att = None if is_dev else attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
+    att = attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
 
     # 被叫/接续用短冷却（聊天里 2 秒内接着说是常态），主动插话才用长冷却
-    label, _, _ = judge_atmosphere(list(history), idle)
+    # 氛围只在群里才有意义：私聊里「有火气」会让它凭空炸毛，所以私聊不传
+    label, _, _ = judge_atmosphere(list(history), idle) if is_group else (None, True, "")
     mood, mood_reason = judge_mood(list(history), label)
 
     # 「发张表情包」这类明确请求：直接给图，和图之外的话分开计时
@@ -1043,11 +1044,12 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         help_mode=help_mode,
         hour=datetime.now().hour,
         attitude=att,
+        bond=(int(bond.get("aff", 0)), int(bond.get("fam", 0))),
         dere=dere,
         user_notes=user_notes,
         group_notes=group_notes,
         group_style=group_style,
-        flavor=pick_flavor(),
+        flavor=pick_flavor(att),
     )
 
     try:

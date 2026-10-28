@@ -248,10 +248,12 @@ def main() -> int:
     assert later["aff"] < 0, later  # 记仇消得慢
     print("PASS  update_bond：难涨易掉，冷落会淡，骂人会掉，高好感要一直维持")
 
-    assert DERE_CHANCE["陌生"] == 0 and DERE_CHANCE["亲近"] <= 0.25 and DERE_CHANCE["普通"] > 0
+    assert DERE_CHANCE["陌生"] == 0 and DERE_CHANCE["亲近"] <= 0.5 and DERE_CHANCE["普通"] > 0
+    assert DERE_CHANCE["亲近"] > DERE_CHANCE["普通"] > DERE_CHANCE["陌生"]  # 越亲近越容易露真心
     calm = compose_messages([], "小红", "在吗", attitude="亲近")[0]["content"]
     soft = compose_messages([], "小红", "在吗", attitude="亲近", dere=True)[0]["content"]
-    assert "保持傲" in calm and "说漏嘴" not in calm and "说漏嘴" in soft
+    assert "说漏嘴" not in calm and "说漏嘴" in soft
+    assert "保持傲" not in calm  # 亲近档不再强制每句都端着傲
     print("PASS  底子是傲：只有抽中时才露一点真心")
 
     probs = [name_call_prob(a, 0.5) for a in ("讨厌", "陌生", "普通", "有好感", "亲近")]
