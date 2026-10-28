@@ -57,6 +57,7 @@ from persona_rules import (
     SLANG_EXPLAIN_PROMPT,
     SLANG_MINE_PROMPT,
     ATTITUDE_REPLY_FACTOR,
+    CUTE_CHANCE,
     DERE_CHANCE,
     DEFAULT_GAME_PREFIXES,
     DIARY_GROUP_PROMPT,
@@ -168,7 +169,7 @@ REPLY_MAX_LINES = int(os.getenv("REPLY_MAX_LINES", "3"))
 REPLY_TOTAL_CHARS = int(os.getenv("REPLY_TOTAL_CHARS", "60"))
 TYPING_SEC_PER_CHAR = float(os.getenv("TYPING_SEC_PER_CHAR", "0.25"))
 TYPING_MAX_SEC = float(os.getenv("TYPING_MAX_SEC", "8"))
-# 私聊里隔了一阵才回的消息，偶尔晚几十秒再回（像在忙别的）；开发者不晚回
+# 私聊里隔了一阵才回的消息，偶尔晚几十秒再回（像在忙别的）
 REPLY_LATE_PROB = float(os.getenv("REPLY_LATE_PROB", "0.1"))
 # 打字时对方又补了话：最多重想几次，之后照发
 RESTART_MAX = int(os.getenv("REPLY_RESTART_MAX", "2"))
@@ -187,7 +188,7 @@ SLANG_SEARCH_DAILY = int(os.getenv("SLANG_SEARCH_DAILY", "20"))
 # 接梗：听得懂的梗不是每次都接，闲聊里按概率偶尔玩一下，同一个会话至少隔几秒
 SLANG_PLAY_PROB = float(os.getenv("SLANG_PLAY_PROB", "0.1"))
 SLANG_PLAY_GAP = float(os.getenv("SLANG_PLAY_GAP", "1800"))
-# 主动找人：只找私聊过、好感「有好感」以上的人（开发者不看好感）
+# 主动找人：只找私聊过、好感「有好感」以上的人（开发者保底就是「有好感」）
 PROACTIVE_ENABLE = os.getenv("PROACTIVE_ENABLE", "1").strip() not in ("0", "false", "False")
 PROACTIVE_CHECK_SEC = float(os.getenv("PROACTIVE_CHECK_SEC", "600"))
 PROACTIVE_PROB = float(os.getenv("PROACTIVE_PROB", "0.15"))
@@ -1086,14 +1087,14 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         # 群里刷屏时只看最后几条，免得把一屏不相干的话都塞进去
         new_msgs = new_msgs[-8:]
 
-    if is_group and now < _snub_until.get(key, 0) and not devs.is_dev(user_id):
+    if is_group and now < _snub_until.get(key, 0):
         logger.info("persona: 正在冷处理这段时间，不接话")
         return True
 
     # --- 被追问到烦：先冷淡答题，再主动收尾 ---
     same_user = [t for (uid, t, ts) in _recent_user_msgs[key] if uid == user_id]
     annoyed, why = judge_annoyance(same_user, PESTER_WINDOW, PESTER_COUNT)
-    if is_group and annoyed and not devs.is_dev(user_id):
+    if is_group and annoyed:
         _bond_touch(user_id, name, AFF_PESTER)
         _snub_until[key] = now + SNUB_SECONDS
         _engaged.pop(key, None)
@@ -1170,7 +1171,6 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     bond = _bond_touch(user_id, name, affinity_delta(text)) if addressed else bonds.user(user_id)
     if not is_group:
         bonds.mark_private(user_id, now)
-    is_dev = devs.is_dev(user_id)
     att = attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
 
     # 话题自学习：说到的类别记一笔（谁说的记谁）；好感高/熟的人才在提示词里顺他的话题，省 token
@@ -1178,7 +1178,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     if topic_hits:
         bonds.learn_topics(user_id, name, topic_hits)
         bonds.save(force=True)
-    bond_topics = bonds.top_topics(user_id) if is_dev or att in ("有好感", "亲近") else []
+    bond_topics = bonds.top_topics(user_id) if att in ("有好感", "亲近") else []
     # 学到的梗分会话：别的群、别人私聊里的梗不带过来，只有网上查得到的大众梗哪里都认
     slang_note = slang.hint(batch_text, scope=f"g{group_id}" if is_group else f"p{user_id}")
     if slang_note:
@@ -1211,7 +1211,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     # 不是每次都接：私聊必回，被 @ 就回（静音档前面已经拦了）；喊名字回不回看态度；接续按态度微调
     if addressed and mode != "私聊" and not at_reply:
         if called:
-            prob = name_call_prob("亲近" if is_dev else att, mcfg["called"], PROB_CALLED or 0.5)
+            prob = name_call_prob(att, mcfg["called"], PROB_CALLED or 0.5)
         else:
             prob = mcfg["follow"]
             if prob < 1.0:
@@ -1300,8 +1300,9 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         addressed and web_search.enabled() and wants_search(text) and web_search.allow(user_id)[0]
     )
 
-    # 底子是傲：每句按态度抽一次签，抽中才露一点真心
-    dere = random.random() < DERE_CHANCE.get("开发者" if is_dev else att or "普通", 0.0)
+    # 每句按态度抽签：露不露真心、带不带「喵」「…」这类语气（开发者也按好感档，不另算）
+    dere = random.random() < DERE_CHANCE.get(att or "普通", 0.0)
+    cute = random.random() < CUTE_CHANCE.get(att or "普通", 0.0)
     # 小本本：跟她说话时才带（插话不带，省 token）
     user_notes = visible_notes(bond.get("notes"), is_group) if addressed else None
     group_rec = bonds.group(group_id) if is_group else {}
@@ -1328,6 +1329,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         attitude=att,
         bond=(int(bond.get("aff", 0)), int(bond.get("fam", 0))),
         dere=dere,
+        cute=cute,
         user_notes=user_notes,
         group_notes=group_notes,
         group_style=group_style,
@@ -1416,7 +1418,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     first_text = next((t for kind, t in parts if kind == "text"), "")
     spent = time.time() - now
     await _sleep(
-        reaction_delay(active, 0.0 if is_group or is_dev else REPLY_LATE_PROB)
+        reaction_delay(active, 0.0 if is_group else REPLY_LATE_PROB)
         + typing_delay(first_text, TYPING_SEC_PER_CHAR, TYPING_MAX_SEC) - spent
     )
     verdict = _stale()
@@ -1471,7 +1473,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
 
     logger.info(
         f"persona -> {reply}{' +表情' if sent_sticker else ''}（{mode}，{len(batch)} 条一起回，氛围 {label}，"
-        f"情绪 {mood}·{mood_reason}，对象 {name}，态度 {'开发者' if is_dev else att}{'·露真心' if dere else ''}"
+        f"情绪 {mood}·{mood_reason}，对象 {name}，态度 {att}{'·露真心' if dere else ''}{'·语气词' if cute else ''}"
         f"{'，联网' if can_search else ''}{'，兴趣 ' + '/'.join(interest) if interest else ''}）"
     )
 
@@ -1596,7 +1598,7 @@ async def _proactive_tick() -> None:
             continue
         att = attitude(int(rec.get("aff", 0)), int(rec.get("fam", 0)))
         if proactive_due(
-            rec, now, att, devs.is_dev(uid),
+            rec, now, att,
             PROACTIVE_MIN_SILENCE_H * 3600, PROACTIVE_MIN_GAP_H * 3600, PROACTIVE_MAX_UNANSWERED,
         ):
             cands.append((uid, rec, att))
@@ -1614,7 +1616,7 @@ async def _proactive_tick() -> None:
         list(_history[key]), name, "", self_names=NICKNAMES, dev_name=devs.DEV_NAMES, dev_aliases=devs.DEV_ALIASES,
         hour=datetime.now().hour, attitude=att, bond=(int(rec.get("aff", 0)), int(rec.get("fam", 0))),
         user_notes=visible_notes(rec.get("notes"), False), topics=bonds.top_topics(uid),
-        flavor=_sticky_flavor(key, att), proactive=True,
+        flavor=_sticky_flavor(key, att), proactive=True, cute=random.random() < CUTE_CHANCE.get(att, 0.0),
     )
     try:
         raw = await ask_llm(messages, 100, stop=None)
