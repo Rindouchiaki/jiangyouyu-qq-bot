@@ -9,6 +9,8 @@
     4. Python 3.12 虚拟环境 + 依赖（requirements.lock 锁定的版本），ffmpeg 放到 tools\ffmpeg\bin
     5. SnowLuma：没装就下载 external.lock.json 锁定的版本并校验 sha256；生成 onebot.json（随机 token），和 persona.env 的 token 对齐
     6. 早柚核心 + external.lock.json 里列的游戏插件，装锁定的提交，再装各插件自己的依赖
+    7. 本地视觉模型：没装就下载锁定的 llama.cpp（Windows CPU 版）和 Qwen3-VL-2B 模型（约 2GB），校验 sha256；
+       persona.env 里 VLM_ENABLED=0 或加 -NoVl 就跳过，下载失败也不影响聊天
     已经装了的外部组件默认不动，只提示和锁定版本不一致；-Update 才把它们换到锁定版本（「一键更新.cmd」用）。
     -Update 时还会按样例重写 persona.env：账号、密钥、路径和自己加的项保留，调参项换成样例里的新值（先备份）；
     自己要长期保留的调参写进 bot\persona.local.env，或者加 -KeepEnv 不动 persona.env。
@@ -19,6 +21,7 @@
     .\scripts\setup.ps1 -Start               # 装好后直接启动全部
     .\scripts\setup.ps1 -From Z:\snowluma    # 沿用旧安装
     .\scripts\setup.ps1 -NoCore              # 不装早柚核心
+    .\scripts\setup.ps1 -NoVl                # 不下载本地视觉模型（约 2GB）
     .\scripts\setup.ps1 -Update              # SnowLuma / 核心 / 插件换到锁定版本，persona.env 调参项换成样例的（先停服务）
     .\scripts\setup.ps1 -Update -KeepEnv     # 同上，但 persona.env 不动
     .\scripts\setup.ps1 -Yes                 # 不提问，全部按默认（必填项留空的要自己去 persona.env 填）
@@ -28,6 +31,7 @@ param(
     [string]$From,
     [switch]$Start,
     [switch]$NoCore,
+    [switch]$NoVl,
     [switch]$Update,
     [switch]$KeepEnv,
     [switch]$Yes
@@ -361,6 +365,76 @@ if ($NoCore) {
         }
     }
     Ok '早柚核心已就绪'
+}
+
+# ------------------------------------------------------------------ 7) 本地视觉模型
+Step '本地视觉模型（llama.cpp + Qwen3-VL-2B，看没字的图、读懂表情包）'
+$cfg = Get-StackConfig
+$vlLock = $lock.vision
+$llamaDir = Join-Path $cfg.Tools 'llama.cpp'
+$modelDir = Join-Path $cfg.Tools 'vl-model'
+$llamaVer = Join-Path $llamaDir 'version.txt'
+
+function Get-Verified([string[]]$Urls, [string]$Dest, [string]$Sha256) {
+    # curl.exe 能断点续传，大文件下一半断了再跑一次一键部署接着下；下完对 sha256，不对就删掉
+    $part = "$Dest.part"
+    foreach ($url in $Urls) {
+        Info "下载 $url"
+        try {
+            if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+                & curl.exe -L --fail --retry 3 -C - -o $part $url
+                if ($LASTEXITCODE -ne 0) { throw "curl 退出码 $LASTEXITCODE" }
+            } else {
+                $ProgressPreference = 'SilentlyContinue'
+                Invoke-WebRequest -Uri $url -OutFile $part -UseBasicParsing
+            }
+        } catch {
+            Warn "这个地址下不下来：$($_.Exception.Message)"
+            continue
+        }
+        $actual = (Get-FileHash -LiteralPath $part -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -eq $Sha256) {
+            Move-Item -LiteralPath $part -Destination $Dest -Force
+            return $true
+        }
+        Warn "sha256 不对（应为 $Sha256，实际 $actual），删掉重下"
+        Remove-Item -LiteralPath $part -Force
+    }
+    return $false
+}
+
+if ($NoVl -or -not $cfg.VlEnabled) {
+    Info '跳过（-NoVl 或 persona.env 里关了 VLM_ENABLED / 用的不是 llama.cpp）'
+} else {
+    if ($Update -and (Test-Listening 11435)) { throw '本地视觉模型还在运行，先双击「一键停止.cmd」再更新' }
+    $llamaExe = Join-Path $llamaDir 'llama-server.exe'
+    $llamaNow = if (Test-Path -LiteralPath $llamaVer) { (Get-Content -LiteralPath $llamaVer -Raw).Trim() } else { '' }
+    $hasLlama = (Test-Path -LiteralPath $llamaExe) -or (Test-Path -LiteralPath (Join-Path $llamaDir 'bin\llama-server.exe'))
+    if ($hasLlama -and ($llamaNow -eq $vlLock.llama_cpp.version -or -not $Update)) {
+        Info "已装 llama.cpp $(if ($llamaNow) { $llamaNow } else { '（自己放的）' })：$llamaDir"
+    } else {
+        $zip = Join-Path $env:TEMP "llama-$($vlLock.llama_cpp.version).zip"
+        if (Get-Verified @($vlLock.llama_cpp.url) $zip $vlLock.llama_cpp.sha256) {
+            New-Item -ItemType Directory -Force -Path $llamaDir | Out-Null
+            Expand-Archive -LiteralPath $zip -DestinationPath $llamaDir -Force
+            Remove-Item -LiteralPath $zip -Force
+            Set-Content -LiteralPath $llamaVer -Value $vlLock.llama_cpp.version -Encoding ASCII
+            Ok "llama.cpp $($vlLock.llama_cpp.version) 装到了 $llamaDir"
+        } else {
+            Warn 'llama.cpp 没下下来：机器人照常聊，只是没字的图和表情读不懂；网好了再跑一次一键部署'
+        }
+    }
+    New-Item -ItemType Directory -Force -Path $modelDir | Out-Null
+    foreach ($f in $vlLock.files) {
+        $dest = Join-Path $modelDir $f.save_as
+        if (Test-Path -LiteralPath $dest) { Info "已有 $($f.save_as)"; continue }
+        $mirror = $f.url -replace '^https://huggingface\.co', $vlLock.mirror
+        if (Get-Verified @($f.url, $mirror) $dest $f.sha256) {
+            Ok "模型 $($f.save_as) 下好了"
+        } else {
+            Warn "$($f.save_as) 没下下来（两个地址都试过）：网好了再跑一次一键部署，会接着下"
+        }
+    }
 }
 
 # ------------------------------------------------------------------ 收尾

@@ -1,9 +1,29 @@
 {
-  "_说明": "外部组件锁定的版本。commit / version 由 .github/workflows/update-deps.yml 自动更新（开 PR），合并后在电脑上双击「一键更新.cmd」生效。早柚核心插件：game 是游戏名，prefixes 是人设要避让的指令前缀，help 是冒烟测试发的帮助指令，login 是插件自己的登录指令（冒烟测试查它不进群、私聊回到临时会话）；新增插件就照着加一项。",
+  "_说明": "外部组件锁定的版本。commit / version 由 .github/workflows/update-deps.yml 自动更新（开 PR），合并后在电脑上双击「一键更新.cmd」生效。早柚核心插件：game 是游戏名，prefixes 是人设要避让的指令前缀，help 是冒烟测试发的帮助指令，login 是插件自己的登录指令（冒烟测试查它不进群、私聊回到临时会话）；新增插件就照着加一项。 vision 是本地视觉模型（llama.cpp + Qwen3-VL-2B），手动锁定、不自动更新：换版本要连 sha256 一起改。",
   "snowluma": {
     "version": "v2.2.1",
     "asset": "SnowLuma-v2.2.1-win-x64.zip",
     "sha256": "09a3fbbf42ea805c4d61b5e67bec2a46ef341fa803f211d78c40796cb7f535dc"
+  },
+  "vision": {
+    "llama_cpp": {
+      "version": "b11624",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11624/llama-b11624-bin-win-cpu-x64.zip",
+      "sha256": "57f436b5153fc411b4dc13a2d24b45d91968e1163a6c5bf3941d20bb28689e8c"
+    },
+    "files": [
+      {
+        "url": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/52d6c8ffea26cc873ac5ad116f8631268d7eb503/Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+        "save_as": "Qwen3-VL-2B-Instruct-Q4_K_M.gguf",
+        "sha256": "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae"
+      },
+      {
+        "url": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/52d6c8ffea26cc873ac5ad116f8631268d7eb503/mmproj-Qwen3VL-2B-Instruct-F16.gguf",
+        "save_as": "mmproj-F16.gguf",
+        "sha256": "c3d5afbef5287953acd57b4043d2269456e5761a4eaccb3b71b062996970aea5"
+      }
+    ],
+    "mirror": "https://hf-mirror.com"
   },
   "git": {
     "gsuid_core": {
