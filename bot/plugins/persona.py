@@ -43,6 +43,7 @@ from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment
 from nonebot.log import logger
 from nonebot.params import CommandArg
 
+import backstage
 import bonds
 import devs
 import gscore_guard
@@ -648,6 +649,10 @@ async def ask_llm(
     if MOCK:
         return "（笑）这个吧...其实我觉得还行吧 😂 不过说真的你要是非这么想那也没办法啦"
     return await asyncio.to_thread(_call_llm_sync, messages, max_tokens, temperature, stop)
+
+
+# 后台数据（/小本本、/好感、/关系图…）在开发者内部对话里当成请求问她，用同一个模型
+backstage.setup(ask_llm, NICKNAMES)
 
 
 def _run_tool(call: dict, user_id: str) -> str:
@@ -1862,22 +1867,23 @@ usage_cmd = on_command("用量", priority=15, block=True)
 async def _usage_cmd(bot: Bot, event: MessageEvent) -> None:
     if not is_our_bot(event) or not _is_target_account(event):
         return
-    if not devs.is_dev(event.get_user_id()):
+    # 后台数据：只在全是开发者的对话里给看，当成请求问她
+    if not await backstage.devs_only(bot, event):
         return
 
     rows, calls = _usage_today()
     searched = f"联网 {web_search.today_count()} 次" if web_search.enabled() else "联网没开"
     if not calls:
-        await usage_cmd.finish(f"今天还没调过模型，{searched}。")
+        await backstage.present(bot, event, "今天的用量", f"今天还没调过模型，{searched}。")
         return
     prompt = sum(r.get("p", 0) for r in rows)
     comp = sum(r.get("c", 0) for r in rows)
     hit = sum(r.get("hit", 0) for r in rows)
     rate = hit / prompt if prompt else 0.0
-    await usage_cmd.finish(
+    await backstage.present(bot, event, "今天的用量", (
         f"今日模型调用 {calls} 次：输入 {prompt} / 输出 {comp} token，"
         f"缓存命中 {rate:.0%}，平均每次输入 {prompt // calls}；{searched}。"
-    )
+    ))
 
 
 # 插话开关：单独控制「没人叫时插不插话」，与静音档解耦（管理员）

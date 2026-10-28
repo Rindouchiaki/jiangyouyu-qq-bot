@@ -45,6 +45,8 @@ class Client:
         self.url, self.token, self.self_id = url, token, self_id
         self.ws = None
         self.msg_id = int(time.time()) % 100000 * 1000
+        # 测试群的成员：默认有普通群友；测后台指令时换成「全是开发者」
+        self.members = [self_id, 10002, 10003]
 
     async def __aenter__(self) -> "Client":
         headers = {"X-Self-ID": str(self.self_id), "X-Client-Role": "Universal"}
@@ -59,6 +61,8 @@ class Client:
         await self.ws.close()
 
     async def send(self, text: str, *, user: int = 10002, private: bool = False, temp: bool = False, at: bool = False) -> None:
+        if self.ws is None:
+            raise RuntimeError("没连上")
         segs = ([{"type": "at", "data": {"qq": str(self.self_id)}}] if at else []) + [{"type": "text", "data": {"text": text}}]
         self.msg_id += 1
         ev = {"post_type": "message", "time": int(time.time()), "self_id": self.self_id, "user_id": user,
@@ -90,6 +94,10 @@ class Client:
                 data = {"group_id": GROUP, "group_name": "冒烟测试群", "member_count": 3, "max_member_count": 200}
             elif p["action"] in ("get_group_member_info", "get_stranger_info"):
                 data = {"user_id": params.get("user_id"), "nickname": "smoke", "card": "", "role": "member"}
+            elif p["action"] == "get_group_member_list":
+                data = [{"user_id": uid, "nickname": "smoke", "card": "", "role": "member"} for uid in self.members]
+            elif p["action"] == "get_group_list":
+                data = [{"group_id": GROUP, "group_name": "冒烟测试群", "member_count": len(self.members)}]
             await self.ws.send(json.dumps({"status": "ok", "retcode": 0, "data": data, "echo": p.get("echo")}))
             if p["action"].startswith("send_"):
                 got.append({"action": p["action"], **params})
@@ -175,6 +183,24 @@ async def run(args, token: str, self_id: int) -> None:
             check(bool(got) and all(a.get("user_id") == 10007 for a in got), "私聊连发几条有回复", str(got))
             check(len(got) <= 3, "私聊连发几条合成一批回，不是一条一回", f"{len(got)} 条：{got}")
             check(first >= 2, "不秒回：等对方说完再回", f"{first:.1f}s")
+
+            # 后台数据只在全是开发者的对话里给看，而且是先人设说两句再给资料
+            dev = 289635657
+            await c.send("/小本本", user=dev)
+            got = await c.collect(6)
+            check(not got, "有普通群友的群里，开发者的 /小本本 也不理", str(got))
+            c.members = [c.self_id, dev, 189963059]
+            await c.send(f"/关系图 {GROUP}", user=dev)
+            got = await c.collect(20, lambda g: any(has_image(a) for a in g))
+            got += await c.collect(3)
+            check(any(has_image(a) for a in got) and len(got) >= 3, "开发者内部群里 /关系图：人设说话 + 图 + 文字资料", str(got)[:300])
+            c.members = [c.self_id, 10002, 10003]
+            await c.send("/用量", user=10002, private=True)
+            got = await c.collect(5)
+            check(not got, "路人私聊 /用量 不理", str(got))
+            await c.send("/用量", user=dev, private=True)
+            got = await c.collect(15, lambda g: len(g) >= 2)
+            check(len(got) >= 2, "开发者私聊 /用量：人设说话 + 数据", str(got))
         else:
             print("SKIP  @ 机器人有回复（persona.env 没开 LLM_MOCK=1，不调真模型）")
 

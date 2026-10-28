@@ -1,9 +1,15 @@
-"""小本本指令（都只给开发者）：看好感度和日记，删记录，手动调好感度。
+"""小本本指令：看好感度、日记和群关系图，删记录，手动调好感度。
 
-- /小本本                群里：看本群的群日记
-- /小本本 @某人 或 QQ号   看这个人的好感、熟悉度和日记
+都是后台数据：只在「全是开发者」的对话里能用（开发者私聊，或者除了机器人全是开发者的群，比如内部测试群），
+别的地方一律不理。看的指令当成请求问酱油鱼：她先用人设说两句、总结一下，再发原始资料；改的指令直接改。
+在内部对话里可以看任意群、任意人：
+
+- /小本本                列出记过群日记的群（只有一个就直接给）
+- /小本本 群号           看那个群的群日记和群风格
+- /小本本 @某人 / QQ号 / 名字   看这个人的好感、熟悉度和日记
+- /关系图 [群号]         那个群的关系图：她在中间，连到每个记过的群友（写态度档），群友之间有关系的连线写关系
 - /小本本 删除 @某人 或 QQ号   删掉关于这个人的全部记录（好感、熟悉度、日记），比如本人要求时
-- /小本本 清空本群        清掉本群的群日记
+- /小本本 清空 群号      清掉那个群的群日记
 - /好感 @某人            看这个人的好感 / 熟悉 / 态度档
 - /好感 @某人 +10        好感加 10（也可以 -10；=30 或直接 30 是设成 30）
 - /好感 @某人 熟悉 +5    调熟悉度（0~100），别的好感减太多人真的会讨厌你
@@ -11,18 +17,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 
+import backstage
 import bonds
-import devs
+import relation_graph
 from bot_guard import is_our_bot
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent
 from nonebot.params import CommandArg
-from persona_rules import INITIAL_AFF, INITIAL_FAM, attitude
+from persona_rules import INITIAL_AFF, INITIAL_FAM, attitude, parse_relation
 
 notebook_cmd = on_command("小本本", priority=17, block=True)
 bond_cmd = on_command("好感", priority=17, block=True)
+graph_cmd = on_command("关系图", priority=17, block=True)
 
 
 def _describe_user(uid: str) -> str:
@@ -33,19 +42,62 @@ def _describe_user(uid: str) -> str:
     return f"{rec.get('name') or uid}：好感 {aff} / 熟悉 {fam}（{attitude(aff, fam)}）\n{notes}"
 
 
+def _describe_group(gid: str, name: str = "") -> str:
+    rec = bonds.group(gid)
+    notes = "；".join(n["t"] for n in rec.get("notes", [])) or "还没记什么"
+    style = "；".join(n["t"] for n in rec.get("style", [])) or "还没记什么"
+    return f"群 {gid}{f'（{name}）' if name else ''}\n群日记：{notes}\n群风格：{style}"
+
+
+async def _pick_group(bot: Bot, event: MessageEvent, text: str) -> tuple[str, str]:
+    """要看哪个群：写了群号就是它；没写就从记过群日记的群里挑（只有一个直接用）。返回 (群号, 提示)。"""
+    names = await backstage.group_names(bot)
+    here = str(getattr(event, "group_id", "") or "")
+    if text.isdigit():
+        return text, ""
+    known = [g for g in bonds.known_groups() if g != here]
+    if len(known) == 1:
+        return known[0], ""
+    if not known:
+        return "", "还没记过哪个群的群日记"
+    listing = "、".join(f"{g}（{names.get(g) or '?'}）" for g in known[:10])
+    return "", f"要看哪个群？{listing}，后面带上群号"
+
+
+async def _graph(bot: Bot, gid: str, title: str) -> tuple[bytes, str]:
+    """一个群的关系图（PNG）和对应的文字资料。"""
+    members = await backstage.group_members(bot, gid) or frozenset()
+    self_id = str(bot.self_id)
+    people = [(uid, rec) for uid, rec in bonds.known_people(members) if uid != self_id]
+    nodes = []
+    lines = []
+    for uid, rec in people[: relation_graph.MAX_PEOPLE]:
+        aff, fam = int(rec.get("aff", INITIAL_AFF)), int(rec.get("fam", INITIAL_FAM))
+        name = rec.get("name") or uid
+        nodes.append((name, attitude(aff, fam)))
+        lines.append(f"{name}：{attitude(aff, fam)}（好感 {aff} / 熟悉 {fam}）")
+    links, loose = [], []
+    for note in bonds.group(gid).get("notes", []):
+        rel = parse_relation(note["t"])
+        (links if rel else loose).append(rel or note["t"])
+    lines += [f"{a} — {b}：{r}" for a, b, r in links] + [f"（关系）{t}" for t in loose]
+    png = await asyncio.to_thread(relation_graph.render, "酱油鱼", nodes, links, loose, title)
+    return png, "\n".join(lines) or "这个群还没记过谁"
+
+
 @notebook_cmd.handle()
 async def _notebook(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
-    if not is_our_bot(event):
-        return
-    if not devs.is_dev(event.get_user_id()):
+    if not is_our_bot(event) or not await backstage.devs_only(bot, event):
         return
     target = next((str(seg.data.get("qq")) for seg in arg if seg.type == "at"), "")
     text = arg.extract_plain_text().strip()
-    gid = str(getattr(event, "group_id", "") or "")
-    if text == "清空本群" and gid:
+    if text.startswith("清空"):
+        gid = text[2:].strip().replace("本群", "") or str(getattr(event, "group_id", "") or "")
+        if not gid.isdigit():
+            await notebook_cmd.finish("用法：/小本本 清空 群号")
         bonds.clear_group(gid)
         bonds.save(force=True)
-        await notebook_cmd.finish("本群的群日记清掉了")
+        await notebook_cmd.finish(f"群 {gid} 的群日记清掉了")
     if text.startswith("删除"):
         uid = target or text[2:].strip()
         if not uid.isdigit():
@@ -53,16 +105,39 @@ async def _notebook(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         existed = bonds.forget_user(uid)
         bonds.save(force=True)
         await notebook_cmd.finish(f"关于 {uid} 的记录删了" if existed else f"本来就没有 {uid} 的记录")
+    # 群号和 QQ 号都是数字：记过群日记的算群，其余算人
+    if text.isdigit() and text in bonds.known_groups():
+        names = await backstage.group_names(bot)
+        await backstage.present(bot, event, "这个群的群日记", _describe_group(text, names.get(text, "")))
+        return
     if not target and text.isdigit():
         target = text
+    if not target and text:
+        hits = bonds.find_user(text)
+        if len(hits) != 1:
+            await notebook_cmd.finish(f"没找到叫「{text}」的人，写 QQ 号吧" if not hits else "好几个都叫这个，写 QQ 号吧")
+        target = hits[0]
     if target:
-        await notebook_cmd.finish(_describe_user(target))
-    if gid:
-        rec = bonds.group(gid)
-        notes = "；".join(n["t"] for n in rec.get("notes", [])) or "还没记什么"
-        style = "；".join(n["t"] for n in rec.get("style", [])) or "还没记什么"
-        await notebook_cmd.finish(f"本群日记：{notes}\n本群风格：{style}")
-    await notebook_cmd.finish("用法：/小本本 @某人 或 /小本本 QQ号；群里不带参数看群日记")
+        await backstage.present(bot, event, "这个人的小本本", _describe_user(target))
+        return
+    gid, tip = await _pick_group(bot, event, "")
+    if tip:
+        await notebook_cmd.finish(tip)
+    names = await backstage.group_names(bot)
+    await backstage.present(bot, event, "这个群的群日记", _describe_group(gid, names.get(gid, "")))
+
+
+@graph_cmd.handle()
+async def _graph_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
+    if not is_our_bot(event) or not await backstage.devs_only(bot, event):
+        return
+    gid, tip = await _pick_group(bot, event, arg.extract_plain_text().strip())
+    if tip:
+        await graph_cmd.finish(tip)
+    names = await backstage.group_names(bot)
+    title = f"群 {gid}{f'（{names[gid]}）' if names.get(gid) else ''} 的关系图"
+    png, data = await _graph(bot, gid, title)
+    await backstage.present(bot, event, "这个群的关系图", data, png)
 
 
 def _bond_usage(event: MessageEvent) -> str:
@@ -97,9 +172,7 @@ def _pick_by_name(text: str) -> tuple[str, str, str]:
 @bond_cmd.handle()
 async def _bond(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
     """开发者手动调好感/熟悉度：/好感 @人（看）、+10 / -10 / =30 / 熟悉 +5。"""
-    if not is_our_bot(event):
-        return
-    if not devs.is_dev(event.get_user_id()):
+    if not is_our_bot(event) or not await backstage.devs_only(bot, event):
         return
     target = next((str(seg.data.get("qq")) for seg in arg if seg.type == "at"), "")
     text = arg.extract_plain_text().strip().translate(str.maketrans("＋－＝", "+-="))
@@ -120,7 +193,8 @@ async def _bond(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
     field = "fam" if ("熟悉" in text) else "aff"
     level = re.search(r"([+\-=]?)\s*(\d{1,3})", text)
     if not level:
-        await bond_cmd.finish(_describe_user(target))
+        await backstage.present(bot, event, "对这个人的好感", _describe_user(target))
+        return
     op, val = level.group(1) or "=", int(level.group(2))
     cur = bonds.user(target)
     cur_aff, cur_fam = int(cur.get("aff", INITIAL_AFF)), int(cur.get("fam", INITIAL_FAM))

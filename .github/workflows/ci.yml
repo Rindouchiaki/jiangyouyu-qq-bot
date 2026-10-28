@@ -55,6 +55,7 @@ jobs:
           .venv\Scripts\python tests\test_slang.py || exit /b 1
           .venv\Scripts\python tests\test_topics.py || exit /b 1
           .venv\Scripts\python tests\test_sticker_weights.py || exit /b 1
+          .venv\Scripts\python tests\test_backstage.py || exit /b 1
           .venv\Scripts\python tests\test_migrate_journal_tags.py
 
       - name: NoneBot 冒烟

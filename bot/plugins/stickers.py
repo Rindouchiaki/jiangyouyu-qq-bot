@@ -6,8 +6,8 @@
     /表情            随机一张
     /表情 搞笑       按分类或标签/文字匹配
     /表情 分类       看有哪些分类
-    /表情 收藏       看她最常用的几张表情和用途备注
-    /表情 备注 <id前几位> <用途>   手动给某张表情写用途（仅开发者）
+    /表情 收藏       看她最常用的几张表情和用途备注（后台数据：只在全是开发者的对话里，当成请求问她）
+    /表情 备注 <id前几位> <用途>   手动给某张表情写用途（仅开发者，只在全是开发者的对话里）
 
 后台：本地视觉模型闲着时一张张读库里的表情（读过不再读），每天看一次自己的收藏，
 真不喜欢的放 30 天、其它的放 90 天一次都没发过才删。
@@ -20,7 +20,7 @@ import asyncio
 import os
 import time
 
-import devs
+import backstage
 import nonebot
 import sticker_lib
 import vision
@@ -93,14 +93,15 @@ async def _handle(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
     keyword = arg.extract_plain_text().strip()
 
     if keyword in ("收藏", "常用", "喜欢"):
+        if not await backstage.devs_only(bot, event):
+            return
         favs = sticker_lib.favorites()
-        if not favs:
-            await stickers_cmd.finish("还没有常用的表情")
-        lines = [f"{it['id'][:6]} 用过{n.get('uses', 0)}次：{n.get('note') or it.get('category', '')}" for it, n in favs]
-        await stickers_cmd.finish("\n".join(lines))
+        lines = [f"{it['id'][:6]} 用过{n.get('uses', 0)}次：{n.get('note') or sticker_lib.label(it)}" for it, n in favs]
+        await backstage.present(bot, event, "常用的表情", "\n".join(lines) or "还没有常用的表情")
+        return
 
     if keyword.startswith("备注"):
-        if not devs.is_dev(event.get_user_id()):
+        if not await backstage.devs_only(bot, event):
             return
         parts = keyword[2:].split(maxsplit=1)
         item = sticker_lib.set_note(parts[0], parts[1]) if len(parts) == 2 else None
