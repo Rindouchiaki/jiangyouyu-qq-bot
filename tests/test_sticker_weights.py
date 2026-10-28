@@ -91,6 +91,65 @@ def main() -> int:
     assert cats["生气"] > 20 and cats["无文字"] > 10, cats
     assert cats["拒绝"] == 0, "只有 1 张的分类不该被抽到"
     print(f"PASS  炸毛时 {len(seen)} 张不同、生气 {cats['生气']}/120、无文字 {cats['无文字']}/120")
+
+    # 读后感：可爱二次元更常发，没看懂的不算读过
+    lib._items = [{"id": "cute", "file": "cute.gif", "category": "其他"}, {"id": "real", "file": "real.jpg", "category": "其他"},
+                  {"id": "blank", "file": "blank.jpg", "category": "其他"}]
+    lib._notes, lib._reads = {}, {}
+    lib._pick_hist.clear()
+    lib._cat_used.clear()
+    lib.set_read("cute", {"desc": "猫耳少女眨眼", "mean": "卖萌", "scene": "撒娇", "acg": True, "cute": 3})
+    lib.set_read("real", {"desc": "真人摊手", "mean": "无奈", "scene": "没办法", "acg": False, "cute": 0})
+    lib.set_read("blank", {"desc": "", "mean": "", "scene": "", "acg": False, "cute": 0})
+    w = {it["id"]: lib._weight(it) for it in lib._items}
+    assert w["cute"] == 2.0 and w["real"] == 0.5 and w["blank"] == 1.0, w
+    assert lib.read_of("blank") is None and lib.has_read("blank") and lib.next_unread() is None
+    assert lib.label(lib._items[0]) == "卖萌" and lib.label(lib._items[2]) == "其他"
+    assert lib.pick_for_scene(("撒娇",))["id"] == "cute"  # 读后感里的场景也能用来找图
+    assert (TMP / "reads.json").is_file()
+    print("PASS  读后感：可爱二次元权重 ×2、别的画风 ×0.5，没看懂的不算，场景能找到图")
+
+    # 定期清收藏：别太严，真不喜欢的 30 天、其余 90 天一次没发过才删
+    import json
+    import time
+    now = time.time()
+    (TMP / "saved").mkdir(exist_ok=True)
+    saved = [
+        {"id": "s_real_old", "file": "saved/s_real_old.jpg", "category": "收藏", "saved_at": now - 40 * 86400},
+        {"id": "s_real_new", "file": "saved/s_real_new.jpg", "category": "收藏", "saved_at": now - 10 * 86400},
+        {"id": "s_real_used", "file": "saved/s_real_used.jpg", "category": "收藏", "saved_at": now - 40 * 86400},
+        {"id": "s_acg_old", "file": "saved/s_acg_old.jpg", "category": "收藏", "saved_at": now - 40 * 86400},
+        {"id": "s_acg_idle", "file": "saved/s_acg_idle.jpg", "category": "收藏", "saved_at": now - 100 * 86400},
+        {"id": "s_unread", "file": "saved/s_unread.jpg", "category": "收藏", "saved_at": now - 40 * 86400},
+    ]
+    for it in saved:
+        (TMP / it["file"]).write_bytes(b"x")
+    (TMP / "saved.json").write_text(json.dumps({"items": saved}), encoding="utf-8")
+    real = {"desc": "真人", "mean": "", "scene": "", "acg": False, "cute": 0}
+    for sid in ("s_real_old", "s_real_new", "s_real_used"):
+        lib.set_read(sid, real)
+    for sid in ("s_acg_old", "s_acg_idle"):
+        lib.set_read(sid, {"desc": "二次元少女", "mean": "", "scene": "", "acg": True, "cute": 1})
+    lib._notes = {"s_real_used": {"note": "", "uses": 1}}
+    gone = lib.prune(now, 30, 90)
+    assert sorted(it["id"] for it in gone) == ["s_acg_idle", "s_real_old"], gone
+    left = {it["id"] for it in json.loads((TMP / "saved.json").read_text(encoding="utf-8"))["items"]}
+    assert left == {"s_real_new", "s_real_used", "s_acg_old", "s_unread"} and not (TMP / "saved/s_real_old.jpg").exists()
+    print("PASS  清收藏：真不喜欢的 30 天、其余 90 天一次没发过才删；发过一次就留着")
+
+    # 收藏满了：先挤掉最不喜欢的，不是最早的
+    import io
+    from PIL import Image
+    lib.SAVE_MAX = 4
+    lib.load()
+    real = {"desc": "真人", "mean": "", "scene": "", "acg": False, "cute": 0}
+    lib.set_read("s_real_new", real)
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), "pink").save(buf, format="PNG")
+    item = lib.save_sticker(buf.getvalue(), "收藏")
+    left = {it["id"] for it in json.loads((TMP / "saved.json").read_text(encoding="utf-8"))["items"]}
+    assert item["id"] in left and "s_real_new" not in left and "s_acg_old" in left, left
+    print("PASS  收藏满了先挤掉最不喜欢、最少用的")
     return 0
 
 

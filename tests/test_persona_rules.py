@@ -11,6 +11,7 @@ from persona_rules import (  # noqa: E402
     ATTITUDE_LINES,
     CUTE_CHANCE,
     SHY_COAXED,
+    STICKER_READ_PROMPT,
     DERE_CHANCE,
     REPLY_FLAVORS,
     DEFAULT_GAME_PREFIXES,
@@ -23,6 +24,7 @@ from persona_rules import (  # noqa: E402
     compose_messages,
     debounce_deadline,
     dev_floor,
+    parse_sticker_read,
     follow_decision,
     format_search_results,
     in_quiet_hours,
@@ -54,6 +56,11 @@ from persona_rules import (  # noqa: E402
     split_long,
     shy_reaction,
     shy_topic,
+    sticker_card,
+    sticker_keep_rank,
+    sticker_like,
+    sticker_prune_due,
+    sticker_save_prob,
     split_reply,
     sticker_category,
     sticker_scene,
@@ -329,6 +336,36 @@ def main() -> int:
     assert "被戳中了" in shy_msg and "突然冒一句傲娇" not in shy_msg  # 害羞话题优先
     assert "哄你" in SHY_COAXED
     print("PASS  害羞话题：按好感反应，追问会躲，低好感第三次起掉好感，亲近的人能哄回来")
+
+    # 表情读后感：视觉模型的回答拆成字段，按画风和可爱程度定喜好
+    read = parse_sticker_read("内容：白发猫耳少女歪头眨眼\n意思：卖萌\n场景：撒娇时\n画风：二次元\n可爱：3")
+    assert read == {"desc": "白发猫耳少女歪头眨眼", "mean": "卖萌", "scene": "撒娇时", "acg": True, "cute": 3}, read
+    assert parse_sticker_read("我看不清这张图") is None and parse_sticker_read("") is None
+    plain = parse_sticker_read("- 内容：一个男人摊手。\n画风：三次元\n可爱：一般")
+    assert plain["acg"] is False and plain["cute"] == 0 and plain["desc"] == "一个男人摊手"
+    assert sticker_like(read) == "可爱二次元" and sticker_like({**read, "cute": 1}) == "二次元" and sticker_like(plain) == "其它"
+    assert sticker_like(None) is None
+    probs = {"可爱二次元": 0.5, "二次元": 0.2, "其它": 0.03}
+    assert sticker_save_prob(read, probs, 0.2) == 0.5 and sticker_save_prob(plain, probs, 0.2) == 0.03
+    assert sticker_save_prob(None, probs, 0.2) == 0.2  # 没读懂按老规矩
+    assert sticker_card(read, "嘿嘿", True) == "[表情:动图｜白发猫耳少女歪头眨眼｜嘿嘿｜卖萌]"
+    assert sticker_card(read, "猫耳", False) == "[表情｜白发猫耳少女歪头眨眼｜卖萌]"  # 图上的字已经在画面描述里就不重复
+    day = 86400
+    old = {"file": "saved/x.gif", "saved_at": 0}
+    acg = {**read, "cute": 1}
+    # 别太严：真不喜欢的 30 天没发过才删，其余 90 天一次没发过才删；发过的、可爱二次元的、原库的都不删
+    assert not sticker_prune_due(old, plain, 0, 29 * day) and sticker_prune_due(old, plain, 0, 30 * day)
+    assert not sticker_prune_due(old, acg, 0, 89 * day) and sticker_prune_due(old, acg, 0, 90 * day)
+    assert not sticker_prune_due(old, None, 0, 89 * day) and sticker_prune_due(old, None, 0, 90 * day)
+    assert not sticker_prune_due(old, read, 0, 999 * day) and not sticker_prune_due(old, plain, 1, 999 * day)
+    assert not sticker_prune_due({"file": "ori/x.gif", "saved_at": 0}, plain, 0, 999 * day)
+    cute_real = {**plain, "cute": 3}  # 三次元但很可爱：不算「真不喜欢」，按 90 天算
+    assert not sticker_prune_due(old, cute_real, 0, 60 * day)
+    ranks = sorted([("可爱", sticker_keep_rank(read, 0, 1)), ("二次元", sticker_keep_rank(acg, 0, 1)),
+                    ("讨厌", sticker_keep_rank(plain, 5, 1)), ("没读", sticker_keep_rank(None, 0, 1))], key=lambda x: x[1])
+    assert [n for n, _ in ranks] == ["讨厌", "没读", "二次元", "可爱"], ranks  # 满了先挤掉不喜欢的
+    assert "二次元" in STICKER_READ_PROMPT and "{anim}" in STICKER_READ_PROMPT
+    print("PASS  表情读后感：拆字段、按画风定喜好、收藏概率、图卡；清收藏不严，满了先挤掉不喜欢的")
 
     # 「喵」「呐」「…」：讨厌、陌生不带，抽中才带
     assert "讨厌" not in CUTE_CHANCE and "陌生" not in CUTE_CHANCE

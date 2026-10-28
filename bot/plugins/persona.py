@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import random
@@ -101,6 +102,8 @@ from persona_rules import (
     shy_topic,
     split_reply,
     sticker_category,
+    sticker_like,
+    sticker_save_prob,
     sticker_scene,
     typing_delay,
     visible_notes,
@@ -160,7 +163,13 @@ SNUB_SECONDS = float(os.getenv("SNUB_SECONDS", "100"))
 DIARY_USER_EVERY = int(os.getenv("DIARY_USER_EVERY", "8"))
 DIARY_GROUP_EVERY = int(os.getenv("DIARY_GROUP_EVERY", "60"))
 DIARY_GROUP_GAP = float(os.getenv("DIARY_GROUP_GAP", "1800"))
-# 看到库里没有的表情时收藏的概率；配图时先从自己收藏的里挑的概率
+# 看到库里没有的表情时按喜好收藏：可爱二次元 / 二次元 / 其它；没读懂（视觉模型没起来）时用 STICKER_SAVE_PROB
+STICKER_SAVE_BY_LIKE = {
+    "可爱二次元": float(os.getenv("STICKER_SAVE_CUTE", "0.5")),
+    "二次元": float(os.getenv("STICKER_SAVE_ACG", "0.2")),
+    "其它": float(os.getenv("STICKER_SAVE_OTHER", "0.03")),
+}
+# 配图时先从自己收藏的里挑的概率
 STICKER_SAVE_PROB = float(os.getenv("STICKER_SAVE_PROB", "0.2"))
 STICKER_SAVED_PREFER = float(os.getenv("STICKER_SAVED_PREFER", "0.3"))
 # 群里要回话、而且这句话有明显场景（有人抽卡歪了、卧槽、无语…）时，只甩一张对得上的表情不说话的概率；
@@ -742,27 +751,30 @@ async def _diary_group(group_id: str, lines: list[tuple[str, str]]) -> None:
 
 
 async def _maybe_save_sticker(seg, card: str, user_id: str, context: str = "") -> None:
-    """群友发了库里没有的表情，看心情收藏一张；讨厌的人发的不收。用途按发图时的场景记进表情备注。"""
+    """群友发了库里没有的表情，按喜好收藏（可爱的二次元最容易收）；讨厌的人发的不收。用途按场景记进表情备注。"""
     data = getattr(seg, "data", None) or {}
     is_sticker = str(data.get("sub_type", "")) == "1" or "表情" in str(data.get("summary", ""))
-    if not is_sticker or card.startswith("[表情:") or random.random() >= STICKER_SAVE_PROB:
-        return
-    if int(bonds.user(user_id).get("aff", 0)) <= -30:
+    if not is_sticker or int(bonds.user(user_id).get("aff", 0)) <= -30:
         return
     raw = await vision.fetch_seg(seg)
-    if not raw:
+    if not raw or await asyncio.to_thread(vision.in_library, raw):
+        return
+    # 图卡那一步已经读过这张（按 sha1 前 16 位存），这里直接拿读后感
+    read = sticker_lib.read_of(hashlib.sha1(raw).hexdigest()[:16])
+    if random.random() >= sticker_save_prob(read, STICKER_SAVE_BY_LIKE, STICKER_SAVE_PROB):
         return
     text = card.split("｜", 1)[1].rstrip("]") if "｜" in card else ""
     try:
         scene = sticker_scene(context)
+        note = scene[0] if scene else (read or {}).get("scene", "")
         item = await asyncio.to_thread(
-            sticker_lib.save_sticker, raw, sticker_category(text), text, scene[0] if scene else "",
+            sticker_lib.save_sticker, raw, sticker_category(text + (read or {}).get("mean", "")), text, note,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"persona: 收藏表情失败 {type(exc).__name__}: {exc}")
         return
     if item:
-        logger.info(f"persona: 收藏了一张表情 {item['file']}（{item['category']}）")
+        logger.info(f"persona: 收藏了一张表情 {item['file']}（{item['category']}／{sticker_like(read) or '没读懂'}）")
 
 
 @nonebot.get_driver().on_shutdown
@@ -1326,7 +1338,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             _last_reply[key] = _last_sticker[key] = _last_sticker_only[key] = time.time()
             if mode.startswith("插话"):
                 _last_chime[key] = now
-            history.append(("我", f"[表情:{item.get('category') or '表情'}]"))
+            history.append(("我", f"[表情:{sticker_lib.label(item)}]"))
             _save_history(force=True)
             _mark_sent(key, now)
             st_eng = _engaged.get(key)
@@ -1502,7 +1514,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             got = await _send_sticker(bot, event, key, content, mood)
             if got:
                 sent_sticker = True
-                history.append(("我", f"[表情:{got.get('category') or '表情'}]"))
+                history.append(("我", f"[表情:{sticker_lib.label(got)}]"))
             continue
         msg = content
         if i == 0 and quote:
@@ -1569,7 +1581,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             got = await _send_sticker(bot, event, key, scene[0] if scene else "", mood)
             if got:
                 _last_auto_sticker[key] = time.time()
-                history.append(("我", f"[表情:{got.get('category') or '表情'}]"))
+                history.append(("我", f"[表情:{sticker_lib.label(got)}]"))
                 _save_history(force=True)
                 if is_group:
                     _mark_sent(key, now, called)

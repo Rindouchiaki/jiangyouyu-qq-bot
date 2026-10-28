@@ -1106,6 +1106,93 @@ def sticker_category(text: str) -> str:
     return "收藏"
 
 
+# ---------------------------------------------------------------- 表情读后感：本地视觉模型看一遍，记下来以后不再看
+# 她是二次元女孩：可爱的二次元表情最喜欢，其次是二次元，三次元 / 真人 / 别的画风不太喜欢
+STICKER_READ_PROMPT = (
+    "这是一张聊天用的表情包{anim}。按下面格式回答，每项一行，不要多说：\n"
+    "内容：画面里是什么、在做什么（不超过20字）\n"
+    "意思：发这个表情想表达什么（不超过10字）\n"
+    "场景：什么时候适合发（不超过10字）\n"
+    "画风：二次元 / 三次元 / 其它\n"
+    "可爱：0到3的数字（0 不可爱，3 非常可爱）"
+)
+STICKER_READ_ANIM = "（是动图，按先后顺序截了几帧拼成一张，从左到右、从上到下）"
+_READ_FIELD = re.compile(r"^\s*[-*•]?\s*(内容|意思|场景|画风|可爱)\s*[:：]\s*(.*?)\s*$")
+STICKER_LIKES = ("可爱二次元", "二次元", "其它")
+# 挑图时的权重倍数；没看过的按 1 算
+STICKER_LIKE_WEIGHT = {"可爱二次元": 2.0, "二次元": 1.3, "其它": 0.5}
+
+
+def parse_sticker_read(text: str) -> dict | None:
+    """把视觉模型的回答拆成 {desc, mean, scene, acg, cute}；连「内容」都没有就算没看懂。"""
+    got: dict[str, str] = {}
+    for line in (text or "").replace("\r", "").split("\n"):
+        m = _READ_FIELD.match(line)
+        if m and m.group(1) not in got:
+            got[m.group(1)] = m.group(2).strip("。.，, ")
+    desc = got.get("内容", "")[:20]
+    if not desc:
+        return None
+    style = got.get("画风", "")
+    cute = re.search(r"[0-3]", got.get("可爱", ""))
+    return {
+        "desc": desc,
+        "mean": got.get("意思", "")[:10],
+        "scene": got.get("场景", "")[:10],
+        "acg": "二次元" in style or "动漫" in style or "动画" in style,
+        "cute": int(cute.group()) if cute else 0,
+    }
+
+
+def sticker_like(read: dict | None) -> str | None:
+    """她对这张表情的喜好；没看过返回 None。"""
+    if not read:
+        return None
+    if read.get("acg"):
+        return "可爱二次元" if int(read.get("cute", 0)) >= 2 else "二次元"
+    return "其它"
+
+
+def sticker_save_prob(read: dict | None, probs: dict[str, float], fallback: float) -> float:
+    """看到一张新表情时收藏的概率：按喜好给；没看懂（视觉模型没开或失败）用 fallback。"""
+    like = sticker_like(read)
+    return fallback if like is None else probs.get(like, fallback)
+
+
+def sticker_card(read: dict, text: str = "", animated: bool = False) -> str:
+    """表情图卡：看过的写「画面｜意思」，图上有字也带上；几十个字以内。"""
+    parts = [read.get("desc", "")]
+    if len(text) >= 2 and text not in parts[0]:
+        parts.append(text[:20])
+    if read.get("mean"):
+        parts.append(read["mean"])
+    head = "表情:动图" if animated else "表情"
+    return f"[{head}｜{'｜'.join(p for p in parts if p)}]"
+
+
+def sticker_disliked(read: dict | None) -> bool:
+    """真的不喜欢：看过，不是二次元，也不可爱。"""
+    return sticker_like(read) == "其它" and int((read or {}).get("cute", 0)) <= 1
+
+
+def sticker_prune_due(
+    item: dict, read: dict | None, uses: int, now: float, dislike_days: float = 30, idle_days: float = 90,
+) -> bool:
+    """她自己收藏的表情要不要删。作者要求别太严：表情多，喜欢的不一定赶得上用。
+    发过的、可爱二次元的都留着；真不喜欢的放 dislike_days 天没发过才删，其余放 idle_days 天一次都没发过才删。"""
+    if not item.get("file", "").startswith("saved/"):
+        return False  # 原库（主人 QQ 里导出的）从不删
+    if uses > 0 or sticker_like(read) == "可爱二次元":
+        return False
+    age = now - float(item.get("saved_at", now))
+    return age >= (dislike_days if sticker_disliked(read) else idle_days) * 86400
+
+
+def sticker_keep_rank(read: dict | None, uses: int, saved_at: float) -> tuple:
+    """收藏满了先挤掉谁：越不喜欢、越少用、越早收的越先走（排序靠前的先删）。"""
+    like = {"可爱二次元": 3, "二次元": 2, None: 1, "其它": 0}[sticker_like(read)]
+    return (like - (1 if sticker_disliked(read) else 0), uses, saved_at)
+
 # ---------------------------------------------------------------- 拟人节奏：合并、拆条、打字
 # 参考 MaiBot 的防抖：先等一会儿看对方是不是还在打字，同一个人接着发就再等等，被 @ 就快一点
 DEBOUNCE = {

@@ -122,8 +122,8 @@ function Get-StackConfig {
         # Ollama（白守的向量模型）：可执行文件和模型目录都能在 persona.env 里覆盖
         Ollama   = Resolve-StackPath $envMap['OLLAMA_EXE'] 'Z:\Ollama\ollama.exe'
         OllamaModels = if ($envMap['OLLAMA_MODELS']) { $envMap['OLLAMA_MODELS'] } else { 'Z:\Ollama\models' }
-        # 本地视觉模型默认不用：和 vision.py 一样，配了 VLM_ENABLED=1 且 VLM_PROVIDER=openai 才拉起 llama.cpp
-        VlEnabled = ("$($envMap['VLM_ENABLED'])".Trim() -notin @('', '0', 'false', 'False')) -and ("$($envMap['VLM_PROVIDER'])".Trim().ToLower() -eq 'openai')
+        # 本地视觉模型：和 vision.py 同一个开关（默认开、用 llama.cpp）；VLM_ENABLED=0 或改用 Ollama 就不拉起 llama.cpp
+        VlEnabled = ("$($envMap['VLM_ENABLED'])".Trim() -notin @('0', 'false', 'False')) -and ("$(if ($envMap['VLM_PROVIDER']) { $envMap['VLM_PROVIDER'] } else { 'openai' })".Trim().ToLower() -eq 'openai')
     }
 }
 
