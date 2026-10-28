@@ -28,7 +28,7 @@ function Read-EnvFile([string]$Path = $script:EnvFile, [switch]$NoLocal) {
 
 # 一键更新按样例重写 persona.env 时原样保留的项：账号、密钥、路径这些每台机器不一样的
 $script:PersonalEnvKeys = @(
-    'BOT_UIN', 'DEV_UIN', 'DEV_NAME', 'NICKNAMES', 'LLM_BASE_URL', 'LLM_MODEL', 'LLM_API_KEY',
+    'BOT_UIN', 'NICKNAMES', 'LLM_BASE_URL', 'LLM_MODEL', 'LLM_API_KEY',
     'GSUID_CORE_HOST', 'GSUID_CORE_PORT', 'GSUID_CORE_WS_TOKEN', 'BAISHOU_VAULT', 'GACHA_TEXT_FILE',
     'ONEBOT_ACCESS_TOKEN', 'SNOWLUMA_WEBUI_PASSWORD', 'SEARCH_API_KEY',
     'SNOWLUMA_DIR', 'GSCORE_DIR', 'TOOLS_DIR', 'STICKER_DIR', 'LOG_DIR', 'QQ_EXE'

@@ -18,7 +18,7 @@
 - **部署**：`scripts/setup.ps1` 要能重复跑（已装的跳过、已有的配置不覆盖；只有 `-Update` 按上面的规则重写 persona.env），新增的安装步骤也照这个写；改了部署流程同步更新 `docs/部署指南.md`。
 - **依赖**：新增第三方包写进 `requirements.txt`（写范围），再跑 `python tools/update_deps.py` 重新生成 `requirements.lock`；外部组件的版本只改 `external.lock.json`（平时由自动更新 PR 改）。
 - **游戏功能**：游戏查询都交给早柚核心的插件（列表在 `external.lock.json`，加新游戏照 `docs/早柚核心接入.md` 第六节），本仓库只管连接、登录拦截、人设避让和全员自动签到（`gscore_plugins/JiangyouyuAuto`，一键部署拷进核心），不再自己写游戏接口。
-- **权限判断**：开发者专用指令一律写成 `if not DEV_UIN or str(event.get_user_id()) != DEV_UIN: return`，未配置时拒绝所有人，不要写成 `if DEV_UIN and ...`。
+- **权限判断**：开发者名单写死在 `bot/devs.py`（个人项目：酱酱鱼 289635657、小帽 189963059，不走 persona.env）。开发者专用指令一律写成 `if not devs.is_dev(event.get_user_id()): return`；认人、提示词里的开发者、`/记` 署名、防冒充的保留名也都从 `devs` 取，别再读环境变量。
 - **纯逻辑放 `bot/persona_rules.py`**：不依赖 NoneBot，方便离线测。
 - **提交**：一个问题一个分支一个 PR，squash merge；提交信息用 `fix(范围): 中文说明`。
 
@@ -107,6 +107,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #12 | 好感再高也从不主动找人，像只会应答的机器人 | 后台每 10 分钟看一次：私聊过、「有好感」以上（开发者不看好感）、私聊沉默满 6 小时、离上次主动满 20 小时、没被连着晾 2 次的人，按 15% 概率挑一个发一两句；全局每天最多 3 次，1–9 点不打扰，对方一回计数清零；群里不主动开话题 |
 | #13 | 「已修」表把 fork 和本仓库的 PR 混在一起，#6、#8–#12 重号；fork#6/14/20/34、本仓库 #1–#5、#7 和直接提交都没记 | 拆成 fork 时期和本仓库两张表，补齐缺的行，另列直接推到 `main` 的提交；约定别处引用 fork 的写 `fork#N` |
 | #14 | #11 学到的梗不分来源：某个群自己的说法会被带到别的群和私聊；模型说有把握的不查就记成全局；接梗太多、不看场合 | `slang_learned.json` 分 `public` / `scoped`（`g群号` / `p QQ号`）：候选都先搜，搜索结果里真有这个词、照摘要解释得出来才算大众梗，查不到的只记在原会话，没把握又查不到的不记；旧格式里猜的丢掉。命中的梗默认只「听得懂、别特意接」，闲聊气氛、同会话隔 30 分钟、10% 抽中才放开接；`test_slang.py` 进 CI |
+| #15 | 开发者靠 `persona.env` 的 `DEV_UIN` / `DEV_NAME` 配，只能一个人，小帽用不了管理指令也不算开发者 | 写死在 `bot/devs.py`（酱酱鱼 289635657、小帽 189963059，也叫帽子、夜雨轩烛）：各插件改用 `devs.is_dev`，认人、提示词（两位开发者 + 叫法）、防冒充保留名、`/记` 署名和回忆都从这里取；样例、`PersonalEnvKeys`、一键部署必填项去掉 `DEV_UIN` |
 
 没走 PR、直接推到 `main` 的提交（2026-10-27～28，#1 之后、#5 之前；`e94e262` 在 #4 之后）：
 
@@ -136,7 +137,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 ### 配置
 
 1. `nonebot-plugin-parser` 锁在 `>=2.6,<2.8`（`parser_video_only.py` 改它的内部渲染类，这两个版本相关结构一致）。作者本机已实测装的是 2.7.1，patch 用到的 `BaseRenderer.render_contents` / `ImageRenderer.render_messages` / `VideoContent` / `ImageContent` 都在，可结案；换大版本时仍要复核这几个符号。
-2. `BOT_UIN` 未配置时不过滤：SnowLuma 同时登录两个号（样例里第二个号就是开发者自己）时两个号都会以人设回话。可以考虑未配置时额外丢掉 `self_id == DEV_UIN` 的事件。
+2. `BOT_UIN` 未配置时不过滤：SnowLuma 同时登录两个号（样例里第二个号就是开发者自己）时两个号都会以人设回话。可以考虑未配置时额外丢掉 `self_id` 是开发者号（`devs.is_dev`）的事件。
 3. `/模式` 状态文案用 `:.0%` 显示概率，米游抽卡的 1.8% 会显示成「2%」。
 
 ### 早柚核心

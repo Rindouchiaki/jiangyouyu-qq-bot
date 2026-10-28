@@ -43,6 +43,7 @@ from nonebot.log import logger
 from nonebot.params import CommandArg
 
 import bonds
+import devs
 import gscore_guard
 import memory
 import slang
@@ -102,8 +103,6 @@ from persona_rules import (
 )
 
 BOT_UIN = os.getenv("BOT_UIN", "").strip()
-DEV_UIN = os.getenv("DEV_UIN", "").strip()
-DEV_NAME = os.getenv("DEV_NAME", "酱酱鱼").strip()
 NICKNAMES = tuple(
     n.strip() for n in os.getenv("NICKNAMES", "酱油鱼,大肥鱼,鲸鱼娘").split(",") if n.strip()
 )
@@ -496,8 +495,6 @@ persona = on_message(priority=50, block=False)
 
 if not MOCK and not API_KEY:
     logger.warning("persona: 未配置 LLM_API_KEY，插件会保持沉默（可用 LLM_MOCK=1 试跑规则）")
-if not DEV_UIN:
-    logger.warning("persona: 未配置 DEV_UIN，管理指令全部禁用")
 
 
 def _load_history() -> None:
@@ -1013,11 +1010,11 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     sender = getattr(event, "sender", None)
     name = (getattr(sender, "card", "") or getattr(sender, "nickname", "") or "群友") if sender else "群友"
 
-    # 身份对齐：开发者统一记成「酱酱鱼」，别人用自己的群名片
-    if DEV_UIN and user_id == DEV_UIN:
-        name = DEV_NAME or name
+    # 身份对齐：开发者统一记成 devs.py 里的名字，别人用自己的群名片（开发者的名字和叫法别人不能用）
+    if devs.is_dev(user_id):
+        name = devs.dev_name(user_id)
     else:
-        name = safe_name(name, user_id, (DEV_NAME, *NICKNAMES))
+        name = safe_name(name, user_id, (*devs.RESERVED_NAMES, *NICKNAMES))
 
     # 私聊内容同时记进白守日记（形成长期人格的素材）
     if not is_group and PRIVATE_MIRROR:
@@ -1089,20 +1086,20 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         # 群里刷屏时只看最后几条，免得把一屏不相干的话都塞进去
         new_msgs = new_msgs[-8:]
 
-    if is_group and now < _snub_until.get(key, 0) and user_id != DEV_UIN:
+    if is_group and now < _snub_until.get(key, 0) and not devs.is_dev(user_id):
         logger.info("persona: 正在冷处理这段时间，不接话")
         return True
 
     # --- 被追问到烦：先冷淡答题，再主动收尾 ---
     same_user = [t for (uid, t, ts) in _recent_user_msgs[key] if uid == user_id]
     annoyed, why = judge_annoyance(same_user, PESTER_WINDOW, PESTER_COUNT)
-    if is_group and annoyed and user_id != DEV_UIN:
+    if is_group and annoyed and not devs.is_dev(user_id):
         _bond_touch(user_id, name, AFF_PESTER)
         _snub_until[key] = now + SNUB_SECONDS
         _engaged.pop(key, None)
         messages = compose_messages(
             past, name, text, atmosphere="烦", self_names=NICKNAMES,
-            mood="不耐烦", dev_name=DEV_NAME or None, new_msgs=new_msgs,
+            mood="不耐烦", dev_name=devs.DEV_NAMES, dev_aliases=devs.DEV_ALIASES, new_msgs=new_msgs,
         )
         if not _quota_ok("被叫", key):
             logger.info(f"persona: 嫌烦收尾跳过（全局限流），冷处理照旧（{why}）")
@@ -1173,7 +1170,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     bond = _bond_touch(user_id, name, affinity_delta(text)) if addressed else bonds.user(user_id)
     if not is_group:
         bonds.mark_private(user_id, now)
-    is_dev = bool(DEV_UIN) and user_id == DEV_UIN
+    is_dev = devs.is_dev(user_id)
     att = attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
 
     # 话题自学习：说到的类别记一笔（谁说的记谁）；好感高/熟的人才在提示词里顺他的话题，省 token
@@ -1293,7 +1290,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     if memory.available() and any(hint in text for hint in RECALL_HINTS):
         # 只带本会话的记录和开发者 /记 的笔记
         scope = f"群{group_id}" if is_group else f"私聊{user_id}"
-        notes = await asyncio.to_thread(memory.recent, 5, (scope, DEV_NAME))
+        notes = await asyncio.to_thread(memory.recent, 5, (scope, *devs.DEV_NAMES))
         if notes:
             logger.info(f"persona: 带上 {len(notes)} 条记忆")
 
@@ -1319,7 +1316,8 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         atmosphere=label,
         self_names=NICKNAMES,
         mood=mood,
-        dev_name=DEV_NAME or None,
+        dev_name=devs.DEV_NAMES,
+        dev_aliases=devs.DEV_ALIASES,
         memory_notes=notes,
         has_memory=memory.available(),
         chime=chime,
@@ -1598,7 +1596,7 @@ async def _proactive_tick() -> None:
             continue
         att = attitude(int(rec.get("aff", 0)), int(rec.get("fam", 0)))
         if proactive_due(
-            rec, now, att, bool(DEV_UIN) and uid == DEV_UIN,
+            rec, now, att, devs.is_dev(uid),
             PROACTIVE_MIN_SILENCE_H * 3600, PROACTIVE_MIN_GAP_H * 3600, PROACTIVE_MAX_UNANSWERED,
         ):
             cands.append((uid, rec, att))
@@ -1611,9 +1609,9 @@ async def _proactive_tick() -> None:
     except Exception:  # noqa: BLE001
         return
     key = f"private_{uid}"
-    name = DEV_NAME if DEV_UIN and uid == DEV_UIN else str(rec.get("name") or "他")
+    name = devs.dev_name(uid) or str(rec.get("name") or "他")
     messages = compose_messages(
-        list(_history[key]), name, "", self_names=NICKNAMES, dev_name=DEV_NAME or None,
+        list(_history[key]), name, "", self_names=NICKNAMES, dev_name=devs.DEV_NAMES, dev_aliases=devs.DEV_ALIASES,
         hour=datetime.now().hour, attitude=att, bond=(int(rec.get("aff", 0)), int(rec.get("fam", 0))),
         user_notes=visible_notes(rec.get("notes"), False), topics=bonds.top_topics(uid),
         flavor=_sticky_flavor(key, att), proactive=True,
@@ -1672,7 +1670,7 @@ async def _mode_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         return
 
     """切换回复频率：群里只改本群，加 全局/默认 改所有群的默认（仅开发者可用）。"""
-    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
+    if not devs.is_dev(event.get_user_id()):
         return
 
     kind = _chat_kind(event)
@@ -1737,7 +1735,7 @@ async def _gacha_cmd(bot: Bot, event: MessageEvent) -> None:
         return
 
     """把回复频率切到抽卡模式（仅开发者）。"""
-    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
+    if not devs.is_dev(event.get_user_id()):
         return
     kind = _chat_kind(event)
     key = _session_key(event) if kind == "group" else None
@@ -1766,7 +1764,7 @@ async def _bible_cmd(bot: Bot, event: MessageEvent) -> None:
         return
 
     # 只允许管理员（开发者）手动触发
-    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
+    if not devs.is_dev(event.get_user_id()):
         logger.debug("persona: /圣经 非管理员，忽略")
         return
 
@@ -1790,7 +1788,7 @@ usage_cmd = on_command("用量", priority=15, block=True)
 async def _usage_cmd(bot: Bot, event: MessageEvent) -> None:
     if not is_our_bot(event) or not _is_target_account(event):
         return
-    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
+    if not devs.is_dev(event.get_user_id()):
         return
 
     rows, calls = _usage_today()
@@ -1816,7 +1814,7 @@ chime_cmd = on_command("插话", priority=16, block=True)
 async def _chime_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
     if not is_our_bot(event):
         return
-    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
+    if not devs.is_dev(event.get_user_id()):
         return
 
     kind = _chat_kind(event)

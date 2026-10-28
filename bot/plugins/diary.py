@@ -11,17 +11,15 @@
 
 from __future__ import annotations
 
-import os
 import re
 
 import bonds
+import devs
 from bot_guard import is_our_bot
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent
 from nonebot.params import CommandArg
 from persona_rules import INITIAL_AFF, INITIAL_FAM, attitude
-
-DEV_UIN = os.getenv("DEV_UIN", "").strip()
 
 notebook_cmd = on_command("小本本", priority=17, block=True)
 bond_cmd = on_command("好感", priority=17, block=True)
@@ -39,7 +37,7 @@ def _describe_user(uid: str) -> str:
 async def _notebook(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
     if not is_our_bot(event):
         return
-    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
+    if not devs.is_dev(event.get_user_id()):
         return
     target = next((str(seg.data.get("qq")) for seg in arg if seg.type == "at"), "")
     text = arg.extract_plain_text().strip()
@@ -101,7 +99,7 @@ async def _bond(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
     """开发者手动调好感/熟悉度：/好感 @人（看）、+10 / -10 / =30 / 熟悉 +5。"""
     if not is_our_bot(event):
         return
-    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
+    if not devs.is_dev(event.get_user_id()):
         return
     target = next((str(seg.data.get("qq")) for seg in arg if seg.type == "at"), "")
     text = arg.extract_plain_text().strip().translate(str.maketrans("＋－＝", "+-="))

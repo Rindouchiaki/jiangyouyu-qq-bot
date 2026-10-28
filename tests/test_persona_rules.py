@@ -441,6 +441,21 @@ def main() -> int:
     assert "突然想找小明" in proactive_msgs[-1]["content"] and "主动" not in proactive_msgs[-1]["content"]
     print("PASS  主动找人：好感够、沉默够久、没被连着晾才找，深夜不打扰")
 
+    # ---- 开发者写死在 devs.py ----
+    import devs
+    assert devs.is_dev("289635657") and devs.is_dev(189963059) and not devs.is_dev("10086") and not devs.is_dev("")
+    assert devs.dev_name("289635657") == "酱酱鱼" and devs.dev_name("189963059") == "小帽" and devs.dev_name("1") == ""
+    assert devs.DEV_NAMES == ("酱酱鱼", "小帽") and devs.DEV_ALIASES == {"小帽": ("帽子", "夜雨轩烛")}
+    reserved = (*devs.RESERVED_NAMES, "酱油鱼")
+    assert safe_name("夜雨轩烛", "12345678", reserved) == "夜雨轩烛#5678"
+    assert safe_name("小帽", "12345678", reserved) == "小帽#5678" and safe_name("路人", "12345678", reserved) == "路人"
+    two = compose_messages([], "小明", "在吗", dev_name=devs.DEV_NAMES, dev_aliases=devs.DEV_ALIASES)[0]["content"]
+    assert "两个开发者「酱酱鱼」和「小帽」" in two and "「酱酱鱼」「小帽」就是开发者本人" in two
+    assert "「小帽」群友也可能叫帽子、夜雨轩烛" in two and "群里还有个开发者叫" not in two
+    one = compose_messages([], "小明", "在吗", dev_name="酱酱鱼")[0]["content"]
+    assert "群里还有个开发者叫「酱酱鱼」" in one and "两个开发者" not in one
+    print("PASS  两位开发者写死在 devs.py：认人、提示词、别人不能冒充")
+
     print(f"\n结果: {'全部通过' if failed == 0 else f'{failed} 项失败'}")
     return 0 if failed == 0 else 1
 

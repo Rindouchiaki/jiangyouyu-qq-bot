@@ -27,7 +27,6 @@ sys.path.insert(0, str(ROOT / "bot"))
 from gscore_guard import LOGIN_MARKERS, QR_CAPTION  # noqa: E402
 
 GROUP = 987654321
-DEV = 100000002
 
 
 def env_file() -> dict[str, str]:
@@ -255,7 +254,7 @@ def main() -> int:
     if args.start_bot:
         token, self_id = "smoke-token", 100000001
         tmp = Path(tempfile.mkdtemp(prefix="smoke_"))
-        env = dict(os.environ, BOT_UIN=str(self_id), DEV_UIN=str(DEV), LLM_MOCK="1", REPLY_PROB_CALLED="1",
+        env = dict(os.environ, BOT_UIN=str(self_id), LLM_MOCK="1", REPLY_PROB_CALLED="1",
                    ONEBOT_ACCESS_TOKEN=token, PERSONA_DATA_DIR=str(tmp / "data"), BAISHOU_VAULT=str(tmp / "vault"),
                    HOST="127.0.0.1", PORT=str(args.port), PYTHONIOENCODING="utf-8", PYTHONUTF8="1",
                    GSUID_CORE_REPEAT="true")

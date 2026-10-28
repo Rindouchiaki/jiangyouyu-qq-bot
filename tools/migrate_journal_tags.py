@@ -5,7 +5,7 @@ r"""一次性迁移：给 fork#1（记忆按会话隔离）之前写进白守的
   紧跟的回复 `- HH:MM 我：…`                → `- HH:MM [群123] 我：…`
   旧代码没压成一行，正文换行留下的续行并回这一条
 - 私聊 `- HH:MM [私聊] …` 分不出是谁，默认不动；`--private-as QQ号` 可以全部归给一个人
-- `/记` 的署名是当时发言人的群名片（那时人人能用），`--dev-alias 名片1,名片2` 把开发者自己的改成 DEV_NAME
+- `/记` 的署名是当时发言人的群名片（那时人人能用），`--dev-alias 名片1,名片2` 把开发者自己的改成 --dev-name（默认酱酱鱼）
 - 旧代码按文件名找「今天」的日记，会把机器人的话写进库里任何文件名带日期的笔记；
   新代码只读 Journals，`--include-outside` 把这些行挪进 Journals 同一天的日记
 
@@ -15,7 +15,7 @@ r"""一次性迁移：给 fork#1（记忆按会话隔离）之前写进白守的
 用法（仓库根目录）：
     .venv\Scripts\python tools\migrate_journal_tags.py
     .venv\Scripts\python tools\migrate_journal_tags.py --apply
-库路径、日记子目录、DEV_NAME 从 bot\persona.env 读，可用 --vault 覆盖。
+库路径、日记子目录从 bot\persona.env 读，可用 --vault 覆盖。
 """
 
 from __future__ import annotations
@@ -196,7 +196,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="给旧日记补会话标签（默认只预览）")
     ap.add_argument("--vault", default=_env("BAISHOU_VAULT", str(Path.home() / "Documents" / "BaiShou")))
     ap.add_argument("--diary-dir", default=_env("BAISHOU_DIARY_DIR", "Journals"))
-    ap.add_argument("--dev-name", default=_env("DEV_NAME", "酱酱鱼"))
+    ap.add_argument("--dev-name", default="酱酱鱼")
     ap.add_argument("--private-as", default="", help="旧 [私聊] 全部归给这个 QQ 号（只和一个人私聊过时用）")
     ap.add_argument("--dev-alias", default="", help="旧 /记 署名里哪些名字是开发者自己，英文逗号分隔")
     ap.add_argument("--include-outside", action="store_true", help="把日记目录外的机器人旧行挪进日记")

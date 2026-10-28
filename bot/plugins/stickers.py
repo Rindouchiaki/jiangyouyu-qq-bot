@@ -16,6 +16,7 @@ from bot_guard import is_our_bot
 import os
 import time
 
+import devs
 import sticker_lib
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent
@@ -23,7 +24,6 @@ from nonebot.log import logger
 from nonebot.params import CommandArg
 
 BOT_UIN = os.getenv("BOT_UIN", "").strip()
-DEV_UIN = os.getenv("DEV_UIN", "").strip()
 COOLDOWN = float(os.getenv("STICKER_COOLDOWN", "3"))
 
 _last_used: dict[str, float] = {}
@@ -54,7 +54,7 @@ async def _handle(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         await stickers_cmd.finish("\n".join(lines))
 
     if keyword.startswith("备注"):
-        if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
+        if not devs.is_dev(event.get_user_id()):
             return
         parts = keyword[2:].split(maxsplit=1)
         item = sticker_lib.set_note(parts[0], parts[1]) if len(parts) == 2 else None

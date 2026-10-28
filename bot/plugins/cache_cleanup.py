@@ -6,13 +6,13 @@ import asyncio
 import os
 
 import cache_clean
+import devs
 from nonebot import get_driver, on_command
 from nonebot.adapters.onebot.v11 import MessageEvent
 from nonebot.log import logger
 
 CLEAN_HOURS = float(os.getenv("CACHE_CLEAN_INTERVAL_HOURS", "1"))
 ENABLED = os.getenv("CACHE_CLEAN_ENABLED", "1").strip() not in ("0", "false", "False")
-DEV_UIN = os.getenv("DEV_UIN", "").strip()
 
 
 def _clean_now() -> dict:
@@ -50,7 +50,7 @@ async def _cache_cmd(event: MessageEvent) -> None:
 
     if not is_our_bot(event):
         return
-    if not DEV_UIN or str(event.get_user_id()) != DEV_UIN:
+    if not devs.is_dev(event.get_user_id()):
         return
     stats = await asyncio.to_thread(cache_clean.size_of)
     text = event.get_plaintext().strip()
