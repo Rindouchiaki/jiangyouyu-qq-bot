@@ -16,7 +16,8 @@ import threading
 import time
 from pathlib import Path
 
-from persona_rules import INITIAL_AFF, INITIAL_FAM, merge_notes, new_bond, update_bond
+import devs
+from persona_rules import INITIAL_AFF, INITIAL_FAM, dev_floor, merge_notes, new_bond, update_bond
 
 # 初始好感度迁移标记：老数据里「刚认识」的人抬到礼貌底线，只做一次
 FLOOR_VERSION = 1
@@ -87,7 +88,9 @@ def save(force: bool = False) -> None:
 def user(uid: str) -> dict:
     """只读拿一份（没有就是初始值），不会建记录。"""
     with _lock:
-        return dict(_data["users"].get(str(uid)) or new_bond())
+        rec = dict(_data["users"].get(str(uid)) or new_bond())
+    # 开发者好感最低「有好感」：旧记录、/好感 手动调低的也按保底算
+    return dev_floor(rec) if devs.is_dev(uid) else rec
 
 
 def find_user(text: str) -> list[str]:
@@ -111,7 +114,7 @@ def touch(uid: str, name: str, delta: int, now: float | None = None) -> dict:
     """这个人跟我说了句话：更新好感、熟悉度和最近用的名字。"""
     with _lock:
         rec = _data["users"].get(str(uid)) or {"notes": []}
-        rec.update(update_bond(rec, delta, now))
+        rec.update(update_bond(rec, delta, now, dev=devs.is_dev(uid)))
         rec["name"] = name
         _data["users"][str(uid)] = rec
         _state["dirty"] = True
@@ -131,6 +134,8 @@ def set_levels(
             rec["aff"] = max(-100, min(100, int(aff)))
         if fam is not None:
             rec["fam"] = max(0, min(100, int(fam)))
+        if devs.is_dev(uid):
+            rec.update(dev_floor(rec))
         _state["dirty"] = True
         return before, dict(rec)
 
@@ -232,7 +237,8 @@ def mark_proactive(uid: str, now: float | None = None) -> None:
 def private_contacts() -> list[tuple[str, dict]]:
     """私聊过的人（只读副本），主动找人时从这里挑。"""
     with _lock:
-        return [(uid, dict(rec)) for uid, rec in _data["users"].items() if rec.get("lp")]
+        recs = [(uid, dict(rec)) for uid, rec in _data["users"].items() if rec.get("lp")]
+    return [(uid, dev_floor(rec) if devs.is_dev(uid) else rec) for uid, rec in recs]
 
 
 def forget_user(uid: str) -> bool:

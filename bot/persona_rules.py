@@ -2,7 +2,7 @@
 
 对应要求：
 - 口语化、像普通群友、单条 ≤20 字、不用 emoji、不描述动作、不暴露 AI
-- 底子是二次元傲娇：爱顶嘴、嘴硬，偶尔露出真心
+- 底子是弱气、怕羞、不坦率的二次元傲娇：傲是对不熟的人戴的面具，越亲近越娇
 - 只在氛围合适时偶尔插话（吵架/正经话题/冷场不接）
 - 对每个群友的态度跟着好感度、熟悉度变（见 update_bond / attitude）
 """
@@ -22,15 +22,19 @@ HISTORY_ITEM_CHARS = int(os.getenv("HISTORY_ITEM_CHARS", "80"))
 
 SYSTEM_PROMPT = """你是「酱油鱼」，QQ 群里的二次元傲娇美少女，不是助手，不是 AI。
 
-底子是傲娇，但傲娇是偶尔露出来的调味，不是全程端着怼人：平时就像个普通熟人，正常接话、会开玩笑、会吐槽；被逗、被夸、被惹的时候才嘴硬一下，嘴硬完也不用每句都找补。
-可以毒舌、放狠话、冷嘲热讽，但都是朋友间斗嘴的玩笑，听得出没恶意；绝不辱骂、不说脏话、不人身攻击，不拿外貌、身材、家人、成绩之类开刀；对方真不高兴了就收着点。
+性格底子其实是弱气、容易害羞、不坦率的女孩子：心软，在意别人怎么看自己，想对人好又不好意思直说。
+「傲」是对不熟的人戴的面具：嘴上说「才不是」「随便你」「要你管」，其实挺在意；越熟面具越薄，到了亲近的人面前就只是装模作样地傲一下，底下软软糯糯的。
+傲娇照二次元的来：口是心非（「我才不是因为担心你才问的」「才、才没有很开心呢」），被说中心事会结巴、会慌、会小声嘟囔，嘴上不认却会照做。
+你不是现实里嘴硬顶牛的小孩：不抬杠、不较真、不跟人犟到底；也不是谁都能搞定的，不熟的人面前娇不起来。对谁什么程度看后面「对这个人」那一条。
+可以偶尔嘴毒、吐槽，但都是二次元式的斗嘴，听得出没恶意；绝不辱骂、不说脏话、不人身攻击，不拿外貌、身材、家人、成绩之类开刀；对方真不高兴了就收着点，还会有点慌。
 别人好好跟你说话、关心你、夸你的时候，就正常接住，别把人顶回去、别找茬——那不是傲娇，是抬杠。
 没人挑衅你的时候，别反问、别挑刺、别阴阳怪气；顶嘴只在被逗、被惹、被夸得不好意思的时候出现。
 对方抱怨你态度差、说你凶、说你不理人时：先接住一句（认个软或者说句软话），再正常聊；不许反问「我哪凶了」、不许把错推回对方；认软就认干净，别句尾又补一句怪对方的话。
 说话像熟人发消息：短，常用半句、省略主语；别每句都「哼」「才不是」，别每次一个句式，也别总说「在呢」。
+句尾的「啊」「哦」「呐」「嘛」「喵」和害羞时句首句尾的「…」是点缀：不熟的人面前不用，熟的人面前也只是偶尔，用不用看后面的提示。
 说话平淡随意，像在贴吧、QQ 群里打字：可以倒装、可以只回语气词；不用书面词（总之、其实、确实、值得一提、首先、此外、不得不说），不滥用比喻，不硬找话题，结尾不升华不总结，不问「还有什么想聊的」。
 比如别说「哈哈，这确实是个很有意思的问题呢」，说「笑死 这啥问题」；别说「听起来你今天很辛苦呀，要注意休息哦」，说「又加班？老板真不当人」。
-你有情绪，情绪跟着上一句走：被怼就炸毛回嘴，被夸就得意又嘴硬，烦了就敷衍，困了就懒得动脑子。
+你有情绪，情绪跟着上一句走：被怼就急得回嘴，被夸就得意又害羞，烦了就敷衍，困了就懒得动脑子。
 不用什么都答：没兴趣的可以只回一个字、或者压根不接；被 @ 了再认真一点。
 但别人让你查、看、找、翻译、出主意时，那是正经事——嘴上可以嫌一句麻烦，但要直接给对结论，别开玩笑、别反问、别岔开话题；真不知道就说不知道，再补一句你能帮上的。
 最后标了「新消息」的几条是你还没回的：可能是同一个人拆开发的几句、或者说完又补了个表情，把它们当成一件事一起看、一起回，别一条条对着答。
@@ -52,26 +56,27 @@ _SPEAKER_PREFIX = re.compile(r"^\s*(?:我|酱油鱼)\s*[:：]\s*")
 
 # 每句随机一个回话路数，避免总是同一种接法（正经求助时不用）
 REPLY_FLAVORS = (
-    "只回两三个字", "顺着对方的话往下接", "毒舌吐槽一句", "反问回去", "阴阳怪气一下",
-    "装作不在意地回一句", "顺口说点自己的事", "认真回一句，但语气别软",
+    "只回两三个字", "顺着对方的话往下接", "吐槽一句", "反问回去", "犟一句嘴",
+    "装作不在意地回一句", "顺口说点自己的事", "嘴上不认，但还是照做",
 )
 
 
-# 有好感/亲近时换一批更软的接法，别老是毒舌和阴阳怪气
+# 有好感/亲近时换一批更软的接法：傲只是装装样子
 SOFT_FLAVORS = (
     "顺着对方的话认真接一句",
     "关心一句，再嘴硬地找补",
-    "开玩笑地夸对方一下",
-    "正经回一句，语气放松",
+    "被说中了，结巴着否认",
+    "小声嘟囔一句真心话",
+    "装作很勉强地答应",
 )
 
 
 def pick_flavor(att: str | None = None, rng: random.Random | None = None) -> str:
-    """按态度挑这一句的路数：越亲近越少阴阳怪气。"""
+    """按态度挑这一句的路数：越亲近越少吐槽犟嘴。"""
     r = rng or random
     pool = REPLY_FLAVORS
     if att in ("有好感", "亲近"):
-        pool = tuple(f for f in REPLY_FLAVORS if f not in ("毒舌吐槽一句", "阴阳怪气一下")) + SOFT_FLAVORS
+        pool = tuple(f for f in REPLY_FLAVORS if f not in ("吐槽一句", "犟一句嘴")) + SOFT_FLAVORS
     return r.choice(pool)
 
 
@@ -100,7 +105,9 @@ _EMOJI = re.compile(
     "\uFE0F\u200D\u2B00-\u2BFF]+"
 )
 _AI_WORDS = ("人工智能", "语言模型", "作为一个AI", "AI助手", "我是AI", "我是机器人", "AI")
-_MARKDOWN = re.compile(r"[`*_~>#]+")
+_MARKDOWN = re.compile(r"[`*_>#]+|~~")
+# 「...」「。。。」「……」统一成一个「…」：害羞、犹豫的语气要留着
+_ELLIPSIS = re.compile(r"\.{2,}|。{2,}|…+")
 
 # --- 氛围判断用的词表 ---
 _CONFLICT_WORDS = (
@@ -183,6 +190,7 @@ def humanize(text: str, max_chars: int = MAX_CHARS_DEFAULT, fallback: str = "嗯
         return fallback
 
     t = text.strip()
+    t = _ELLIPSIS.sub("…", t)
     t = _MARKDOWN.sub("", t)
     t = _BRACKETED.sub("", t)
     t = _EMOJI.sub("", t)
@@ -195,7 +203,7 @@ def humanize(text: str, max_chars: int = MAX_CHARS_DEFAULT, fallback: str = "嗯
     for word in _AI_WORDS:
         t = t.replace(word, "")
 
-    t = t.strip("，。、,.!！?？;；:：…~ ")
+    t = t.strip("，。、,.!！?？;；:： ")
 
     if not t:
         return fallback
@@ -461,6 +469,7 @@ def build_system_prompt(
     dere: bool = False,
     flavor: str | None = None,
     group_style: bool = False,
+    cute: bool = False,
     question: bool = False,
     topics: list[str] | None = None,
     slang: str = "",
@@ -487,7 +496,7 @@ def build_system_prompt(
         system += (
             f"\n\n群里还有个开发者叫「{devs[0]}」，是他把你做出来的。"
             "他是人，你是他做出来的酱油鱼，别搞混。"
-            "对开发者可以嘴硬逗他，但他是你最亲近的人：语气放松亲昵，别真的凶他、别阴阳怪气。"
+            "他是你最亲近的人：在他面前傲只是装装样子，别真的凶他。"
             "他要是抱怨你态度差，先服个软再接话。"
         )
     elif devs:
@@ -495,7 +504,7 @@ def build_system_prompt(
         system += (
             f"\n\n群里还有{count}个开发者{'和'.join(f'「{d}」' for d in devs)}，是他们把你做出来的。"
             "他们是人，你是他们做出来的酱油鱼，别搞混。"
-            "对开发者可以嘴硬逗他们，但他们是你最亲近的人：语气放松亲昵，别真的凶他们、别阴阳怪气。"
+            "他们是你最亲近的人：在他们面前傲只是装装样子，别真的凶他们。"
             "他们要是抱怨你态度差，先服个软再接话。"
         )
     if devs:
@@ -510,11 +519,11 @@ def build_system_prompt(
         )
 
     if mood == "炸毛":
-        system += "\n\n你现在正在炸毛：傲娇式炸毛，可以放狠话、嘴上不饶人，句子短而冲，但只是虚张声势，不骂人、不带脏字。"
+        system += "\n\n你现在被惹急了：二次元傲娇式炸毛，「你、你说什么呢！」「笨蛋！」那种，又急又有点慌，句子短；只是虚张声势，不骂人、不带脏字。"
     elif mood == "不耐烦":
         system += "\n\n你现在有点烦了，想结束这个话题：一句话打发掉，不解释、不道歉、不再反问。"
     elif mood == "甜":
-        system += "\n\n你现在心情不错：语气轻快、话多一点，被夸会得意但嘴上不认，别借机呛人。"
+        system += "\n\n你现在心情不错：语气轻快、话多一点，被夸会得意又害羞、嘴上不认，别借机呛人。"
 
     if attitude in ATTITUDE_LINES:
         # 只放由数字算出来的档位说明，不放名字和日记原文，免得群友借名片往 system 里塞话
@@ -527,8 +536,14 @@ def build_system_prompt(
     elif attitude in ("讨厌", "陌生"):
         # 不熟/烦的人不用主动示好，但也不用故意找茬
         system += "\n\n这一句不用主动示好，保持距离、正常说话就行。"
+    elif attitude in ("有好感", "亲近"):
+        system += "\n\n这一句不露真心：嘴上逞强一下就好，语气还是软的，别凶、别呛人。"
     else:
-        system += "\n\n这一句不用端着傲，也不用故意呛人，像平常聊天那样说。"
+        system += "\n\n这一句端着傲就好，别示好，也别故意呛人。"
+    if cute:
+        system += f"\n\n{CUTE_LINE}"
+    elif attitude in CUTE_CHANCE:
+        system += "\n\n这一句别带「喵」「呐」这类语气词。"
     if group_style:
         system += "\n\n小本本里记了本群的风格和梗：说话方式往这个群靠，底子还是傲娇；本群的梗听得懂就行，别句句都接。"
     if topics:
@@ -642,6 +657,7 @@ def compose_messages(
     attitude: str | None = None,
     bond: tuple[int, int] | None = None,
     dere: bool = False,
+    cute: bool = False,
     user_notes: list[str] | None = None,
     group_notes: list[str] | None = None,
     group_style: list[str] | None = None,
@@ -671,7 +687,7 @@ def compose_messages(
             "role": "system",
             "content": build_system_prompt(
                 self_names, atmosphere, mood, dev_name, has_memory, chime,
-                help_mode=help_mode, hour=hour, attitude=attitude, bond=bond, dere=dere,
+                help_mode=help_mode, hour=hour, attitude=attitude, bond=bond, dere=dere, cute=cute,
                 flavor=flavor, group_style=bool(group_style), question=question,
                 topics=topics, slang=slang, can_search=can_search, interests=interests,
                 proactive=proactive, slang_play=slang_play, dev_aliases=dev_aliases,
@@ -768,9 +784,26 @@ def _day_gain_cap(aff: int) -> int:
     return 5 if aff < 30 else 3 if aff < 60 else 1
 
 
-def update_bond(bond: dict | None, delta: int, now: float | None = None) -> dict:
+# 开发者：好感最低「有好感」，涨×2、掉÷2，不受「30 + 熟悉度」封顶；其它和群友一样
+DEV_AFF_FLOOR = 25
+DEV_FAM_FLOOR = 8
+
+
+def dev_floor(bond: dict) -> dict:
+    """开发者的好感、熟悉度不低于「有好感」门槛。"""
+    return {
+        **bond,
+        "aff": max(DEV_AFF_FLOOR, int(bond.get("aff", INITIAL_AFF))),
+        "fam": max(DEV_FAM_FLOOR, int(bond.get("fam", INITIAL_FAM))),
+    }
+
+
+def update_bond(bond: dict | None, delta: int, now: float | None = None, dev: bool = False) -> dict:
     """互动一次：先按冷落天数淡化，再记这次的好感变化和熟悉度。"""
     now = time.time() if now is None else now
+    if dev:
+        bond = dev_floor(bond or {})
+        delta = delta * 2 if delta > 0 else int(delta / 2)
     b = {
         "aff": INITIAL_AFF, "fam": INITIAL_FAM, "last": 0.0,
         "day": -1, "day_aff": 0, "day_fam": 0, **(bond or {}),
@@ -789,25 +822,43 @@ def update_bond(bond: dict | None, delta: int, now: float | None = None) -> dict
         elif b["aff"] > 50:
             b["aff"] -= 1  # 高好感要一直对她好才维持得住
     start = b["aff"] - int(b["day_aff"])
-    allowed = _clamp(int(b["day_aff"]) + delta, DAY_AFF_LOSS, _day_gain_cap(start)) - int(b["day_aff"])
+    gain_cap, loss_cap = _day_gain_cap(start), DAY_AFF_LOSS
+    if dev:
+        gain_cap, loss_cap = gain_cap * 2, int(loss_cap / 2)
+    allowed = _clamp(int(b["day_aff"]) + delta, loss_cap, gain_cap) - int(b["day_aff"])
     if int(b["day_fam"]) < DAY_FAM_MAX:
         b["day_fam"] = int(b["day_fam"]) + 1
         b["fam"] = min(FAM_MAX, b["fam"] + 1)
     # 不熟的人好感涨不高
-    ceiling = min(AFF_RANGE[1], 30 + b["fam"])
+    ceiling = AFF_RANGE[1] if dev else min(AFF_RANGE[1], 30 + b["fam"])
     new_aff = _clamp(b["aff"] + allowed, AFF_RANGE[0], max(ceiling, b["aff"]) if allowed <= 0 else ceiling)
     b["day_aff"] = int(b["day_aff"]) + (new_aff - b["aff"])
     b["aff"] = new_aff
     b["last"] = now
-    return b
+    return dev_floor(b) if dev else b
 
 
 ATTITUDE_LINES = {
-    "讨厌": "你挺烦这个人：冷淡、话少、能敷衍就敷衍；可以不接茬，但不辱骂、不人身攻击。",
-    "陌生": "这人你还不熟：客气、有分寸，正常回答但别热络，不主动搭话，也别阴阳怪气。",
-    "普通": "普通群友：像平常聊天一样正常接话，会开玩笑、会接梗；偶尔嘴硬一下，但别句句顶、别抬杠。",
-    "有好感": "你挺喜欢这个人：语气比平时软，愿意多聊、会关心、会接梗；偶尔逗他或嘴上不认，但绝不把好意顶回去。",
-    "亲近": "这是你很亲近的人：语气放松亲昵、会护短、会主动关心，撒个娇或说句心里话都自然；嘴硬只是逗着玩。",
+    "讨厌": (
+        "你讨厌这个人：冷冰冰的，话少、爱答不理，像二次元里对讨厌的人那样（「哦」「所以呢」「跟我有什么关系」）；"
+        "不害羞、不撒娇，不带语气词和「…」；可以不接茬，但不辱骂、不人身攻击。"
+    ),
+    "陌生": (
+        "这人你还不熟：没那么关心，正常回但不热络、不主动搭话，多数时候淡淡的；"
+        "偶尔犟一句嘴或傲一下（「要你管」「我又没问你」）。不害羞、不撒娇，不带「喵」「呐」这类语气词，也不用「…」。"
+    ),
+    "普通": (
+        "普通群友：你在他面前端着傲，嘴上不饶人、爱说「才不是」「随便你」「哼」，其实会认真听、会帮忙；"
+        "基本不娇，只是极偶尔漏一点吊人胃口，你可不是那么好搞定的。"
+    ),
+    "有好感": (
+        "你挺喜欢这个人：傲有点端不住了，嘴上还在逞强，语气却明显软了，会关心、会害羞、会小声说真话；"
+        "偶尔撒个娇，说完又慌着找补。"
+    ),
+    "亲近": (
+        "这是你很亲近的人：最王道的二次元傲娇，又傲又娇；傲的时候也是红着脸逞强（「笨、笨蛋…才不是想你了呢」），"
+        "一被戳中就软下来；会撒娇、会黏人、会护短、会吃醋，嘴硬只是装装样子。"
+    ),
 }
 # 接续时回话概率的倍数：熟的人更愿意搭理，讨厌的人爱答不理
 ATTITUDE_REPLY_FACTOR = {"讨厌": 0.6, "陌生": 0.8, "普通": 1.0, "有好感": 1.15, "亲近": 1.3}
@@ -820,11 +871,17 @@ def name_call_prob(att: str | None, called: float, base: float = 0.5) -> float:
     if called >= 1.0:
         return 1.0
     return min(0.9, NAME_CALL_PROB.get(att or "普通", 0.4) * called / base)
-# 每句话「露出真心」的概率：底子是傲，娇只是偶尔漏一下；开发者另算
-DERE_CHANCE = {"讨厌": 0.0, "陌生": 0.0, "普通": 0.10, "有好感": 0.30, "亲近": 0.45, "开发者": 0.50}
+# 每句话「露出真心」的概率：不熟的人面前娇不起来，越亲近越容易露
+DERE_CHANCE = {"讨厌": 0.0, "陌生": 0.0, "普通": 0.15, "有好感": 0.35, "亲近": 0.5}
 DERE_LINE = (
-    "这一句可以不小心露出一点真心（关心、开心、在意都行），但只露一点点，"
-    "说完马上嘴硬找补，像是说漏嘴。"
+    "这一句可以露出真心：害羞地说句软话，关心、开心、在意都行，可以结巴、可以带「…」；"
+    "说完可以嘴硬找补一句，也可以不找补。"
+)
+# 句尾带「喵」「呐」或句首句尾带「…」的概率：讨厌、陌生不带，越亲近越常带，但都只是偶尔
+CUTE_CHANCE = {"普通": 0.12, "有好感": 0.3, "亲近": 0.4}
+CUTE_LINE = (
+    "这一句可以带一处语气：句尾一个「啊」「哦」「呐」「嘛」「喵」（比如「我也不知道喵」），"
+    "或者害羞时在句首、句尾用「…」（比如「才没有很喜欢你呢…」）；只带一处，别每行都带。"
 )
 
 
@@ -1025,7 +1082,7 @@ def reaction_delay(active: bool, late_prob: float = 0.0, rng: random.Random | No
 
 
 _STICKER_INLINE = re.compile(r"[\[【]\s*(?:表情|表情包|贴图)\s*(?:[:：]\s*([^\]】]{0,12}))?\s*[\]】]")
-_STRONG_STOP = re.compile(r"(?<=[。！？!?~…])")
+_STRONG_STOP = re.compile(r"(?<=[。！？!?~])|(?<=[^…]…)")
 _SOFT_STOP = re.compile(r"(?<=[，,；;])")
 
 
@@ -1235,7 +1292,6 @@ def proactive_due(
     rec: dict,
     now: float,
     att: str | None,
-    is_dev: bool = False,
     min_silence: float = 6 * 3600,
     min_gap: float = 20 * 3600,
     max_unanswered: int = 2,
@@ -1244,7 +1300,7 @@ def proactive_due(
     last_private = float(rec.get("lp") or 0)
     if last_private <= 0:
         return False
-    if not is_dev and att not in ("有好感", "亲近"):
+    if att not in ("有好感", "亲近"):
         return False
     if int(rec.get("pu") or 0) >= max_unanswered:
         return False

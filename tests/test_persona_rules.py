@@ -8,9 +8,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 
 from persona_rules import (  # noqa: E402
+    ATTITUDE_LINES,
+    CUTE_CHANCE,
     DERE_CHANCE,
     REPLY_FLAVORS,
     DEFAULT_GAME_PREFIXES,
+    INITIAL_AFF,
     MAX_CHARS_DEFAULT,
     SILENT_MARK,
     affinity_delta,
@@ -18,6 +21,7 @@ from persona_rules import (  # noqa: E402
     chime_backoff,
     compose_messages,
     debounce_deadline,
+    dev_floor,
     follow_decision,
     format_search_results,
     in_quiet_hours,
@@ -265,13 +269,52 @@ def main() -> int:
     assert later["aff"] < 0, later  # 记仇消得慢
     print("PASS  update_bond：难涨易掉，冷落会淡，骂人会掉，高好感要一直维持")
 
-    assert DERE_CHANCE["陌生"] == 0 and DERE_CHANCE["亲近"] <= 0.5 and DERE_CHANCE["普通"] > 0
-    assert DERE_CHANCE["亲近"] > DERE_CHANCE["普通"] > DERE_CHANCE["陌生"]  # 越亲近越容易露真心
+    # 开发者：保底「有好感」，涨×2、掉÷2，不受「30 + 熟悉度」封顶
+    dev_new = update_bond(None, 0, t0, dev=True)
+    assert attitude(dev_new["aff"], dev_new["fam"]) == "有好感", dev_new
+    fan, dev_fan = simulate(1, 2), None
+    for i in range(5):
+        dev_fan = update_bond(dev_fan, 2, t0 + i * 60, dev=True)
+    assert dev_fan["aff"] - 25 > fan["aff"] - INITIAL_AFF and dev_fan["aff"] == 35, (dev_fan, fan)  # 涨得比群友快
+    dev_sweet = None
+    for d in range(60):
+        dev_sweet = update_bond(dev_sweet, 2, t0 + d * day, dev=True)
+    assert dev_sweet["aff"] > 30 + dev_sweet["fam"], dev_sweet  # 熟悉度不封顶
+    dev_rude = update_bond(dev_sweet, 0, dev_sweet["last"] + day, dev=True)
+    for i in range(10):
+        dev_rude = update_bond(dev_rude, -4, dev_rude["last"] + 60, dev=True)
+    assert dev_sweet["aff"] - dev_rude["aff"] <= 7, dev_rude  # 一天最多掉 6（外加自然回落 1）
+    dev_grudge = None
+    for d in range(30):
+        for i in range(10):
+            dev_grudge = update_bond(dev_grudge, -4, t0 + d * day + i * 60, dev=True)
+    dev_idle = update_bond(dev_grudge, 0, dev_grudge["last"] + 90 * day, dev=True)
+    assert attitude(dev_grudge["aff"], dev_grudge["fam"]) == "有好感" == attitude(dev_idle["aff"], dev_idle["fam"])
+    assert dev_floor({"aff": -50, "fam": 0}) == {"aff": 25, "fam": 8}
+    print("PASS  开发者：保底「有好感」，涨得快、掉得慢")
+
+    assert set(DERE_CHANCE) == set(ATTITUDE_LINES)  # 开发者不再单开一档
+    assert DERE_CHANCE["讨厌"] == DERE_CHANCE["陌生"] == 0 and DERE_CHANCE["亲近"] == 0.5
+    assert DERE_CHANCE["亲近"] > DERE_CHANCE["有好感"] > DERE_CHANCE["普通"] > 0  # 越亲近越容易露真心
     calm = compose_messages([], "小红", "在吗", attitude="亲近")[0]["content"]
     soft = compose_messages([], "小红", "在吗", attitude="亲近", dere=True)[0]["content"]
-    assert "说漏嘴" not in calm and "说漏嘴" in soft
-    assert "保持傲" not in calm  # 亲近档不再强制每句都端着傲
-    print("PASS  底子是傲：只有抽中时才露一点真心")
+    assert "露出真心" not in calm and "露出真心" in soft and "语气还是软的" in calm
+    assert "端着傲就好" in compose_messages([], "小红", "在吗", attitude="普通")[0]["content"]
+    print("PASS  傲是面具：普通端着傲，有好感以上傲得软，抽中才露真心")
+
+    # 「喵」「呐」「…」：讨厌、陌生不带，抽中才带
+    assert "讨厌" not in CUTE_CHANCE and "陌生" not in CUTE_CHANCE
+    assert CUTE_CHANCE["亲近"] > CUTE_CHANCE["有好感"] > CUTE_CHANCE["普通"] > 0
+    cute = compose_messages([], "小红", "在吗", attitude="亲近", cute=True)[0]["content"]
+    plain_tone = compose_messages([], "小红", "在吗", attitude="亲近")[0]["content"]
+    cold = compose_messages([], "小红", "在吗", attitude="陌生")[0]["content"]
+    assert "我也不知道喵" in cute and "别带「喵」" in plain_tone and "我也不知道喵" not in cold and "别带「喵」" not in cold
+    assert "不用「…」" in ATTITUDE_LINES["陌生"] and "红着脸" in ATTITUDE_LINES["亲近"]
+    assert humanize("才没有很喜欢你呢...") == "才没有很喜欢你呢…" and humanize("……才不是") == "…才不是"
+    assert humanize("知道啦~") == "知道啦~"
+    shy = [t for kind, t in split_reply("…才、才没有很想你呢…") if kind == "text"]
+    assert shy == ["…才、才没有很想你呢…"], shy  # 句首的「…」不单独拆成一条
+    print("PASS  语气词和「…」：讨厌陌生不带，抽中才带，发出去不被吃掉")
 
     probs = [name_call_prob(a, 0.5) for a in ("讨厌", "陌生", "普通", "有好感", "亲近")]
     assert probs == sorted(probs) and probs[0] <= 0.15 and probs[-1] < 1.0, probs  # 好感越高越愿意理，但都不是必回
@@ -279,7 +322,8 @@ def main() -> int:
     print("PASS  喊名字回不回看态度")
 
     base = compose_messages([], "小红", "在吗", attitude="讨厌", chime=True)[0]["content"]
-    assert "绝不辱骂" in base and "不人身攻击" in base and "毒舌" in base  # 可以毒舌，不能辱骂攻击
+    assert "绝不辱骂" in base and "不人身攻击" in base and "嘴毒" in base  # 可以嘴毒，不能辱骂攻击
+    assert "阴阳怪气" not in "".join(REPLY_FLAVORS) and "嘴硬顶牛的小孩" in base  # 二次元傲娇，不是现实里犟嘴
     assert is_offensive("你个傻逼") and is_offensive("滚蛋") and not is_offensive("滚去睡") and not is_offensive("才不理你呢") and not is_offensive("")
     print("PASS  可以毒舌但不辱骂：人设写明底线，带脏话的回复重说；日常的「滚去睡」不算骂人")
 
@@ -432,7 +476,6 @@ def main() -> int:
     now = 1_000_000.0
     rec = {"lp": now - 7 * 3600, "pa": 0, "pu": 0}
     assert proactive_due(rec, now, "亲近") and not proactive_due(rec, now, "普通")
-    assert proactive_due(rec, now, "普通", is_dev=True)
     assert not proactive_due({**rec, "pu": 2}, now, "亲近")
     assert not proactive_due({**rec, "lp": now - 3600}, now, "亲近")
     assert not proactive_due({**rec, "pa": now - 3600}, now, "亲近")

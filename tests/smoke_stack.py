@@ -162,6 +162,7 @@ async def run(args, token: str, self_id: int) -> None:
             await c.send("在吗", at=True, user=10003)
             got = await c.collect(20, lambda g: g)
             check(bool(got) and is_group(got[0]), "@ 机器人有回复", str(got))
+            await c.collect(4)  # 一次回复可能拆成几条，等发完再测下一项
 
             # 私聊连着拆三条发：等说完一起回一次（mock 回复最多拆 3 条），不是一条一回
             start = time.time()
