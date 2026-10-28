@@ -37,7 +37,11 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 
 ---
 
-## 已修（2026-10）
+## 已修
+
+本仓库（`Rindouchiaki/jiangyouyu-qq-bot`）的早期改动是在 fork（`alec-kana/jiangyouyu-qq-bot`）里做的，两边 PR 编号各自从 #1 开始、会重号，所以分两张表。**表里提到的编号都指同一张表所在仓库的 PR**；在别处引用时，fork 的写成 `fork#N`，本仓库的写 `#N`。修掉新问题就往第二张表末尾加一行。
+
+### fork 时期（`alec-kana/jiangyouyu-qq-bot` #1–#42，2026-10，经本仓库 #1 合入）
 
 | PR | 问题 | 改法 |
 |---|---|---|
@@ -46,18 +50,21 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #3 | 管理指令在 `DEV_UIN` 为空时人人可用；`/缓存` 每次都 ImportError | 统一改成未配置即拒绝；`cache_cleanup` 从环境变量读 `DEV_UIN` |
 | #4 | `config/onebot.reverse-ws.json` 监听 `0.0.0.0`，反向 WS 连 8080 且 token 为空 | 改 `127.0.0.1`、`18080`、token 占位符 |
 | #5 | 任何人都能让机器人拿号主的米游社 Cookie 查体力 | 体力/便笺仅 `DEV_UIN`；米游社便笺接口本来只能查 Cookie 所属账号 |
+| #6 | 没有给接手的人和 AI 助手看的说明 | 新增 `AGENT.md`（后来改名 `AGENTS.md`）：代码约定、#1–#5 的已修记录、待修清单、改之前先想清楚的设计取舍 |
 | #7 | 全局限流 `REPLY_PER_MIN` 只拦随机插话，被 @、接续、嫌烦收尾、配图都不受限 | 群聊所有主动消息都计入一分钟总额度并分档：用到 1/2 停插话和自动配图，3/4 停接续；被 @ 必回、不受额度限制（#40 起），私聊、被叫触发的抽卡定型文、指令同样不拦（抽卡模式下的随机插话照常按插话档）；样例去掉重复的 `REPLY_PER_MIN`（为 4） |
 | #8 | 游戏数据定时刷新的 `asyncio.create_task` 没留引用，可能被回收 | 存进模块级 `_refresh_task` |
 | #9 | `vision.py` 连写两个 `if desc:`，视觉模型描述的动图被改标成图片 | 删掉第二个（旧图卡缓存 7 天后自然过期） |
 | #10 | `scripts/启动全部.ps1` 调用不存在的 `scripts\scripts\start-all-here.ps1` | 改调同目录脚本，用法说明对齐 README |
 | #11 | 从仓库根目录跑 `python bot\bot.py` 时插件一个都不加载（NoneBot 按 cwd 找插件目录） | 启动时 `os.chdir` 到 `bot/`，与 `run-nonebot.ps1` 一致 |
-| #12 | 样例里 `ENGAGE_MAX_TURNS` 写了两次 | 去掉被覆盖的那条，样例为 2（见 `bot/plugins/persona.py:110`） |
+| #12 | 样例里 `ENGAGE_MAX_TURNS` 写了两次 | 去掉被覆盖的那条（当时样例为 4，#40 起改成 2） |
 | #13 | 测试和 `tools/build_game_data.py` 往 `sys.path` 加不存在的 `nonebot/` | 改指 `bot/` |
+| #14 | `AGENT.md` 没记 #8–#13；待修里很多拿不准是不是 bug；换行符清单漏了中文文件名 | 补 #8–#13；「待修」改成分组的「待确认」清单；按逐文件统计 `\r` 重写换行符约定，注明带 BOM 的脚本 |
 | #15 | README 写米游抽卡被叫 10%，代码和样例是 1.8% | README 改为 1.8%，样例注释 `1.8%%` 改成 `1.8%` |
 | #16 | 样例里 `REPLY_FOLLOW_COOLDOWN` 没有代码读 | 删掉；省话档的被叫/接续冷却实际是 `REPLY_GROUP_COOLDOWN`（其它档位写死）；`REPLY_COOLDOWN` 注释改为「主动插话的冷却」 |
 | #17 | `bot_guard.py` 的 `BOT_UIN` 默认是作者的号，没配置时其它号的机器人全部静默 | 默认改为空（不过滤），未配置时启动告警 |
 | #18 | 代码默认值和样例不一致（`SNUB_SECONDS` 300/100、`ENGAGE_MAX_TURNS` 8/4、`HISTORY_SIZE` 16/24、`STICKER_AUTO_PROB` 0.15/0.08） | 代码默认对齐样例 |
 | #19 | 没有依赖清单，README 装的裸 `nonebot2` 没有 FastAPI 驱动，启动不了 | 新增 `requirements.txt`，README 安装入口改为一键部署（`一键部署.cmd`） |
+| #20 | `AGENT.md` 没记 #15–#19；目录布局几条一直挂在待确认 | 补 #15–#19；目录布局按作者决定移到「已知限制」（后来 #31 改成仓库即运行目录）；待确认补三条、重新编号；约定补「代码默认值和样例一致」「新依赖写进 requirements.txt」 |
 | #21 | 要支持三款游戏的抽卡、深渊、面板和米游社登录 | 接入早柚核心连接插件 `GenshinUID`；`persona.env` 的 `GSUID_CORE_*` 显式传给 `nonebot.init`（NoneBot 只从自己的 `.env` 读插件自定义配置） |
 | #22 | 连接插件转发每条消息，人设会对 `sr深渊` 这类指令接话、记日记 | `GAME_CMD_PREFIXES` 开头的消息人设直接跳过 |
 | #23 | 二维码发在群里谁都能扫，还可能被风控 | 群里发「扫码登录」改为群临时会话提醒；核心侧「扫码登陆」设 `DIRECT` |
@@ -71,6 +78,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #31 | 脚本和代码默认路径写死作者本机 `Z:\snowluma\stack\nonebot`，和仓库布局对不上；`OCR_SCRIPT` 默认指到仓库外；脚本里写死 token 占位符 | 仓库即运行目录：新增 `scripts/common.ps1`，各脚本从 persona.env 读路径和 `ONEBOT_ACCESS_TOKEN` / `SNOWLUMA_WEBUI_PASSWORD`；停止脚本按目录 + 子进程树找进程；删掉重复的 `start-all.ps1`；表情、OCR、抽卡文案默认指仓库里的目录。Windows 上实测启动 / 自检 / 停止（SnowLuma 用假进程代替） |
 | #32 | 部署要手动开好几个终端、按文档一步步敲命令，朋友照着装容易漏 | `scripts/setup.ps1`（幂等）+ 根目录 `一键部署.cmd` / `一键启动.cmd` / `一键停止.cmd`：自动装 uv、Python 3.12、依赖、ffmpeg、SnowLuma、早柚核心和三个插件，生成随机 token 的 `onebot.json` 并和 persona.env 对齐；发现 `Z:\snowluma` 旧安装时可沿用（拷配置 / 数据 / 表情原图，SnowLuma、核心、tools 原地用）。新增 `docs/部署指南.md` |
 | #33 | 外部依赖不锁版本（pip 只有范围、核心和插件 clone 最新、SnowLuma 装 latest 且不校验哈希），更新全靠手动 | `requirements.lock` + `external.lock.json` 锁定确切版本，一键部署按锁安装（SnowLuma 校验 sha256）；`update-deps.yml` 每天查新版本，在 Windows 上从零部署 + 启动整套 + 冒烟测试通过才开 PR；合并后双击 `一键更新.cmd`（`update.ps1`：拉代码 → 停服务 → `setup.ps1 -Update` → 重启），SnowLuma 原地升级并备份旧文件。另加 `ci.yml`（脚本语法、单测、NoneBot 冒烟）和 Actions 版本的 Dependabot |
+| #34 | SnowLuma 有新版本 | `update-deps.yml` 自动开的第一个依赖更新 PR：SnowLuma v2.2.0 → v2.2.1，CI 在 Windows 上从零部署、跑完冒烟才开 |
 | #35 | 要加原神 | 核心插件 GenshinUID（前缀 `gs`，米游社扫码和星铁等共用）。顺带把加游戏变成「锁文件加一项 + 文档」：`external.lock.json` 的插件项带 `game` / `prefixes` / `help`，一键部署按它装插件并装各插件自己的依赖，给旧 `persona.env` 补前缀；冒烟测试对每个插件发帮助；`update-deps.yml` 加 `validate_only` 手动验证分支。CI 验证时发现人设对「扫码 登录」（带空格）会插话：`is_game_command` 改为和核心一样不看空白 |
 | #36 | 要加鸣潮 | 核心插件 XutheringWavesUID（前缀 `ww`，原 WutheringWavesUID 仓库已删）。它的登录是库街区网页链接 / 短信验证码，不走核心扫码：`gscore_guard` 改成按插件认登录指令（`PREFIXED_LOGIN`）、私聊提醒按插件给（`LOGIN_HINTS`，鸣潮提示短信登录）、群内拦截认多种文案和链接（`LOGIN_MARKERS`，含 `/waves/i/`）；人设前缀后紧跟同一字母不算指令（`www笑死`、`www.` 链接）；冒烟测试按锁文件的 `login` 查各插件登录不进群、回到临时会话，并核对 `LOGIN_MARKERS` 都还在源码里 |
 | #37 | 要加明日方舟：终末地 | 核心插件 EndUID（前缀 `zmd` / `end`，森空岛扫码登录）。`gscore_guard` 加终末地的登录指令和三条登录文案；新增 `PREFIXED_PRIVATE`：会贴出或显示凭据的指令（`ww添加token`、`zmd绑定 cred`、`zmd我的cred` 等）群里也不转给核心，私聊提醒原样到私聊发且不回显凭据 |
@@ -79,19 +87,43 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #40 | 要傲娇人设、群友好感度和小本本、群里少说话 | 人设改傲娇，按态度抽签偶尔露真心，每句随机回话路数；`bonds.py` 按 QQ 号存好感 / 熟悉度 / 日记（群聊私聊共用，私聊日记不进群），好感难涨易掉；模型隔一阵摘个人日记和群日记（关系 + 本群风格），每条 ≤20 字；被 @ 必回不受额度，喊名字按态度 10%~70%，没被叫的回话同群至少隔 3 分钟、每小时最多 6 条、插话 2%；只发表情要对得上场景（偶尔无厘头），表情小本本记用途和次数；可以毒舌但不辱骂，带脏话的回复不发；看到新表情会收藏进 `stickers/saved`；`/小本本`、`/表情 收藏` |
 | #41 | 调了默认值以后旧 `persona.env` 会盖过去，每次要手动改 | 一键更新（`setup.ps1 -Update`）按样例重写 persona.env：`PersonalEnvKeys`（账号、密钥、路径）和样例里没有的项保留，其余换成样例值，先备份、列出改动，`-KeepEnv` 跳过；自己要保留的调参写 `persona.local.env`（bot.py 后读、盖过同名项）；`tests/test_env_sync.ps1` 进 CI |
 | #42 | `/忘了我` 谁都能用，不太好 | 去掉；改成开发者的 `/小本本 删除 @某人`（或 QQ 号），本人要求删记录时由开发者处理 |
+
+### 本仓库（`Rindouchiaki/jiangyouyu-qq-bot`）
+
+| PR | 问题 | 改法 |
+|---|---|---|
+| #1 | fork 里的改动要合回本仓库 | 把 fork 的 #1–#42 一次合进来（42 个提交，和初版没有冲突），逐项见上表 |
+| #2 | 新认识的人一律「陌生」、爱答不理；没法手动调好感；群里会把更早别人的话当成刚问她的（「回复错人」） | 未合并，内容并进 #4 |
+| #3 | 机器人过一阵突然没响应（服务挂在终端下，窗口一关就被带走） | 未合并，cherry-pick 进 #4 |
+| #4 | #2、#3 的问题；语气不跟好感变；表情老抽那几张；听不懂网络梗和游戏黑话 | 初始好感 10 / 熟悉 8（老数据只迁一次）、开发者的 `/好感`；`is_question` 问句先答最后那个人；语气按好感五档、`DERE_CHANCE` 分档；表情按使用次数、最近几张、同分类连发降权；`knowledge/slang.json`（357 条）+ `topics.json`（15 类）按 mtime 重载，好感高的人带话题和热梗进提示词；`scripts/watchdog.ps1` + 计划任务掉线自动拉起，`run-hidden.vbs` 不闪黑框 |
+| #5 | #4 新增的 5 个配置项没写进样例；新文件是 LF、`slang.json` 是 `\r\r\n` | 样例补齐（和代码默认一致）；新文件转 CRLF（`watchdog.ps1` 保留 BOM），`run-hidden.vbs` 是 UTF-16LE 保持原样 |
 | #6 | 私聊发 `core添加` 贴 Cookie / Stoken、`core绑定设备` / `mys绑定设备` 贴设备 JSON 时，`core`、`mys` 不在 `GAME_CMD_PREFIXES` 里，人设当聊天接话，原文写进白守日记并发给模型 | `gscore_guard.has_credential`：这几个前缀和 Cookie / 设备字段（`stoken`、`cookie_token`、`deviceFingerprint` 等）一律跳过，写死在代码里不走配置；只记 QQ 号不记原文。之前已经写进日记的要手动清 |
+| #7 | 米游社报错让人「绑定设备」：提示没说要私聊（核心添加CK 服务只收私聊，群里发了没反应）、只认「绑定设备」不认「设备登录 / 设备登陆」、群里贴了设备 JSON 没提醒 | `gscore_guard.confusing_hint`：三种说法都提示先扫码登录、再私聊发 `mys绑定设备 {设备 JSON}`；群里的 `core` / `mys` 设备指令不转给核心、提醒撤回；日志只记谁触发 |
 | #8 | 回复一问一答、秒回、接不上话题；拆开发的几句、跟着的表情被逐条回；群里 @ 时偶尔回的是上一个话题（前一条的模型调用晚到） | 每个会话先攒一批（防抖：冷清 3 秒、正聊着 5 秒，同一人续 3 秒，一批最多 12 秒，被 @ 最多再等 2.5 秒）再一起回；模型按行输出，`split_reply` 拆成 1～3 条或只发表情，按字数打字；生成期间对方补话就作废重想，群里别人插话则被叫的引用原消息照发、接续插话不补；历史放宽到 40 条 / 1200 字，回话路数按会话保持，提示词去 AI 腔；去掉 `REPLY_AT_COOLDOWN` |
 | #9 | 群里插话只是 2% 掷骰子，什么话题都接 | `PERSONA_INTERESTS`（topics.json 类别）命中时插话概率乘 `INTEREST_BOOST`（4）；插话时模型不感兴趣可以只输出 `[不回]`，连着不回从 120 秒起翻倍退避（最多 30 分钟）；群聊额度、间隔、氛围判断不变 |
 | #10 | 上不了网：最新消息、价格、版本时间、没听过的梗只能瞎猜，提示词还写着「没有联网搜索」 | `bot/web_search.py` 接 DeepSeek 官方 Search & Fetch（共用 `LLM_API_KEY`，缓存 10 分钟，每天 100 次、每人每小时 6 次）；只在有人跟她说话且 `wants_search` 命中时把工具交给模型，最多查 2 轮、可先说「我查查」；网页内容只进 tool 消息并标明不是指令；`/用量` 显示联网次数；`SEARCH_API_KEY` 进 `PersonalEnvKeys` |
 | #11 | 群友的新梗、网络用语听不懂，`slang.json` 只能手写 | 跟着群日记、私聊个人日记一起让模型挑最多 3 个看不懂的说法，有把握的直接记，没把握的只拿词本身上网查再用 20 字解释（每天最多查 20 个）；存 `bot/data/slang_learned.json`（最多 300 条），`slang.hint` 手写词表优先 |
 | #12 | 好感再高也从不主动找人，像只会应答的机器人 | 后台每 10 分钟看一次：私聊过、「有好感」以上（开发者不看好感）、私聊沉默满 6 小时、离上次主动满 20 小时、没被连着晾 2 次的人，按 15% 概率挑一个发一两句；全局每天最多 3 次，1–9 点不打扰，对方一回计数清零；群里不主动开话题 |
+| #13 | 「已修」表把 fork 和本仓库的 PR 混在一起，#6、#8–#12 重号；fork#6/14/20/34、本仓库 #1–#5、#7 和直接提交都没记 | 拆成 fork 时期和本仓库两张表，补齐缺的行，另列直接推到 `main` 的提交；约定别处引用 fork 的写 `fork#N` |
+
+没走 PR、直接推到 `main` 的提交（2026-10-27～28，#1 之后、#5 之前；`e94e262` 在 #4 之后）：
+
+| 提交 | 内容 |
+|---|---|
+| `b2f86bd` `cad1714` | `AGENT.md` 改名 `AGENTS.md` |
+| `88e3cea` | 新增 `docs/使用手册.md`：群友用法、主人指令、档位与小本本 |
+| `d2d0abc` | 改名后同步仓库内对 `AGENT.md` 的引用 |
+| `2ff066d` | 修正文档漂移；`docs/SnowLuma-参数与原理.md` 里的 accessToken 片段换成占位符（见待确认 11） |
+| `dbd0d46` | 部署指南补 uv 坏包重装的排错说明 |
+| `226502f` | `.gitignore` 忽略 `persona.local.env` |
+| `e94e262` | 一键启动带 `OLLAMA_MODELS` 拉起 Ollama，修白守找不到 bge-m3 |
 
 **自动记忆仍然开着**：`PRIVATE_MIRROR`、`GROUP_MIRROR` 默认 1；私聊每条都落盘，群聊只记被叫/接续的对话；问到「记得/上次」照常带本会话最近 5 条。改的只是按会话隔离和手动指令的权限。
 
 ### 已知限制
 
 - 繁体变体（如「醬醬魚」）不会被 `safe_name` 认出，需要的话把繁体写进 `NICKNAMES`。
-- #1 之前写入的旧日记用 `tools/migrate_journal_tags.py` 补标签（默认只预览，`--apply` 先备份再改）；旧私聊行只有 `[私聊]`，分不出是谁，除非用 `--private-as` 全部归给一个人，否则只能私聊里 `/回忆` 查。
+- fork#1 之前写入的旧日记用 `tools/migrate_journal_tags.py` 补标签（默认只预览，`--apply` 先备份再改）；旧私聊行只有 `[私聊]`，分不出是谁，除非用 `--private-as` 全部归给一个人，否则只能私聊里 `/回忆` 查。
 
 ---
 

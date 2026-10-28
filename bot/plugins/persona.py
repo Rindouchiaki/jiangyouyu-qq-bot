@@ -484,7 +484,7 @@ _diary_user_turns: dict[str, int] = defaultdict(int)
 _diary_user_last: dict[str, float] = defaultdict(float)
 _diary_group_msgs: dict[str, int] = defaultdict(int)
 _diary_group_last: dict[str, float] = defaultdict(float)
-# 后台任务要留引用，否则可能被回收（见 AGENTS.md #8）
+# 后台任务要留引用，否则可能被回收（见 AGENTS.md fork#8）
 _bg_tasks: set[asyncio.Task] = set()
 
 persona = on_message(priority=50, block=False)
@@ -1638,7 +1638,7 @@ async def _proactive_loop() -> None:
 @nonebot.get_driver().on_startup
 async def _start_proactive() -> None:
     if PROACTIVE_ENABLE and not _proactive_task:
-        # 留引用，免得任务被回收（见 AGENTS.md #8）
+        # 留引用，免得任务被回收（见 AGENTS.md fork#8）
         _proactive_task.append(asyncio.create_task(_proactive_loop()))
         logger.info(
             f"persona: 主动找人已开（好感「有好感」以上、私聊沉默 {PROACTIVE_MIN_SILENCE_H:.0f} 小时后，"
