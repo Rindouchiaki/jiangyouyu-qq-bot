@@ -32,7 +32,7 @@ def main() -> int:
     bonds.touch("10002", "小红", 0, now=1000.0)
     bonds.touch("10003", "小明", 0, now=1000.0)
     for _ in range(3):
-        bonds.touch("10003", "小明", 0, now=1000.0 + 86400 * (_ + 1))
+        bonds.touch("10003", "小明", 0, now=1000.0 + 86400 * (_ + 1), private=True)  # 熟悉度只有私聊才加
     bonds.touch(a, "酱酱鱼", 0, now=1000.0)
     bonds.add_group_notes("123", ["小红/小明：常一起打鸣潮"], now=1000.0)
     people = bonds.known_people(["10002", "10003", a, "99999"])

@@ -708,9 +708,9 @@ def _background(coro) -> None:
     task.add_done_callback(_bg_tasks.discard)
 
 
-def _bond_touch(user_id: str, name: str, delta: int) -> dict:
+def _bond_touch(user_id: str, name: str, delta: int, private: bool = False) -> dict:
     try:
-        rec = bonds.touch(user_id, name, delta)
+        rec = bonds.touch(user_id, name, delta, private=private)
         bonds.save()
         return rec
     except Exception as exc:  # noqa: BLE001
@@ -1271,8 +1271,8 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             _shy_log.pop(hide_key, None)
         logger.info(f"persona: 害羞话题（{kind}），{name} 第 {n_user} 次、本群 {n_group} 次{'，跑开躲起来' if flee else ''}")
 
-    # 跟她说话才算来往（熟悉度、冷落计时）；好感不按单句算，摘日记时看整段打分。按 QQ 号记，群里私聊是同一份
-    bond = _bond_touch(user_id, name, 0) if addressed else bonds.user(user_id)
+    # 跟她说话才算来往（冷落计时），熟悉度只有私聊才加；好感不按单句算，摘日记时看整段打分。按 QQ 号记，群里私聊是同一份
+    bond = _bond_touch(user_id, name, 0, private=not is_group) if addressed else bonds.user(user_id)
     if not is_group:
         bonds.mark_private(user_id, now)
     att = attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
