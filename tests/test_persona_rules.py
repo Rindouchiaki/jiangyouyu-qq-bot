@@ -42,7 +42,9 @@ from persona_rules import (  # noqa: E402
     proactive_due,
     quota_allows,
     reaction_delay,
+    results_mention,
     safe_name,
+    slang_play_ok,
     split_long,
     split_reply,
     sticker_category,
@@ -408,6 +410,20 @@ def main() -> int:
     assert cands == [("鼠鼠", "自嘲的说法", True), ("哈基米", "猫，可爱的叫法", False)], cands
     assert parse_slang_candidates("无") == []
     assert parse_slang_meaning("不确定") == "" and parse_slang_meaning("「猫的昵称」") == "猫的昵称"
+    assert results_mention("哈基米", [{"title": "x", "summary": "哈基米是猫的意思"}])
+    assert results_mention("YYDS", [{"title": "yyds 什么意思"}])
+    assert not results_mention("鱼鱼塞", [{"title": "鱼塞是什么", "summary": "不相干"}]) and not results_mention("x", [])
+    print("PASS  搜索结果里真有这个词才算网上查得到")
+
+    assert slang_play_ok("轻松", "甜") and slang_play_ok(None, None)
+    assert not slang_play_ok("有火气", None) and not slang_play_ok("正经事", None)
+    assert not slang_play_ok("轻松", "不耐烦") and not slang_play_ok("轻松", None, help_mode=True)
+    calm = compose_messages([], "小明", "破防了", slang="破防=心理防线被击穿")[0]["content"]
+    play = compose_messages([], "小明", "破防了", slang="破防=心理防线被击穿", slang_play=True)[0]["content"]
+    assert "别特意接梗" in calm and "顺手玩一下" not in calm
+    assert "顺手玩一下" in play and "别特意接梗" not in play
+    assert "别句句都接" in compose_messages([], "小明", "在吗", group_style=["爱玩谐音梗"])[0]["content"]
+    print("PASS  听得懂不等于要接：吵架、正事、求助、烦了不接，抽中才顺手玩一下")
     print("PASS  学新梗：拆候选、认识的不要、没把握的标出来去查")
 
     assert in_quiet_hours(3, "1-9") and not in_quiet_hours(12, "1-9")

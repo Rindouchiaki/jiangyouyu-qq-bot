@@ -28,6 +28,7 @@
 python tests\test_persona_rules.py         # 纯规则，不连 QQ、不调模型
 python tests\test_gscore_guard.py          # 二维码不进群的判断
 python tests\test_bonds.py                 # 小本本（好感度 / 日记）读写，临时目录里跑
+python tests\test_slang.py                 # 热梗词典；学到的梗按会话隔离（临时目录里跑）
 powershell -File tests\test_env_sync.ps1  # 一键更新按样例重写 persona.env，临时目录里跑
 python tests\test_migrate_journal_tags.py  # 旧日记迁移脚本（临时目录里跑）
 python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（--core 连已启动的整套）
@@ -105,6 +106,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #11 | 群友的新梗、网络用语听不懂，`slang.json` 只能手写 | 跟着群日记、私聊个人日记一起让模型挑最多 3 个看不懂的说法，有把握的直接记，没把握的只拿词本身上网查再用 20 字解释（每天最多查 20 个）；存 `bot/data/slang_learned.json`（最多 300 条），`slang.hint` 手写词表优先 |
 | #12 | 好感再高也从不主动找人，像只会应答的机器人 | 后台每 10 分钟看一次：私聊过、「有好感」以上（开发者不看好感）、私聊沉默满 6 小时、离上次主动满 20 小时、没被连着晾 2 次的人，按 15% 概率挑一个发一两句；全局每天最多 3 次，1–9 点不打扰，对方一回计数清零；群里不主动开话题 |
 | #13 | 「已修」表把 fork 和本仓库的 PR 混在一起，#6、#8–#12 重号；fork#6/14/20/34、本仓库 #1–#5、#7 和直接提交都没记 | 拆成 fork 时期和本仓库两张表，补齐缺的行，另列直接推到 `main` 的提交；约定别处引用 fork 的写 `fork#N` |
+| #14 | #11 学到的梗不分来源：某个群自己的说法会被带到别的群和私聊；模型说有把握的不查就记成全局；接梗太多、不看场合 | `slang_learned.json` 分 `public` / `scoped`（`g群号` / `p QQ号`）：候选都先搜，搜索结果里真有这个词、照摘要解释得出来才算大众梗，查不到的只记在原会话，没把握又查不到的不记；旧格式里猜的丢掉。命中的梗默认只「听得懂、别特意接」，闲聊气氛、同会话隔 30 分钟、10% 抽中才放开接；`test_slang.py` 进 CI |
 
 没走 PR、直接推到 `main` 的提交（2026-10-27～28，#1 之后、#5 之前；`e94e262` 在 #4 之后）：
 
@@ -166,6 +168,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 ## 改之前先想清楚的地方
 
 - **记忆隔离是刻意的**：不要为了「记得更多」把 `memory.recent` 的会话标签过滤去掉，否则私聊和别的群的内容会被带进来。想让机器人跨群记住某件事，用开发者 `/记`（署名 `DEV_NAME`，任何会话问到「记得/上次」时都会被带出）。
+- **学到的梗分会话**：`slang_learned.json` 里只有网上查得到（`results_mention` 确认搜索结果里真有这个词，再按摘要解释得出来）的才进 `public`，哪里都认；查不到的记在 `scoped` 的 `g群号` / `p QQ号` 下，只在原会话用。作者要求「某些群自己的梗不能带到外面」，别把 scoped 合进 public、别让 `slang.hint` 不带 scope 查。接梗按 `SLANG_PLAY_PROB` 抽签、`SLANG_PLAY_GAP` 间隔、`slang_play_ok` 看气氛，作者要求「非常偶尔接一下」，别调高。
 - **小本本按人共用、私事不进群**：`bonds.py` 按 QQ 号存好感、熟悉度和日记，群里私聊是同一条（作者要求「换个地方也认得」）；但私聊里摘的日记带 `src="p"`，`visible_notes` 在群里会滤掉，别去掉。日记和群风格是群友原话整理的，只能放 user 消息（`compose_messages` 的小本本块）；system 里只放由数字算出的态度档位，不放名字和日记原文。
 - **群里话少是刻意的**：被 @ 必回、喊名字按态度回，其余（接续、插话、只发表情）都受 `REPLY_CASUAL_GAP` 间隔和 `REPLY_GROUP_PER_HOUR` 额度限制，作者要求「偶尔冒个泡，不像住在群里」。人设可以毒舌、放狠话，但 `is_offensive` 那道兜底（带脏话不发）别拆。
 - **傲娇的比例是刻意的**：好感难涨易掉（`update_bond`），露真心按 `DERE_CHANCE` 抽签，其余每句都要求「保持傲」。作者明确要求不能日子久了人人高好感、一直很娇，调参数时别把这两处放松太多。

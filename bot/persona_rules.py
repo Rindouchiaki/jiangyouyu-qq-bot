@@ -52,7 +52,7 @@ _SPEAKER_PREFIX = re.compile(r"^\s*(?:我|酱油鱼)\s*[:：]\s*")
 
 # 每句随机一个回话路数，避免总是同一种接法（正经求助时不用）
 REPLY_FLAVORS = (
-    "只回两三个字", "接对方的梗或顺着往下玩", "毒舌吐槽一句", "反问回去", "阴阳怪气一下",
+    "只回两三个字", "顺着对方的话往下接", "毒舌吐槽一句", "反问回去", "阴阳怪气一下",
     "装作不在意地回一句", "顺口说点自己的事", "认真回一句，但语气别软",
 )
 
@@ -467,6 +467,7 @@ def build_system_prompt(
     can_search: bool = False,
     interests: tuple[str, ...] = (),
     proactive: bool = False,
+    slang_play: bool = False,
 ) -> str:
     """在基础人设上补几条：我是谁、开发者是谁、记忆、什么气氛、什么情绪、对这个人什么态度。"""
     system = SYSTEM_PROMPT
@@ -513,7 +514,7 @@ def build_system_prompt(
     else:
         system += "\n\n这一句不用端着傲，也不用故意呛人，像平常聊天那样说。"
     if group_style:
-        system += "\n\n小本本里记了本群的风格和梗：说话方式往这个群靠，能接本群的梗就接，但底子还是傲娇。"
+        system += "\n\n小本本里记了本群的风格和梗：说话方式往这个群靠，底子还是傲娇；本群的梗听得懂就行，别句句都接。"
     if topics:
         system += (
             "\n\n他最近常聊：" + "、".join(topics[:3])
@@ -521,6 +522,10 @@ def build_system_prompt(
         )
     if slang:
         system += f"\n\n这几个说法你听得懂，别解释它们：{slang}。"
+        if slang_play:
+            system += "这次要是接得自然，可以顺手玩一下这个梗，接不自然就算了。"
+        else:
+            system += "听懂就行，这次别特意接梗、别复读它。"
     if flavor and not help_mode:
         system += f"\n\n这一句的路数：{flavor}。"
 
@@ -632,6 +637,7 @@ def compose_messages(
     can_search: bool = False,
     interests: tuple[str, ...] = (),
     proactive: bool = False,
+    slang_play: bool = False,
 ) -> list[dict[str, str]]:
     """组装成 OpenAI 兼容的 messages。history 为 (昵称, 内容) 列表。
 
@@ -651,7 +657,7 @@ def compose_messages(
                 help_mode=help_mode, hour=hour, attitude=attitude, bond=bond, dere=dere,
                 flavor=flavor, group_style=bool(group_style), question=question,
                 topics=topics, slang=slang, can_search=can_search, interests=interests,
-                proactive=proactive,
+                proactive=proactive, slang_play=slang_play,
             ),
         }
     ]
@@ -1167,6 +1173,26 @@ def parse_slang_candidates(
         if len(out) >= max_items:
             break
     return out
+
+
+# 接梗只在闲聊里偶尔来一下：吵架、正事、求助、她烦了的时候都不接
+_PLAY_LABELS = (None, "轻松", "普通", "冷清", "冷场")
+
+
+def slang_play_ok(atmosphere: str | None, mood: str | None, help_mode: bool = False) -> bool:
+    return atmosphere in _PLAY_LABELS and mood != "不耐烦" and not help_mode
+
+
+def results_mention(term: str, results: list[dict]) -> bool:
+    """搜索结果里真出现了这个词（标题或摘要），才算网上查得到的大众梗，不靠模型自己说。"""
+    low = (term or "").strip().lower()
+    if not low:
+        return False
+    for item in results:
+        text = " ".join(str(item.get(k) or "") for k in ("title", "summary", "snippet")).lower()
+        if low in text:
+            return True
+    return False
 
 
 def parse_slang_meaning(raw: str, max_chars: int = 20) -> str:
