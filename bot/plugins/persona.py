@@ -758,9 +758,12 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
                 _last_image_seg.pop(old_key, None)
 
     text = event.get_plaintext().strip()
-    if is_game_command(text, GAME_CMD_PREFIXES) or gscore_guard.bare_core_command(
-        [str(seg.data.get("text", "")) for seg in event.get_message() if seg.type == "text"]
-    ):
+    seg_texts = [str(seg.data.get("text", "")) for seg in event.get_message() if seg.type == "text"]
+    if gscore_guard.has_credential(seg_texts):
+        # Cookie / 设备信息：不接话，也绝不进上下文、日记和模型，日志里也不写原文
+        logger.info(f"persona: {event.get_user_id()} 发了核心凭据指令，跳过")
+        return
+    if is_game_command(text, GAME_CMD_PREFIXES) or gscore_guard.bare_core_command(seg_texts):
         # 游戏指令由早柚核心回，人设不接话，也不进上下文和日记
         return
     if not text:

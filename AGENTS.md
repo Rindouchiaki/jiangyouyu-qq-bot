@@ -79,6 +79,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #40 | 要傲娇人设、群友好感度和小本本、群里少说话 | 人设改傲娇，按态度抽签偶尔露真心，每句随机回话路数；`bonds.py` 按 QQ 号存好感 / 熟悉度 / 日记（群聊私聊共用，私聊日记不进群），好感难涨易掉；模型隔一阵摘个人日记和群日记（关系 + 本群风格），每条 ≤20 字；被 @ 必回不受额度，喊名字按态度 10%~70%，没被叫的回话同群至少隔 3 分钟、每小时最多 6 条、插话 2%；只发表情要对得上场景（偶尔无厘头），表情小本本记用途和次数；可以毒舌但不辱骂，带脏话的回复不发；看到新表情会收藏进 `stickers/saved`；`/小本本`、`/表情 收藏` |
 | #41 | 调了默认值以后旧 `persona.env` 会盖过去，每次要手动改 | 一键更新（`setup.ps1 -Update`）按样例重写 persona.env：`PersonalEnvKeys`（账号、密钥、路径）和样例里没有的项保留，其余换成样例值，先备份、列出改动，`-KeepEnv` 跳过；自己要保留的调参写 `persona.local.env`（bot.py 后读、盖过同名项）；`tests/test_env_sync.ps1` 进 CI |
 | #42 | `/忘了我` 谁都能用，不太好 | 去掉；改成开发者的 `/小本本 删除 @某人`（或 QQ 号），本人要求删记录时由开发者处理 |
+| #6 | 私聊发 `core添加` 贴 Cookie / Stoken、`core绑定设备` / `mys绑定设备` 贴设备 JSON 时，`core`、`mys` 不在 `GAME_CMD_PREFIXES` 里，人设当聊天接话，原文写进白守日记并发给模型 | `gscore_guard.has_credential`：这几个前缀和 Cookie / 设备字段（`stoken`、`cookie_token`、`deviceFingerprint` 等）一律跳过，写死在代码里不走配置；只记 QQ 号不记原文。之前已经写进日记的要手动清 |
 
 **自动记忆仍然开着**：`PRIVATE_MIRROR`、`GROUP_MIRROR` 默认 1；私聊每条都落盘，群聊只记被叫/接续的对话；问到「记得/上次」照常带本会话最近 5 条。改的只是按会话隔离和手动指令的权限。
 
