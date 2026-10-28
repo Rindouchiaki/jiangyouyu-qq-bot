@@ -266,18 +266,19 @@ def main() -> int:
     day = 86400.0
     t0 = datetime(2026, 10, 1, 12).timestamp()
 
-    def chat(days: int, score: int, bond=None, start=t0, dev: bool = False):
-        """每天说几句话，摘日记时模型给 score 分。"""
+    def chat(days: int, score: int, bond=None, start=t0, dev: bool = False, private: bool = True):
+        """每天说几句话（默认私聊），摘日记时模型给 score 分。"""
         for d in range(days):
             for i in range(3):
-                bond = update_bond(bond, 0, start + d * day + i * 60, dev=dev)
+                bond = update_bond(bond, 0, start + d * day + i * 60, dev=dev, private=private)
             if score:
                 bond = update_bond(bond, score, start + d * day + 300, dev=dev, met=False)
         return bond
 
-    new = update_bond(None, 0, t0)
+    new = update_bond(None, 0, t0, private=True)
     assert (new["aff"], new["fam"]) == (INITIAL_AFF, INITIAL_FAM + 1), new  # 只是说话不涨好感，熟悉度当天 +1
-    assert update_bond(new, 0, t0 + 60)["fam"] == new["fam"]  # 同一天再说不再加
+    assert update_bond(new, 0, t0 + 60, private=True)["fam"] == new["fam"]  # 同一天再说不再加
+    assert update_bond(None, 0, t0)["fam"] == INITIAL_FAM  # 群里说话不加熟悉度
     judged = update_bond(new, 2, t0 + 120, met=False)
     assert judged["fam"] == new["fam"] and judged["last"] == new["last"]  # 事后打分不算来往
     capped = new
@@ -291,6 +292,8 @@ def main() -> int:
     assert attitude(warm["aff"], warm["fam"]) == "有好感", warm  # 两三周到有好感
     close = chat(30, 2)
     assert attitude(close["aff"], close["fam"]) == "亲近", close  # 坚持一个月左右到亲近
+    group_only = chat(90, 2, private=False)
+    assert group_only["fam"] == INITIAL_FAM and group_only["aff"] >= 60 and attitude(group_only["aff"], group_only["fam"]) == "有好感"  # 只在群里聊到不了亲近
     kept = chat(30, 0, bond=close, start=close["last"] + day)
     assert kept["aff"] == close["aff"], kept  # 一直在来往就守得住，不会自己掉
     assert attitude(80, CLOSE_FAM - 1) == "有好感" and attitude(60, CLOSE_FAM) == "亲近"  # 亲近要熟悉度 30
@@ -311,7 +314,7 @@ def main() -> int:
     later = update_bond(grudge, 0, grudge["last"] + 31 * day)
     assert grudge["aff"] < later["aff"] < 0, later  # 记仇消得慢
     night = datetime(2026, 10, 2, 23, 59).timestamp()
-    night_bond = update_bond(update_bond(None, 0, night), 0, night + 120)
+    night_bond = update_bond(update_bond(None, 0, night, private=True), 0, night + 120, private=True)
     assert night_bond["fam"] == INITIAL_FAM + 2, night_bond  # 按本机时间零点换天
     print("PASS  update_bond：难涨，正常来往守得住，冷落 48 小时起掉，按本机零点换天")
 
@@ -602,7 +605,8 @@ def main() -> int:
     night = {**note_active_hour(note_active_hour(note_active_hour({}, evening - 18 * 3600), evening + 6 * 3600), evening + 30 * 3600)}
     late = datetime(2026, 10, 5, 2, 50).timestamp()
     assert habit_hours(night) == {2} and proactive_due({**night, "lp": late - 3600, "last": late - 3600}, late, "亲近")  # 常在凌晨 2 点聊，就凌晨 2 点找
-    assert not proactive_due({**rec, "last": now - 20 * 60}, now, "亲近")  # 刚聊过（群里也算）
+    assert not proactive_due({**rec, "lp": now - 20 * 60}, now, "亲近")  # 私聊刚聊过
+    assert proactive_due({**rec, "last": now - 60}, now, "亲近")  # 群里刚聊过不算
     assert not proactive_due({**rec, "pu": 2}, now, "亲近")  # 连着两次没回
     assert not proactive_due({**rec, "pa": now - 3600}, now, "亲近")  # 一小时前刚找过
     assert not proactive_due({**rec, "bye": now - 3600}, now, "亲近")  # 刚说了晚安

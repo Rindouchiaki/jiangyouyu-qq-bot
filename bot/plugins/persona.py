@@ -13,7 +13,7 @@
 每条 ≤ REPLY_MAX_CHARS 字、一次最多 REPLY_MAX_LINES 条，去掉 emoji / 括号动作 / AI 字样。
 
 联网（web_search.py）：有人跟她说话、像是要查东西时把 DeepSeek 搜索交给模型，模型自己决定查不查。
-主动找人：私聊过的亲近的人，在平时常聊的钟点有一阵没说话，就找点话题聊聊（PROACTIVE_*）。
+主动找人：亲近的人，在平时常私聊的钟点私聊有一阵没说话，就找点话题聊聊；群里聊得多不算（PROACTIVE_*）。
 学新梗：跟着日记一起从聊天里挑没见过的说法，网上查得到的算大众梗，查不到的只在原来的群 / 私聊里用。
 
 小本本（bonds.py）：每个群友按 QQ 号一份好感度、熟悉度和简短日记，群聊私聊共用；
@@ -709,9 +709,9 @@ def _background(coro) -> None:
     task.add_done_callback(_bg_tasks.discard)
 
 
-def _bond_touch(user_id: str, name: str, delta: int) -> dict:
+def _bond_touch(user_id: str, name: str, delta: int, private: bool = False) -> dict:
     try:
-        rec = bonds.touch(user_id, name, delta)
+        rec = bonds.touch(user_id, name, delta, private=private)
         bonds.save()
         return rec
     except Exception as exc:  # noqa: BLE001
@@ -1272,8 +1272,8 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             _shy_log.pop(hide_key, None)
         logger.info(f"persona: 害羞话题（{kind}），{name} 第 {n_user} 次、本群 {n_group} 次{'，跑开躲起来' if flee else ''}")
 
-    # 跟她说话才算来往（熟悉度、冷落计时）；好感不按单句算，摘日记时看整段打分。按 QQ 号记，群里私聊是同一份
-    bond = _bond_touch(user_id, name, 0) if addressed else bonds.user(user_id)
+    # 跟她说话才算来往（冷落计时），熟悉度只有私聊才加；好感不按单句算，摘日记时看整段打分。按 QQ 号记，群里私聊是同一份
+    bond = _bond_touch(user_id, name, 0, private=not is_group) if addressed else bonds.user(user_id)
     if not is_group:
         bonds.mark_private(user_id, now)
     if addressed and is_conversation_ending(focus["text"]):

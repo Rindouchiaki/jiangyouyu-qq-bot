@@ -745,7 +745,7 @@ def compose_messages(
 # 好感 -100~100、熟悉 0~100，按 QQ 号存，群聊私聊共用。难涨，但正常来往守得住：
 # - 好感不按单句关键词算，由模型隔几轮看整段聊天打分（-2~+2，见 diary_user_prompt），另外只有被追着烦会扣；
 # - 每天涨的上限按当天起点 3 / 2 / 1（<30 / <60 / 其它），一天最多掉 12；
-# - 熟悉度是一起聊过的天数：有来往的那天 +1，只有「亲近」看它；
+# - 熟悉度是私聊过的天数：那天私聊过 +1，群里聊得再多也不加；只有「亲近」看它，所以没私聊过的人最多到「有好感」；
 # - 只要还在来往好感就不自己掉；48 小时没来往起每天掉 1、2、3（之后每天 3），掉到初始值为止；记仇（负的）每 7 天回 1。
 AFF_RANGE = (-100, 100)
 FAM_MAX = 100
@@ -843,9 +843,10 @@ def bond_view(bond: dict | None, now: float | None = None, dev: bool = False) ->
 
 
 def update_bond(
-    bond: dict | None, delta: int, now: float | None = None, dev: bool = False, met: bool = True
+    bond: dict | None, delta: int, now: float | None = None, dev: bool = False, met: bool = True,
+    private: bool = False,
 ) -> dict:
-    """记一次好感变化。met=True 是对方跟她说了话：先结算冷落、当天熟悉度 +1；False 只是事后打分。"""
+    """记一次好感变化。met=True 是对方跟她说了话：先结算冷落；private=True 是私聊，当天熟悉度 +1。met=False 只是事后打分。"""
     now = time.time() if now is None else now
     if dev:
         bond = dev_floor(bond or {})
@@ -858,8 +859,8 @@ def update_bond(
     day = _local_day(now)
     if b["day"] != day:
         b["day"], b["day_aff"] = day, 0
-        if met:
-            b["fam"] = min(FAM_MAX, b["fam"] + 1)
+    if met and private and b.get("fday") != day:
+        b["fday"], b["fam"] = day, min(FAM_MAX, b["fam"] + 1)
     start = b["aff"] - int(b["day_aff"])
     gain_cap, loss_cap = _day_gain_cap(start), DAY_AFF_LOSS
     if dev:
@@ -1539,8 +1540,8 @@ def parse_slang_meaning(raw: str, max_chars: int = 20) -> str:
 
 
 # ---------------------------------------------------------------- 主动找人
-# 不设固定的免打扰时段：只在对方平时常聊的钟点找，半夜睡觉的人那几个钟点没记录，自然不会去找
-# 平时常聊的钟点：每个钟点一天只记一次，满 HABIT_MIN 天、且不少于最常聊那个钟点的 1/4 才算
+# 不设固定的免打扰时段：只在对方平时常私聊的钟点找，半夜睡觉的人那几个钟点没记录，自然不会去找
+# 平时常私聊的钟点：每个钟点一天只记一次，满 HABIT_MIN 天、且不少于最常聊那个钟点的 1/4 才算
 HABIT_MIN = int(os.getenv("PROACTIVE_HABIT_MIN", "3"))
 HABIT_CAP = 60
 # 说了「睡了 / 拜拜」之后这么久不去找
@@ -1548,7 +1549,7 @@ BYE_QUIET_SEC = 8 * 3600
 
 
 def note_active_hour(rec: dict, now: float) -> dict:
-    """跟她聊了一句：这个钟点记一笔（hrs 是 24 个钟点的天数，hk 记上次记到哪个小时，同一小时不重复记）。"""
+    """私聊了一句：这个钟点记一笔（hrs 是 24 个钟点的天数，hk 记上次记到哪个小时，同一小时不重复记）。"""
     hour_key = int(now // 3600)
     if rec.get("hk") == hour_key:
         return rec
@@ -1562,7 +1563,7 @@ def note_active_hour(rec: dict, now: float) -> dict:
 
 
 def habit_hours(rec: dict, min_days: int = HABIT_MIN) -> set[int]:
-    """平时常跟她聊的钟点。"""
+    """平时常私聊的钟点，可以有好几段（比如中午一段、晚上一段）。"""
     hrs = list(rec.get("hrs") or [])
     if not hrs or max(hrs) < min_days:
         return set()
@@ -1578,15 +1579,17 @@ def proactive_due(
     min_gap: float = 3 * 3600,
     max_unanswered: int = 2,
 ) -> bool:
-    """这个人现在能不能主动找：亲近、私聊过、这会儿是平时常聊的钟点、有一阵没说话、离上次主动够久、没被连着晾、没刚说过晚安。"""
+    """这个人现在能不能主动找：亲近、这会儿是平时常私聊的钟点、私聊有一阵没说话、离上次主动够久、没被连着晾、没刚说过晚安。
+
+    只看私聊：群里聊得再多也不算常聊、也不算刚聊过。
+    """
     if att != "亲近" or float(rec.get("lp") or 0) <= 0:
         return False
     if datetime.fromtimestamp(now).hour not in habit_hours(rec):
         return False
     if int(rec.get("pu") or 0) >= max_unanswered:
         return False
-    last_talk = max(float(rec.get("lp") or 0), float(rec.get("last") or 0))
-    if now - last_talk < min_silence:
+    if now - float(rec.get("lp") or 0) < min_silence:
         return False
     if now - float(rec.get("bye") or 0) < BYE_QUIET_SEC:
         return False

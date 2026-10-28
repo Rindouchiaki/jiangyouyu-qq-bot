@@ -112,12 +112,11 @@ def find_user(text: str) -> list[str]:
         ]
 
 
-def touch(uid: str, name: str, delta: int, now: float | None = None) -> dict:
-    """这个人跟我说了句话：更新好感、熟悉度和最近用的名字。"""
+def touch(uid: str, name: str, delta: int, now: float | None = None, private: bool = False) -> dict:
+    """这个人跟我说了句话：更新好感、熟悉度（只有私聊才加）和最近用的名字。"""
     with _lock:
         rec = _data["users"].get(str(uid)) or {"notes": []}
-        rec.update(update_bond(rec, delta, now, dev=devs.is_dev(uid)))
-        rec.update(note_active_hour(rec, rec["last"]))
+        rec.update(update_bond(rec, delta, now, dev=devs.is_dev(uid), private=private))
         rec["name"] = name
         _data["users"][str(uid)] = rec
         _state["dirty"] = True
@@ -242,12 +241,13 @@ def add_group_style(gid: str, texts: list[str], now: float | None = None) -> int
 
 
 def mark_private(uid: str, now: float | None = None) -> None:
-    """对方私聊找我了：记下时间，主动找他没回的次数清零（lp / pu，见 persona_rules.proactive_due）。"""
+    """对方私聊找我了：记下时间和常私聊的钟点，主动找他没回的次数清零（lp / hrs / pu，见 persona_rules.proactive_due）。"""
     with _lock:
         rec = _data["users"].get(str(uid))
         if rec is None:
             return
         rec["lp"] = now or time.time()
+        rec.update(note_active_hour(rec, rec["lp"]))
         rec["pu"] = 0
         _state["dirty"] = True
 
