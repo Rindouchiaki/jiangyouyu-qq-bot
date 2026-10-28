@@ -72,7 +72,8 @@ def _bond_usage(event: MessageEvent) -> str:
     who = "@某人、QQ号 或名字" if getattr(event, "message_type", "") == "group" else "QQ号 或名字"
     return (
         f"用法：/好感 {who} —— 看对方现在的好感/熟悉\n"
-        f"/好感 {who} +10 加好感、-10 减、=30 设成 30；写「熟悉 +5」是调熟悉度"
+        f"/好感 {who} +10 加好感、-10 减、=30 设成 30；写「熟悉 +5」是调熟悉度\n"
+        f"不写对象就是改你自己：/好感 熟悉 +50、/好感 +10"
     )
 
 
@@ -113,7 +114,11 @@ async def _bond(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         if tip:
             await bond_cmd.finish(tip)
     if not target:
-        await bond_cmd.finish(_bond_usage(event))
+        # 没点名就默认改当前说话的人：私聊是对方，群里是发指令的人
+        if re.search(r"[+\-=]?\s*\d", text) or "熟悉" in text or "好感" in text:
+            target = str(event.get_user_id())
+        else:
+            await bond_cmd.finish(_bond_usage(event))
     field = "fam" if ("熟悉" in text) else "aff"
     level = re.search(r"([+\-=]?)\s*(\d{1,3})", text)
     if not level:
