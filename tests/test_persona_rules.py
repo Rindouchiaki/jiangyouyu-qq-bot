@@ -314,6 +314,19 @@ def main() -> int:
     assert "正经求助" in h and "先一句话直接回答" not in h
     print("PASS  问句先答最后一条，不和求助提示重复")
 
+    msgs = compose_messages([("小明", "今天又加班")], "小明", "原神抽卡歪了，破防",
+                            topics=["游戏", "工作"], slang="破防=心理防线被击穿")
+    system = msgs[0]["content"]
+    assert "他最近常聊：游戏、工作" in system, system
+    assert "破防=心理防线被击穿" in system
+    assert "别解释它们" in system
+    print("PASS  好感高才拼话题，热梗命中才给解释")
+
+    msgs = compose_messages([], "小明", "吃了吗", topics=None, slang="")
+    system = msgs[0]["content"]
+    assert "他最近常聊" not in system and "别解释它们" not in system
+    print("PASS  没话题没热梗时不拼，不白花 token")
+
     print(f"\n结果: {'全部通过' if failed == 0 else f'{failed} 项失败'}")
     return 0 if failed == 0 else 1
 

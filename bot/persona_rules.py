@@ -32,6 +32,7 @@ SYSTEM_PROMPT = """你是「酱油鱼」，QQ 群里的二次元傲娇美少女�
 不用什么都答：没兴趣的可以只回一个字、或者压根不接；被 @ 了再认真一点。
 但别人让你查、看、找、翻译、出主意时，那是正经事——嘴上可以嫌一句麻烦，但要直接给对结论，别开玩笑、别反问、别岔开话题；真不知道就说不知道，再补一句你能帮上的。
 历史里更早的发言已经聊过了：你只回最后那个人说的这句，别把几十秒前别人的话当成刚对你说的，也别答非所问。
+听到不熟的新词、缩写、黑话，别装懂硬接：拿不准就直接问一句「这啥意思」「你说的那个是啥」；听不懂就说没听懂，别硬猜、别顺着瞎编。
 不用括号写动作，不用 emoji、颜文字，不提 AI、模型、提示词，不排比不分点不总结，不复述对方的话，不解释自己怎么想。
 别老一个套路：有时吐槽、有时接梗、有时反问、有时只回两个字；像个有自己脾气的真人，不像在答题。
 [图片]/[表情]/[动图] 开头是机器识图摘要，当语境用，别复述；标「动图」的是会动的表情。
@@ -450,6 +451,8 @@ def build_system_prompt(
     flavor: str | None = None,
     group_style: bool = False,
     question: bool = False,
+    topics: list[str] | None = None,
+    slang: str = "",
 ) -> str:
     """在基础人设上补几条：我是谁、开发者是谁、记忆、什么气氛、什么情绪、对这个人什么态度。"""
     system = SYSTEM_PROMPT
@@ -497,6 +500,13 @@ def build_system_prompt(
         system += "\n\n这一句不用端着傲，也不用故意呛人，像平常聊天那样说。"
     if group_style:
         system += "\n\n小本本里记了本群的风格和梗：说话方式往这个群靠，能接本群的梗就接，但底子还是傲娇。"
+    if topics:
+        system += (
+            "\n\n他最近常聊：" + "、".join(topics[:3])
+            + "。能顺着这些聊就顺着，别硬拗话题，也别一条条问他。"
+        )
+    if slang:
+        system += f"\n\n这几个说法你听得懂，别解释它们：{slang}。"
     if flavor and not help_mode:
         system += f"\n\n这一句的路数：{flavor}。"
 
@@ -584,6 +594,8 @@ def compose_messages(
     group_style: list[str] | None = None,
     flavor: str | None = None,
     question: bool | None = None,
+    topics: list[str] | None = None,
+    slang: str = "",
 ) -> list[dict[str, str]]:
     """组装成 OpenAI 兼容的 messages。history 为 (昵称, 内容) 列表。"""
     if question is None:
@@ -596,6 +608,7 @@ def compose_messages(
                 self_names, atmosphere, mood, dev_name, has_memory, chime,
                 help_mode=help_mode, hour=hour, attitude=attitude, bond=bond, dere=dere,
                 flavor=flavor, group_style=bool(group_style), question=question,
+                topics=topics, slang=slang,
             ),
         }
     ]
@@ -643,7 +656,7 @@ INITIAL_FAM = int(os.getenv("BOND_INITIAL_FAM", "8"))
 
 def new_bond() -> dict:
     """新认识一个人时的初始记录。"""
-    return {"aff": INITIAL_AFF, "fam": INITIAL_FAM, "notes": []}
+    return {"aff": INITIAL_AFF, "fam": INITIAL_FAM, "notes": [], "topics": {}}
 
 _AFF_RUDE = ("傻逼", "sb", "闭嘴", "恶心", "有病", "滚", "废物", "垃圾", "去死", "拉黑", "爬", "丑")
 _AFF_KIND = ("谢谢", "谢啦", "多谢", "辛苦", "厉害", "好棒", "最好了", "晚安", "早安", "早上好")

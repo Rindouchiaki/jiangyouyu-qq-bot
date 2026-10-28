@@ -27,6 +27,10 @@ USER_NOTE_CAP = int(os.getenv("DIARY_USER_NOTES", "6"))
 GROUP_NOTE_CAP = int(os.getenv("DIARY_GROUP_NOTES", "8"))
 GROUP_STYLE_CAP = int(os.getenv("DIARY_GROUP_STYLE", "4"))
 NOTE_MAX_CHARS = int(os.getenv("DIARY_NOTE_CHARS", "20"))
+# 话题权重：聊到一次 +1，最多 TOPIC_MAX；两周没提权重减半，低于 TOPIC_MIN_SCORE 就当没这个兴趣
+TOPIC_MAX = int(os.getenv("TOPIC_MAX_WEIGHT", "60"))
+TOPIC_HALF_DAYS = float(os.getenv("TOPIC_HALF_DAYS", "14"))
+TOPIC_MIN_SCORE = float(os.getenv("TOPIC_MIN_SCORE", "1.2"))
 
 _lock = threading.RLock()
 _data: dict = {"users": {}, "groups": {}}
@@ -129,6 +133,43 @@ def set_levels(
             rec["fam"] = max(0, min(100, int(fam)))
         _state["dirty"] = True
         return before, dict(rec)
+
+
+def learn_topics(uid: str, name: str = "", words: list[str] | tuple[str, ...] = (),
+                 now: float | None = None) -> list[str]:
+    """这个人又聊到这些话题了：每个话题权重 +1（封顶 TOPIC_MAX），记下最近一次时间。"""
+    words = [w for w in dict.fromkeys(words) if w]
+    if not words:
+        return []
+    ts = time.time() if now is None else now
+    with _lock:
+        rec = _data["users"].setdefault(str(uid), new_bond())
+        if name:
+            rec["name"] = name
+        topics = rec.setdefault("topics", {})
+        for w in words:
+            item = topics.setdefault(w, {"w": 0.0, "t": ts})
+            item["w"] = min(TOPIC_MAX, float(item.get("w", 0)) + 1.0)
+            item["t"] = ts
+        _state["dirty"] = True
+    return words
+
+
+def top_topics(uid: str, k: int = 3, now: float | None = None) -> list[str]:
+    """最近常聊的话题：按「两周减半」衰减后取前 k 个；没什么记录就返回空。"""
+    ts = time.time() if now is None else now
+    with _lock:
+        rec = _data["users"].get(str(uid)) or {}
+        topics = dict(rec.get("topics") or {})
+    scored: list[tuple[float, str]] = []
+    for word, item in topics.items():
+        weight = float(item.get("w", 0) or 0)
+        days = max(0.0, (ts - float(item.get("t", 0) or 0)) / 86400)
+        score = weight * (0.5 ** (days / TOPIC_HALF_DAYS))
+        if score >= TOPIC_MIN_SCORE:
+            scored.append((score, word))
+    scored.sort(key=lambda pair: -pair[0])
+    return [word for _, word in scored[:k]]
 
 
 def add_user_notes(uid: str, texts: list[str], src: str, now: float | None = None) -> int:

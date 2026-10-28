@@ -39,7 +39,7 @@ def main() -> int:
     assert bonds.group("123")["style"][0]["t"] == "爱玩谐音梗"
     print("PASS  落盘后重新载入不丢")
 
-    assert bonds.user("99999") == {"aff": 10, "fam": 8, "notes": []} and "99999" not in bonds._data["users"]
+    assert bonds.user("99999") == {"aff": 10, "fam": 8, "notes": [], "topics": {}} and "99999" not in bonds._data["users"]
     assert bonds.forget_user("10001") and not bonds.forget_user("10001")
     assert bonds.user("10001")["notes"] == [] and bonds.group("123")["notes"]
     assert bonds.clear_group("123") and bonds.group("123")["notes"] == []

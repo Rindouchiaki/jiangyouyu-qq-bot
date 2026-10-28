@@ -37,7 +37,9 @@ from nonebot.params import CommandArg
 
 import bonds
 import memory
+import slang
 import sticker_lib
+import topics
 import vision
 from persona_rules import (
     AFF_PESTER,
@@ -909,6 +911,18 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     is_dev = bool(DEV_UIN) and user_id == DEV_UIN
     att = attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
 
+    # 话题自学习：说到的类别记一笔（谁说的记谁）；好感高/熟的人才在提示词里顺他的话题，省 token
+    topic_hits = topics.detect(text)
+    if topic_hits:
+        bonds.learn_topics(user_id, name, topic_hits)
+        bonds.save(force=True)
+    bond_topics = bonds.top_topics(user_id) if is_dev or att in ("有好感", "亲近") else []
+    slang_note = slang.hint(text)
+    if bond_topics:
+        logger.debug(f"persona: 带上他的话题 {bond_topics}")
+    if slang_note:
+        logger.debug(f"persona: 热梗 {slang_note}")
+
     # 被叫/接续用短冷却（聊天里 2 秒内接着说是常态），主动插话才用长冷却
     # 氛围只在群里才有意义：私聊里「有火气」会让它凭空炸毛，所以私聊不传
     label, _, _ = judge_atmosphere(list(history), idle) if is_group else (None, True, "")
@@ -1050,6 +1064,8 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         group_notes=group_notes,
         group_style=group_style,
         flavor=pick_flavor(att),
+        topics=bond_topics,
+        slang=slang_note,
     )
 
     try:
