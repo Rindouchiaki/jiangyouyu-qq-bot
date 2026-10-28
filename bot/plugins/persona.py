@@ -1185,7 +1185,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         # 这次只表现出不高兴、不扣好感；之后他还追着 @ 才扣（见 _count_pester_at）
         pester = _bond_touch(user_id, name, 0)
         _upset[(key, user_id)] = [now, 0]
-        # 熟的人追着烦：别别扭扭地岔开；不熟的：二次元式地打发掉
+        # 喜欢的人追着烦：别别扭扭地岔开；好感不高的：二次元式地打发掉
         pester_att = attitude(int(pester.get("aff", 0)), int(pester.get("fam", 0)))
         snub_line = "…不想说这个了啦" if pester_att in ("有好感", "亲近") else "哼，不想聊了"
         _snub_until[key] = now + SNUB_SECONDS

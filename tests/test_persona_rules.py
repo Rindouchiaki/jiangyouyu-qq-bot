@@ -314,12 +314,12 @@ def main() -> int:
     assert night_bond["fam"] == INITIAL_FAM + 2, night_bond  # 按本机时间零点换天
     print("PASS  update_bond：难涨，正常来往守得住，冷落 48 小时起掉，按本机零点换天")
 
-    # 摘日记顺便打分：看整段，冲着别的人和事抱怨不算，要好感的话不算；不熟的人夸不加分
+    # 摘日记顺便打分：看整段，冲着别的人和事抱怨不算，要好感的话不算；好感不高的人夸不加分
     assert parse_user_diary("好感：+1｜记：喜欢原神；在读大三") == (1, ["喜欢原神", "在读大三"])
     assert parse_user_diary("好感：-2｜记：无") == (-2, []) and parse_user_diary("好感: 5 | 记: 常熬夜") == (2, ["常熬夜"])
     assert parse_user_diary("喜欢原神") == (0, ["喜欢原神"]) and parse_user_diary("") == (0, [])
     assert "不算对我" in diary_user_prompt("普通") and "要好感" in diary_user_prompt("亲近")
-    assert "不熟" in diary_user_prompt("普通") and "不熟" not in diary_user_prompt("有好感")
+    assert "没什么好感" in diary_user_prompt("普通") and "没什么好感" not in diary_user_prompt("有好感")
     assert AFF_PESTER < 0 and PESTER_AT_COUNT == 3
     print("PASS  parse_user_diary / diary_user_prompt：好感看整段打分")
 
@@ -349,7 +349,7 @@ def main() -> int:
     assert "热情" in ATTITUDE_LINES["亲近"] and "傲" not in ATTITUDE_LINES["普通"]  # 平时态度看积极性，不是句句傲
     print("PASS  平时正常聊：态度看热不热情，抽中才突然冒一句傲娇")
 
-    # 弱气是内在：不熟的人面前装凶会回嘴，熟了被惹只会委屈；烦了也按好感分
+    # 弱气是内在：好感不高的人面前装凶会回嘴，喜欢的人面前被惹只会委屈；烦了也按好感分
     def sys_of(**kw):
         return compose_messages([], "小红", "在吗", **kw)[0]["content"]
     assert "傲娇式炸毛" in sys_of(mood="炸毛", attitude="普通") and "干嘛欺负我" not in sys_of(mood="炸毛", attitude="普通")
@@ -364,7 +364,7 @@ def main() -> int:
     assert "有点欠" not in sys_of(hour=3) and "底子还是你自己" in sys_of(group_style=["爱玩谐音梗"])
     assert all("啧" not in p for p in SEARCH_PRELUDES) and all(p.startswith("啧") for p in SEARCH_PRELUDES_COLD)
     assert "不想理你" in ATTITUDE_LINES["讨厌"] and "所以呢" not in ATTITUDE_LINES["讨厌"]
-    print("PASS  弱气是内在：不熟的装凶回嘴，熟的委屈不回嘴；讨厌的人求助可以啧一声不帮")
+    print("PASS  弱气是内在：好感不高的装凶回嘴，喜欢的委屈不回嘴；讨厌的人求助可以啧一声不帮")
 
     # 害羞话题：认得出、按好感反应，追问会躲（不直接改好感）
     me = ("酱油鱼", "鱼鱼")
