@@ -13,7 +13,7 @@
 每条 ≤ REPLY_MAX_CHARS 字、一次最多 REPLY_MAX_LINES 条，去掉 emoji / 括号动作 / AI 字样。
 
 联网（web_search.py）：有人跟她说话、像是要查东西时把 DeepSeek 搜索交给模型，模型自己决定查不查。
-主动找人：私聊过、好感高的人沉默一阵后偶尔主动发一两句（PROACTIVE_*）。
+主动找人：私聊过的亲近的人，在平时常聊的钟点有一阵没说话，就找点话题聊聊（PROACTIVE_*）。
 学新梗：跟着日记一起从聊天里挑没见过的说法，网上查得到的算大众梗，查不到的只在原来的群 / 私聊里用。
 
 小本本（bonds.py）：每个群友按 QQ 号一份好感度、熟悉度和简短日记，群聊私聊共用；
@@ -210,11 +210,11 @@ SLANG_PLAY_GAP = float(os.getenv("SLANG_PLAY_GAP", "1800"))
 # 主动找人：只找私聊过、好感「有好感」以上的人（开发者保底就是「有好感」）
 PROACTIVE_ENABLE = os.getenv("PROACTIVE_ENABLE", "1").strip() not in ("0", "false", "False")
 PROACTIVE_CHECK_SEC = float(os.getenv("PROACTIVE_CHECK_SEC", "600"))
-PROACTIVE_PROB = float(os.getenv("PROACTIVE_PROB", "0.15"))
-PROACTIVE_MIN_SILENCE_H = float(os.getenv("PROACTIVE_MIN_SILENCE_H", "6"))
-PROACTIVE_MIN_GAP_H = float(os.getenv("PROACTIVE_MIN_GAP_H", "20"))
+PROACTIVE_PROB = float(os.getenv("PROACTIVE_PROB", "0.3"))
+PROACTIVE_SILENCE_MIN = float(os.getenv("PROACTIVE_SILENCE_MIN", "40"))
+PROACTIVE_MIN_GAP_H = float(os.getenv("PROACTIVE_MIN_GAP_H", "3"))
 PROACTIVE_MAX_UNANSWERED = int(os.getenv("PROACTIVE_MAX_UNANSWERED", "2"))
-PROACTIVE_DAILY_MAX = int(os.getenv("PROACTIVE_DAILY_MAX", "3"))
+PROACTIVE_DAILY_MAX = int(os.getenv("PROACTIVE_DAILY_MAX", "6"))
 PROACTIVE_QUIET = os.getenv("PROACTIVE_QUIET", "1-9").strip()
 
 _data_env = os.getenv("PERSONA_DATA_DIR", "").strip()
@@ -1278,6 +1278,8 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     bond = _bond_touch(user_id, name, 0) if addressed else bonds.user(user_id)
     if not is_group:
         bonds.mark_private(user_id, now)
+    if addressed and is_conversation_ending(focus["text"]):
+        bonds.mark_bye(user_id, now)
     att = attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
 
     # 话题自学习：说到的类别记一笔（谁说的记谁）；好感高/熟的人才在提示词里顺他的话题，省 token
@@ -1707,7 +1709,7 @@ async def _proactive_tick() -> None:
         att = attitude(int(rec.get("aff", 0)), int(rec.get("fam", 0)))
         if proactive_due(
             rec, now, att,
-            PROACTIVE_MIN_SILENCE_H * 3600, PROACTIVE_MIN_GAP_H * 3600, PROACTIVE_MAX_UNANSWERED,
+            PROACTIVE_SILENCE_MIN * 60, PROACTIVE_MIN_GAP_H * 3600, PROACTIVE_MAX_UNANSWERED,
         ):
             cands.append((uid, rec, att))
     # 每次检查只按概率找一个人，冒泡的时间点就不规律
@@ -1766,8 +1768,8 @@ async def _start_proactive() -> None:
         # 留引用，免得任务被回收（见 CHANGELOG.md fork#8）
         _proactive_task.append(asyncio.create_task(_proactive_loop()))
         logger.info(
-            f"persona: 主动找人已开（好感「有好感」以上、私聊沉默 {PROACTIVE_MIN_SILENCE_H:.0f} 小时后，"
-            f"每天最多 {PROACTIVE_DAILY_MAX} 次，{PROACTIVE_QUIET} 点不打扰）"
+            f"persona: 主动找人已开（只找亲近的人，平时常聊的钟点里没说话满 {PROACTIVE_SILENCE_MIN:.0f} 分钟，"
+            f"同一人隔 {PROACTIVE_MIN_GAP_H:.0f} 小时，每天最多 {PROACTIVE_DAILY_MAX} 次，{PROACTIVE_QUIET} 点不打扰）"
         )
 
 

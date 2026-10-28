@@ -17,7 +17,9 @@ import time
 from pathlib import Path
 
 import devs
-from persona_rules import INITIAL_AFF, INITIAL_FAM, bond_view, dev_floor, merge_notes, new_bond, update_bond
+from persona_rules import (
+    INITIAL_AFF, INITIAL_FAM, bond_view, dev_floor, merge_notes, new_bond, note_active_hour, update_bond,
+)
 
 # 初始好感度迁移标记：老数据里「刚认识」的人抬到礼貌底线，只做一次
 FLOOR_VERSION = 1
@@ -115,6 +117,7 @@ def touch(uid: str, name: str, delta: int, now: float | None = None) -> dict:
     with _lock:
         rec = _data["users"].get(str(uid)) or {"notes": []}
         rec.update(update_bond(rec, delta, now, dev=devs.is_dev(uid)))
+        rec.update(note_active_hour(rec, rec["last"]))
         rec["name"] = name
         _data["users"][str(uid)] = rec
         _state["dirty"] = True
@@ -246,6 +249,16 @@ def mark_private(uid: str, now: float | None = None) -> None:
             return
         rec["lp"] = now or time.time()
         rec["pu"] = 0
+        _state["dirty"] = True
+
+
+def mark_bye(uid: str, now: float | None = None) -> None:
+    """对方说了「睡了 / 拜拜」：一阵子不主动找他（见 persona_rules.proactive_due）。"""
+    with _lock:
+        rec = _data["users"].get(str(uid))
+        if rec is None:
+            return
+        rec["bye"] = now or time.time()
         _state["dirty"] = True
 
 

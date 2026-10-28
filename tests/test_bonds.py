@@ -26,6 +26,9 @@ def main() -> int:
     judged = bonds.judge("10001", 2, now=2100.0)
     assert judged["aff"] == rec["aff"] + 2 and judged["fam"] == rec["fam"] and judged["last"] == rec["last"], judged
     assert bonds.judge("88888", 2) is None and "88888" not in bonds._data["users"]  # 打分不建新记录
+    assert sum(bonds._data["users"]["10001"]["hrs"]) == 1  # 同一个小时里聊几句只记一次常聊的钟点
+    bonds.mark_bye("10001", 2200.0)
+    assert bonds._data["users"]["10001"]["bye"] == 2200.0
     assert visible_notes(rec["notes"], True) == ["喜欢原神"]
     assert visible_notes(rec["notes"], False) == ["喜欢原神", "最近在找工作"]
     print("PASS  群聊私聊共用一条记录，私聊听来的只在私聊用")

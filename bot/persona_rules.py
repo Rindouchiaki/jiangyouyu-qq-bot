@@ -582,8 +582,8 @@ def build_system_prompt(
 
     if proactive:
         system += (
-            "\n\n现在没人跟你说话，是你自己突然想找他聊两句：一两条就好，像随手发的消息。"
-            "可以说说你在干嘛、接上次聊的事、或者问问小本本上记的他的事；"
+            "\n\n平时这个点你们常聊，他有一阵没说话了，你想找点话题跟他聊聊：一两条就好，像随手发的消息。"
+            "可以说说你在干嘛、接上次聊的事、聊聊他常聊的话题、或者问问小本本上记的他的事；"
             "别发「在吗」「好久不见」这种开场白，别解释为什么找他。"
         )
 
@@ -1550,22 +1550,54 @@ def in_quiet_hours(hour: int, spec: str = "1-8") -> bool:
     return start <= hour < end if start < end else hour >= start or hour < end
 
 
+# 平时常聊的钟点：每个钟点一天只记一次，满 HABIT_MIN 天、且不少于最常聊那个钟点的 1/4 才算
+HABIT_MIN = int(os.getenv("PROACTIVE_HABIT_MIN", "3"))
+HABIT_CAP = 60
+# 说了「睡了 / 拜拜」之后这么久不去找
+BYE_QUIET_SEC = 8 * 3600
+
+
+def note_active_hour(rec: dict, now: float) -> dict:
+    """跟她聊了一句：这个钟点记一笔（hrs 是 24 个钟点的天数，hk 记上次记到哪个小时，同一小时不重复记）。"""
+    hour_key = int(now // 3600)
+    if rec.get("hk") == hour_key:
+        return rec
+    hrs = list(rec.get("hrs") or [0] * 24)[:24]
+    hrs += [0] * (24 - len(hrs))
+    hrs[datetime.fromtimestamp(now).hour] += 1
+    if max(hrs) > HABIT_CAP:
+        # 封顶后整体减半，旧习惯慢慢淡掉
+        hrs = [h // 2 for h in hrs]
+    return {**rec, "hrs": hrs, "hk": hour_key}
+
+
+def habit_hours(rec: dict, min_days: int = HABIT_MIN) -> set[int]:
+    """平时常跟她聊的钟点。"""
+    hrs = list(rec.get("hrs") or [])
+    if not hrs or max(hrs) < min_days:
+        return set()
+    floor = max(min_days, max(hrs) / 4)
+    return {h for h, n in enumerate(hrs) if n >= floor}
+
+
 def proactive_due(
     rec: dict,
     now: float,
     att: str | None,
-    min_silence: float = 6 * 3600,
-    min_gap: float = 20 * 3600,
+    min_silence: float = 40 * 60,
+    min_gap: float = 3 * 3600,
     max_unanswered: int = 2,
 ) -> bool:
-    """这个人现在能不能主动找：私聊过、好感够、沉默够久、离上次主动够久、没被连着晾。"""
-    last_private = float(rec.get("lp") or 0)
-    if last_private <= 0:
+    """这个人现在能不能主动找：亲近、私聊过、这会儿是平时常聊的钟点、有一阵没说话、离上次主动够久、没被连着晾、没刚说过晚安。"""
+    if att != "亲近" or float(rec.get("lp") or 0) <= 0:
         return False
-    if att not in ("有好感", "亲近"):
+    if datetime.fromtimestamp(now).hour not in habit_hours(rec):
         return False
     if int(rec.get("pu") or 0) >= max_unanswered:
         return False
-    if now - last_private < min_silence:
+    last_talk = max(float(rec.get("lp") or 0), float(rec.get("last") or 0))
+    if now - last_talk < min_silence:
+        return False
+    if now - float(rec.get("bye") or 0) < BYE_QUIET_SEC:
         return False
     return now - float(rec.get("pa") or 0) >= min_gap
