@@ -185,6 +185,10 @@ def main() -> int:
     assert not is_game_command("绝区零好玩吗", prefixes) and not is_game_command("", prefixes)
     assert not is_game_command("酱油鱼 sr深渊", prefixes)
     assert is_game_command("扫码 登录", prefixes) and is_game_command("sr 深渊", prefixes)
+    ww = ("ww", "zzz")
+    assert is_game_command("ww帮助", ww) and is_game_command("WW登录", ww) and is_game_command("zzz抽卡记录", ww)
+    assert not is_game_command("www笑死", ww) and not is_game_command("www.bilibili.com/video", ww)
+    assert not is_game_command("zzzz困死了", ww)
     print("PASS  is_game_command：核心指令人设不接")
 
     # 代码默认前缀要覆盖锁文件里每个插件的前缀，否则装了插件人设还会抢答

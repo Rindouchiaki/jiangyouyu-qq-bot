@@ -1,5 +1,5 @@
 {
-  "_说明": "外部组件锁定的版本。commit / version 由 .github/workflows/update-deps.yml 自动更新（开 PR），合并后在电脑上双击「一键更新.cmd」生效。早柚核心插件：game 是游戏名，prefixes 是人设要避让的指令前缀，help 是冒烟测试发的帮助指令；新增插件就照着加一项。",
+  "_说明": "外部组件锁定的版本。commit / version 由 .github/workflows/update-deps.yml 自动更新（开 PR），合并后在电脑上双击「一键更新.cmd」生效。早柚核心插件：game 是游戏名，prefixes 是人设要避让的指令前缀，help 是冒烟测试发的帮助指令，login 是插件自己的登录指令（冒烟测试查它不进群、私聊回到临时会话）；新增插件就照着加一项。",
   "snowluma": {
     "version": "v2.2.1",
     "asset": "SnowLuma-v2.2.1-win-x64.zip",
@@ -45,6 +45,16 @@
         "bbb"
       ],
       "help": "bbb帮助"
+    },
+    "XutheringWavesUID": {
+      "repo": "https://github.com/Loping151/XutheringWavesUID.git",
+      "commit": "f0a8f88b586342310e4d9d5341fa321fb838f05d",
+      "game": "鸣潮",
+      "prefixes": [
+        "ww"
+      ],
+      "help": "ww帮助",
+      "login": "ww登录"
     }
   }
 }

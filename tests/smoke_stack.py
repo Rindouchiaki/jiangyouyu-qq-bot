@@ -5,7 +5,7 @@ r"""整套冒烟测试：模拟 SnowLuma 连上 NoneBot，发几条消息看机�
     .venv\Scripts\python tests\smoke_stack.py --core                 # 连已经在跑的整套（启动全部.ps1 起的）
 
 检查：/ping、@ 机器人有回复、群里「扫码登录」不往群里发东西；
-加 --core 再查：每个游戏插件回帮助图（external.lock.json 里的 help）、临时会话里扫码登录的回复都回到临时会话、核心的二维码文案和 gscore_guard 对得上。
+加 --core 再查：每个游戏插件回帮助图（external.lock.json 里的 help）、临时会话里扫码登录和各插件自己的登录指令的回复都回到临时会话、gscore_guard 认的登录文案都还在源码里。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import websockets
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "bot"))
-from gscore_guard import QR_CAPTION  # noqa: E402
+from gscore_guard import LOGIN_MARKERS, QR_CAPTION  # noqa: E402
 
 GROUP = 987654321
 DEV = 100000002
@@ -125,8 +125,8 @@ def check(ok: bool, name: str, detail: str = "") -> None:
         FAILED.append(name)
 
 
-def plugins_to_check(core_dir: str) -> list[tuple[str, str]]:
-    """锁文件里的游戏插件和它们的帮助指令；给了核心目录就只查实际装了的。"""
+def plugins_to_check(core_dir: str) -> list[dict]:
+    """锁文件里的游戏插件（带 name / help / login）；给了核心目录就只查实际装了的。"""
     lock = json.loads((ROOT / "external.lock.json").read_text(encoding="utf-8"))
     out = []
     for name, item in lock["git"].items():
@@ -135,7 +135,7 @@ def plugins_to_check(core_dir: str) -> list[tuple[str, str]]:
         if core_dir and not (Path(core_dir) / "gsuid_core" / "plugins" / name).is_dir():
             print(f"SKIP  {name} 没装")
             continue
-        out.append((name, item["help"]))
+        out.append({"name": name, **item})
     return out
 
 
@@ -176,7 +176,8 @@ async def run(args, token: str, self_id: int) -> None:
 
         # 每个装了的游戏插件发一次帮助，要回图；核心第一次启动要装依赖、下资源，第一个多等一会儿
         wait = args.core_wait
-        for name, help_cmd in plugins_to_check(args.core_dir):
+        plugins = plugins_to_check(args.core_dir)
+        for name, help_cmd in ((p["name"], p["help"]) for p in plugins):
             deadline = time.time() + wait
             got = []
             while time.time() < deadline and not got:
@@ -201,10 +202,25 @@ async def run(args, token: str, self_id: int) -> None:
         got = await c.collect(8)
         check(not any(is_group(a) for a in got), "群里带空格的「扫码 登录」也不进群", str(got))
 
+        # 插件自己的登录指令（鸣潮 ww登录 等）：群里不进群、私聊提醒；临时会话里的回复回到临时会话
+        for i, p in enumerate(x for x in plugins if x.get("login")):
+            cmd, user = p["login"], 10100 + i * 2
+            await c.send(cmd, user=user)
+            got = await c.collect(8)
+            check(not any(is_group(a) for a in got), f"群里「{cmd}」不往群里发东西", str(got))
+            check(any(a["action"] == "send_private_msg" and a.get("user_id") == user for a in got),
+                  f"群里「{cmd}」私聊提醒本人", str(got))
+            await c.send(cmd, user=user + 1, private=True, temp=True)
+            got = await c.collect(30, lambda g: g)
+            check(bool(got) and all(not is_group(a) and a.get("user_id") == user + 1 and a.get("group_id") == GROUP
+                                    for a in got), f"临时会话里「{cmd}」的回复回到临时会话", str(got))
+
     if args.core_dir:
-        qr = Path(args.core_dir) / "gsuid_core" / "utils" / "cookie_manager" / "qrlogin.py"
-        text = qr.read_text(encoding="utf-8") if qr.is_file() else ""
-        check(QR_CAPTION in text, "核心二维码文案和 gscore_guard.QR_CAPTION 一致", f"{qr} 里找不到「{QR_CAPTION}」")
+        # 群内拦截靠插件里写死的登录文案 / 链接认，插件升级改了文案就失效：逐个去源码里找
+        sources = [f.read_text(encoding="utf-8", errors="ignore") for f in Path(args.core_dir).glob("gsuid_core/**/*.py")]
+        for marker in LOGIN_MARKERS:
+            check(any(marker in t for t in sources), f"登录文案「{marker}」还在核心或插件源码里",
+                  "gscore_guard.LOGIN_MARKERS 要跟着改")
 
 
 def main() -> int:
