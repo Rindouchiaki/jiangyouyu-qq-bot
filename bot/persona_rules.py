@@ -1574,12 +1574,11 @@ def proactive_due(
     now: float,
     att: str | None,
     min_silence: float = 40 * 60,
-    min_gap: float = 3 * 3600,
     max_unanswered: int = 2,
 ) -> bool:
-    """这个人现在能不能主动找：亲近、这会儿是平时常私聊的钟点、私聊有一阵没说话、离上次主动够久、没被连着晾。
+    """这个人现在能不能主动找：亲近、这会儿是平时常私聊的钟点、私聊有一阵没说话、没被连着晾。
 
-    只看私聊：群里聊得再多也不算常聊、也不算刚聊过。
+    只看私聊：群里聊得再多也不算常聊、也不算刚聊过。她主动发的也算私聊里说过话，免得没人回就接连找。
     """
     if att != "亲近" or float(rec.get("lp") or 0) <= 0:
         return False
@@ -1587,6 +1586,4 @@ def proactive_due(
         return False
     if int(rec.get("pu") or 0) >= max_unanswered:
         return False
-    if now - float(rec.get("lp") or 0) < min_silence:
-        return False
-    return now - float(rec.get("pa") or 0) >= min_gap
+    return now - max(float(rec.get("lp") or 0), float(rec.get("pa") or 0)) >= min_silence

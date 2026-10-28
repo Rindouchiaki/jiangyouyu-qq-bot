@@ -211,7 +211,6 @@ PROACTIVE_ENABLE = os.getenv("PROACTIVE_ENABLE", "1").strip() not in ("0", "fals
 PROACTIVE_CHECK_SEC = float(os.getenv("PROACTIVE_CHECK_SEC", "600"))
 PROACTIVE_PROB = float(os.getenv("PROACTIVE_PROB", "0.3"))
 PROACTIVE_SILENCE_MIN = float(os.getenv("PROACTIVE_SILENCE_MIN", "40"))
-PROACTIVE_MIN_GAP_H = float(os.getenv("PROACTIVE_MIN_GAP_H", "3"))
 PROACTIVE_MAX_UNANSWERED = int(os.getenv("PROACTIVE_MAX_UNANSWERED", "2"))
 PROACTIVE_DAILY_MAX = int(os.getenv("PROACTIVE_DAILY_MAX", "6"))
 
@@ -1705,7 +1704,7 @@ async def _proactive_tick() -> None:
         att = attitude(int(rec.get("aff", 0)), int(rec.get("fam", 0)))
         if proactive_due(
             rec, now, att,
-            PROACTIVE_SILENCE_MIN * 60, PROACTIVE_MIN_GAP_H * 3600, PROACTIVE_MAX_UNANSWERED,
+            PROACTIVE_SILENCE_MIN * 60, PROACTIVE_MAX_UNANSWERED,
         ):
             cands.append((uid, rec, att))
     # 每次检查只按概率找一个人，冒泡的时间点就不规律
@@ -1765,7 +1764,7 @@ async def _start_proactive() -> None:
         _proactive_task.append(asyncio.create_task(_proactive_loop()))
         logger.info(
             f"persona: 主动找人已开（只找亲近的人，平时常聊的钟点里没说话满 {PROACTIVE_SILENCE_MIN:.0f} 分钟，"
-            f"同一人隔 {PROACTIVE_MIN_GAP_H:.0f} 小时，每天最多 {PROACTIVE_DAILY_MAX} 次）"
+            f"每天最多 {PROACTIVE_DAILY_MAX} 次）"
         )
 
 

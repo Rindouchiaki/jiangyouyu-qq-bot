@@ -608,7 +608,8 @@ def main() -> int:
     assert not proactive_due({**rec, "lp": now - 20 * 60}, now, "亲近")  # 私聊刚聊过
     assert proactive_due({**rec, "last": now - 60}, now, "亲近")  # 群里刚聊过不算
     assert not proactive_due({**rec, "pu": 2}, now, "亲近")  # 连着两次没回
-    assert not proactive_due({**rec, "pa": now - 3600}, now, "亲近")  # 一小时前刚找过
+    assert not proactive_due({**rec, "pa": now - 20 * 60}, now, "亲近")  # 刚主动发过，私聊里还不到 40 分钟
+    assert proactive_due({**rec, "pa": now - 41 * 60, "pu": 1}, now, "亲近")  # 不用隔几小时，冷了一会儿就能再找
     assert not proactive_due({**rec, "lp": 0}, now, "亲近") and not proactive_due({}, now, "亲近")  # 没私聊过
     proactive_msgs = compose_messages([], "小明", "", proactive=True)
     assert "突然想找小明" in proactive_msgs[-1]["content"] and "主动" not in proactive_msgs[-1]["content"]
