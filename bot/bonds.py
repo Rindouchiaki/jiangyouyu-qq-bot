@@ -192,6 +192,21 @@ def group(gid: str) -> dict:
         return dict(_data["groups"].get(str(gid)) or {"notes": [], "style": []})
 
 
+def known_groups() -> list[str]:
+    """记过群日记或群风格的群号。"""
+    with _lock:
+        return [gid for gid, rec in _data["groups"].items() if rec.get("notes") or rec.get("style")]
+
+
+def known_people(ids: object) -> list[tuple[str, dict]]:
+    """这些 QQ 号里她有记录的人（只读副本，开发者按保底算），按熟悉度从高到低。"""
+    wanted = {str(i) for i in ids}
+    with _lock:
+        recs = [(uid, dict(rec)) for uid, rec in _data["users"].items() if uid in wanted]
+    recs = [(uid, dev_floor(rec) if devs.is_dev(uid) else rec) for uid, rec in recs]
+    return sorted(recs, key=lambda pair: -int(pair[1].get("fam", 0)))
+
+
 def add_group_notes(gid: str, texts: list[str], now: float | None = None) -> int:
     if not texts:
         return 0

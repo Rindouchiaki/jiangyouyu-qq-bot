@@ -23,6 +23,12 @@ def is_dev(uid: object) -> bool:
     return str(uid).strip() in DEVS
 
 
+def only_devs(member_ids: object, bot_id: object = "") -> bool:
+    """这个对话里除了机器人自己全是开发者（私聊传对方一个人，群传成员列表）：后台数据只在这种对话里给看。"""
+    others = {str(m).strip() for m in member_ids} - {str(bot_id).strip(), ""}
+    return bool(others) and all(m in DEVS for m in others)
+
+
 def dev_name(uid: object) -> str:
     """开发者的统一名字；不是开发者返回空串。"""
     names = DEVS.get(str(uid).strip())

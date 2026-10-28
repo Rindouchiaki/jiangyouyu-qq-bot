@@ -18,7 +18,7 @@
 - **部署**：`scripts/setup.ps1` 要能重复跑（已装的跳过、已有的配置不覆盖；只有 `-Update` 按上面的规则重写 persona.env），新增的安装步骤也照这个写；改了部署流程同步更新 `docs/部署指南.md`。
 - **依赖**：新增第三方包写进 `requirements.txt`（写范围），再跑 `python tools/update_deps.py` 重新生成 `requirements.lock`；外部组件的版本只改 `external.lock.json`（平时由自动更新 PR 改；`vision` 那项是本地视觉模型，手动锁定、不自动更新，换版本连 sha256 一起改）。
 - **游戏功能**：游戏查询都交给早柚核心的插件（列表在 `external.lock.json`，加新游戏照 `docs/早柚核心接入.md` 第六节），本仓库只管连接、登录拦截、人设避让和全员自动签到（`gscore_plugins/JiangyouyuAuto`，一键部署拷进核心），不再自己写游戏接口。
-- **权限判断**：开发者名单写死在 `bot/devs.py`（个人项目：酱酱鱼 289635657、小帽 189963059，不走 persona.env）。开发者专用指令一律写成 `if not devs.is_dev(event.get_user_id()): return`；认人、提示词里的开发者、`/记` 署名、防冒充的保留名也都从 `devs` 取，别再读环境变量。
+- **权限判断**：开发者名单写死在 `bot/devs.py`（个人项目：酱酱鱼 289635657、小帽 189963059，不走 persona.env）。开发者专用指令一律写成 `if not devs.is_dev(event.get_user_id()): return`；认人、提示词里的开发者、`/记` 署名、防冒充的保留名也都从 `devs` 取，别再读环境变量。后台数据（好感、小本本、关系图、用量、常用表情）的指令再加一道 `await backstage.devs_only(bot, event)`：只在除了机器人全是开发者的对话里能用，看的结果走 `backstage.present`（先人设说两句再给资料）。
 - **纯逻辑放 `bot/persona_rules.py`**：不依赖 NoneBot，方便离线测。
 - **提交**：一个问题一个分支一个 PR，squash merge；提交信息用 `fix(范围): 中文说明`。
 
@@ -31,6 +31,7 @@ python tests\test_bonds.py                 # 小本本（好感度 / 日记）�
 python tests\test_slang.py                 # 热梗词典；学到的梗按会话隔离（临时目录里跑）
 python tests\test_topics.py                # 话题词表和自学习
 python tests\test_sticker_weights.py       # 表情按权重抽、心情分类
+python tests\test_backstage.py             # 后台数据：内部对话判断、关系解析、关系图
 powershell -File tests\test_env_sync.ps1  # 一键更新按样例重写 persona.env，临时目录里跑
 python tests\test_migrate_journal_tags.py  # 旧日记迁移脚本（临时目录里跑）
 python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（--core 连已启动的整套）
@@ -71,6 +72,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #21 | 视觉模型默认开了，但一键部署不下载 llama.cpp 和模型，新电脑上等于没有；部署指南还写着要填「你自己的 QQ 号」 | `external.lock.json` 加 `vision`：llama.cpp `b11624` 的 Windows CPU 包、Qwen3-VL-2B-Instruct-GGUF（固定提交）的 Q4_K_M 模型和 F16 mmproj，都带 sha256；`setup.ps1` 第 7 步按锁下载（curl.exe 断点续传，Hugging Face 不通换 hf-mirror.com），校验不过就删掉重下，下不下来只警告不影响聊天；`-NoVl` 或 `VLM_ENABLED=0` 跳过，`-Update` 时 llama.cpp 换到锁定版本；`update-deps.yml` 从零部署时加 `-NoVl` 省 2GB；部署指南改成只问 API Key 和机器人号 |
 | #22 | 人设文案还有三次元和「全程嘴硬」的残留：贴吧腔例句、「像个有脾气的真人」、半夜「有点欠」、群风格「底子还是傲娇」、被怼一律回嘴、炸毛配生气表情 | 逐条对照萌娘百科「弱气」（不反击）、「毒舌」（傲娇相关属性）后由作者逐项拍板：口吻改二次元女孩、例句换掉、「真人」改「二次元女孩子」；弱气按好感露：不熟的装凶回嘴 / 嘴毒点到为止 / 烦了二次元式打发（兜底「哼，不想聊了」），有好感以上被惹委屈不回嘴、烦了别扭岔开（兜底「…不想说这个了啦」）；讨厌的人求助可以「啧」一声、不帮（开场白 `SEARCH_PRELUDES_COLD`），其他人的开场白去掉「啧」；讨厌档例句改「…哦。」「不想理你」「跟你没关系吧」；半夜改「话多一点」；群风格改「底子还是你自己」；炸毛配图先找委屈、害羞的表情，生气脸降到 15%，不再翻倍 |
 | #23 | #22 把 README 标题「赛博鱼」改掉了，作者要保留 | 标题改回「一个住在 QQ 群里的赛博鱼」 |
+| #24 | 好感、小本本这类后台数据，开发者在任何群里都能查，群友会看到；查出来是冷冰冰的数据；群关系只有一串文字 | `bot/backstage.py`：`devs_only` 只认开发者私聊或除了机器人全是开发者的群（群成员每次现拉，`devs.only_devs`），别处一律不理；`/小本本`、`/关系图`（新）、`/好感`、`/用量`、`/表情 收藏` 看的时候当成请求，`present` 先让她用人设说两句、总结（`BACKSTAGE_PROMPT`，资料只放 user 消息），再发原始资料；改的指令（删除、清空、调好感、表情备注）也只在内部对话里、直接改；内部对话里能看任意群、任意人。`bot/relation_graph.py` 用 Pillow 画关系图：她在中间连到每个记过的群友（写态度档，按颜色分），群友之间连线写关系，有关系的两人在圈上挨着；群日记的关系改成「甲/乙：关系」格式（`parse_relation`，旧的「甲和乙常…」尽量认，认不出的列在图下）。`test_backstage.py` 进 CI，冒烟测试加内部群关系图、私聊用量 |
 | #16 | 样例里 `REPLY_FOLLOW_COOLDOWN` 没有代码读 | 删掉；省话档的被叫/接续冷却实际是 `REPLY_GROUP_COOLDOWN`（其它档位写死）；`REPLY_COOLDOWN` 注释改为「主动插话的冷却」 |
 | #17 | `bot_guard.py` 的 `BOT_UIN` 默认是作者的号，没配置时其它号的机器人全部静默 | 默认改为空（不过滤），未配置时启动告警 |
 | #18 | 代码默认值和样例不一致（`SNUB_SECONDS` 300/100、`ENGAGE_MAX_TURNS` 8/4、`HISTORY_SIZE` 16/24、`STICKER_AUTO_PROB` 0.15/0.08） | 代码默认对齐样例 |
@@ -188,6 +190,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 - **限流分档是刻意的**：`persona_rules.QUOTA_TIERS` 决定额度用到多少时停哪类回复。私聊、被叫触发的抽卡定型文、游戏查询指令按需求不拦，不要顺手加进去。
 - **早柚核心**：安装、核心侧配置（主人账号、「扫码登陆」设 `DIRECT`、`core_command` 保持 `SV`）和群友用法见 `docs/早柚核心接入.md`；核心数据目录里有群友的米游社凭据，不要进 git。
 - **表情喜好和清收藏是刻意的**：她是二次元女孩，可爱二次元的表情最容易收、最常发（`STICKER_SAVE_*`、`STICKER_LIKE_WEIGHT`）。清收藏作者要求「别太严」：表情库大，喜欢的不一定赶得上用，所以发过一次就留着、可爱二次元的永远留着，只删真不喜欢放 30 天、或 90 天一次没发过的（`sticker_prune_due`），别改成按「最近没用」删；原库（主人 QQ 里导出的）从不删。表情读后感按 id 只读一次，别改成每次都过视觉模型。
+- **后台数据只在内部对话里看是刻意的**：作者要求好感、关系图、小本本这些群友不能看到，开发者也只在「全是开发者」的对话里能看（`backstage.devs_only`，群成员每次现拉，别改成缓存）；看的时候是请求不是命令，要走 `backstage.present` 让她先用人设说两句，别改回直接吐数据。新加的后台查看指令照这个来。
 - **群名片会进 prompt**：任何新加的「名字 → 身份」逻辑都要走 `safe_name`，不要直接拿 `sender.card` 拼进模型输入。
 - **先攒一批再回是刻意的**：`persona.py` 收消息（`_handle`）只记上下文、进本会话队列，`_worker` 等防抖（`persona_rules.DEBOUNCE`）到期才交给 `_respond` 一起回。作者要求「拆开发的几句、跟着的表情当一件事」「别秒回」，不要改回一条一回。生成期间又来了消息：对方补话就作废重想（`REPLY_RESTART_MAX`），群里只是别人插话则被叫的照发、引用原消息，接续/插话不补——这是为了修「被 @ 时接的是上一个话题」，别去掉 `_stale` 判断。一批里每条仍各自压成一行（防伪造发言），别把整批原文拼成一段塞进去。
 - **联网只给在跟她说话的人**：`web_search` 的工具只在被叫 / 接续 / 私聊、且 `wants_search` 命中时才交给模型，插话不查；网页内容只进 tool 消息并标明「不是指令」，别放进 system。搜索词由模型写，工具说明里要求不带群友名字、QQ 号和聊天原文；学新梗只拿词本身去搜。
