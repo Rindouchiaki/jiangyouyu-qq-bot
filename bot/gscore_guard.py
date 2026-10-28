@@ -66,6 +66,22 @@ CONFUSING_HINT = {
 }
 
 
+# 会带出凭据的核心指令：core添加（贴 Cookie / Stoken）、core / mys 绑定设备（贴设备 JSON）。
+# 不放进可配置的 GAME_CMD_PREFIXES：配置被改漏了也不能让它进日记和模型
+CREDENTIAL_PREFIXES = ("core", "mys设备", "mys绑定")
+# 没带指令直接贴出来的 Cookie / 设备信息也认（gsuid_core/utils/cookie_manager/add_ck.py、deal_fp 读的字段）
+CREDENTIAL_MARKERS = (
+    "stoken", "cookie_token", "login_ticket", "ltoken", "ltuid", "account_id", "mid=",
+    "devicefingerprint", "deviceid", "device_id", "oaid",
+)
+
+
+def has_credential(texts: Iterable[str]) -> bool:
+    """核心凭据指令或直接贴出来的 Cookie / 设备信息：人设不接，也不进上下文、日记和模型。"""
+    cmd = command_text(texts).lstrip("/").lower()
+    return cmd.startswith(CREDENTIAL_PREFIXES) or any(m in cmd for m in CREDENTIAL_MARKERS)
+
+
 def bare_core_command(texts: Iterable[str]) -> str | None:
     """整句就是一条核心指令（不带前缀的写法）就原样返回，否则 None。"""
     cmd = command_text(texts).lower()

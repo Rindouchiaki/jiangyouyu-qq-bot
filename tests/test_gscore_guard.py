@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 from gscore_guard import (  # noqa: E402
     QR_CAPTION,
     bare_core_command,
+    has_credential,
     command_text,
     confusing_hint,
     is_group_send,
@@ -82,6 +83,14 @@ def main() -> int:
     assert _hint is not None and "core绑定设备" in _hint and "zzz绑定uid" in _hint
     assert confusing_hint(["zzz绑定设备"]) is None and confusing_hint(["绑定uid"]) is None
     print("PASS  bare_core_command / confusing_hint：人设不抢核心指令")
+
+    # 凭据：core添加、core / mys 绑定设备、直接贴的 Cookie 和设备 JSON 都不能进日记和模型
+    assert has_credential(["core添加 stuid=1;stoken=v2_x;mid=abc"]) and has_credential(["CORE 添加", "ck"])
+    assert has_credential(["/core绑定设备 {\"deviceId\": \"x\"}"]) and has_credential(["mys绑定设备 {}"])
+    assert has_credential(["mys设备登录 {}"]) and has_credential(["ltuid=1; cookie_token=abc"])
+    assert has_credential(['{"deviceFingerprint": "x", "oaid": "y"}'])
+    assert not has_credential(["今天抽到了"]) and not has_credential(["mys上签到了吗"]) and not has_credential([""])
+    print("PASS  has_credential：Cookie / 设备信息不进人设")
 
     print("\n结果: 全部通过")
     return 0
