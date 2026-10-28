@@ -66,6 +66,15 @@
       ],
       "help": "zmd帮助",
       "login": "zmd扫码登录"
+    },
+    "RoverSign": {
+      "repo": "https://github.com/Loping151/RoverSign.git",
+      "commit": "ede87884ce8884c802fd7dca8a83e9212fc91d17",
+      "game": "鸣潮（库街区签到）",
+      "prefixes": [
+        "ww"
+      ],
+      "help": "ww签到帮助"
     }
   }
 }

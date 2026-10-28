@@ -17,7 +17,7 @@
 - **目录**：仓库就是运行目录，`.venv`、`bot/persona.env`、`bot/data`、`logs`、`SnowLuma`、`gsuid_core` 都在仓库里（后几个已 gitignore）。脚本统一 dot-source `scripts/common.ps1` 取路径，装在别处的用 persona.env 的 `SNOWLUMA_DIR` / `GSCORE_DIR` / `TOOLS_DIR` / `STICKER_DIR` / `LOG_DIR` 指过去；代码里的默认路径也按仓库算，不要再写死盘符。
 - **部署**：`scripts/setup.ps1` 要能重复跑（已装的跳过、已有的配置不覆盖），新增的安装步骤也照这个写；改了部署流程同步更新 `docs/部署指南.md`。
 - **依赖**：新增第三方包写进 `requirements.txt`（写范围），再跑 `python tools/update_deps.py` 重新生成 `requirements.lock`；外部组件的版本只改 `external.lock.json`（平时由自动更新 PR 改）。
-- **游戏功能**：游戏查询都交给早柚核心的插件（列表在 `external.lock.json`，加新游戏照 `docs/早柚核心接入.md` 第六节），本仓库只管连接、登录拦截和人设避让，不再自己写游戏接口。
+- **游戏功能**：游戏查询都交给早柚核心的插件（列表在 `external.lock.json`，加新游戏照 `docs/早柚核心接入.md` 第六节），本仓库只管连接、登录拦截、人设避让和全员自动签到（`gscore_plugins/JiangyouyuAuto`，一键部署拷进核心），不再自己写游戏接口。
 - **权限判断**：开发者专用指令一律写成 `if not DEV_UIN or str(event.get_user_id()) != DEV_UIN: return`，未配置时拒绝所有人，不要写成 `if DEV_UIN and ...`。
 - **纯逻辑放 `bot/persona_rules.py`**：不依赖 NoneBot，方便离线测。
 - **提交**：一个问题一个分支一个 PR，squash merge；提交信息用 `fix(范围): 中文说明`。
@@ -72,6 +72,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #35 | 要加原神 | 核心插件 GenshinUID（前缀 `gs`，米游社扫码和星铁等共用）。顺带把加游戏变成「锁文件加一项 + 文档」：`external.lock.json` 的插件项带 `game` / `prefixes` / `help`，一键部署按它装插件并装各插件自己的依赖，给旧 `persona.env` 补前缀；冒烟测试对每个插件发帮助；`update-deps.yml` 加 `validate_only` 手动验证分支。CI 验证时发现人设对「扫码 登录」（带空格）会插话：`is_game_command` 改为和核心一样不看空白 |
 | #36 | 要加鸣潮 | 核心插件 XutheringWavesUID（前缀 `ww`，原 WutheringWavesUID 仓库已删）。它的登录是库街区网页链接 / 短信验证码，不走核心扫码：`gscore_guard` 改成按插件认登录指令（`PREFIXED_LOGIN`）、私聊提醒按插件给（`LOGIN_HINTS`，鸣潮提示短信登录）、群内拦截认多种文案和链接（`LOGIN_MARKERS`，含 `/waves/i/`）；人设前缀后紧跟同一字母不算指令（`www笑死`、`www.` 链接）；冒烟测试按锁文件的 `login` 查各插件登录不进群、回到临时会话，并核对 `LOGIN_MARKERS` 都还在源码里 |
 | #37 | 要加明日方舟：终末地 | 核心插件 EndUID（前缀 `zmd` / `end`，森空岛扫码登录）。`gscore_guard` 加终末地的登录指令和三条登录文案；新增 `PREFIXED_PRIVATE`：会贴出或显示凭据的指令（`ww添加token`、`zmd绑定 cred`、`zmd我的cred` 等）群里也不转给核心，私聊提醒原样到私聊发且不回显凭据 |
+| #38 | 登录过的账号要每天自动领签到奖励（米哈游系插件只签自己开过自动签到的人，鸣潮、终末地默认不签） | 本仓库的核心插件 `gscore_plugins/JiangyouyuAuto`（一键部署拷进核心）：启动前打开鸣潮（新装 RoverSign）、终末地的 `SigninMaster` 和各插件定时签到，关私聊签到报告（含插件导入时缓存的开关）；米哈游系每小时给有 Cookie 的 UID 补自动签到订阅；登录态自动续：米哈游系每天签到前用 Stoken 换新 Cookie，终末地 cred 失效时用扫码存的登录 token 重新换（鸣潮的短信 token 没有续期接口）。Linux 上起整套核心实测配置写入、订阅补齐、不重复 |
 
 **自动记忆仍然开着**：`PRIVATE_MIRROR`、`GROUP_MIRROR` 默认 1；私聊每条都落盘，群聊只记被叫/接续的对话；问到「记得/上次」照常带本会话最近 5 条。改的只是按会话隔离和手动指令的权限。
 

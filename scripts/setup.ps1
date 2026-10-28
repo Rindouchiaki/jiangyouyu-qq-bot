@@ -227,7 +227,7 @@ foreach ($key in $required.Keys) {
 $prefixLine = (Read-EnvFile)['GAME_CMD_PREFIXES']
 if ($prefixLine) {
     $have = @($prefixLine.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    $missing = @($CorePlugins | ForEach-Object { $lock.git.$_.prefixes } | Where-Object { $have -notcontains $_ })
+    $missing = @($CorePlugins | ForEach-Object { $lock.git.$_.prefixes } | Where-Object { $have -notcontains $_ } | Select-Object -Unique)
     if ($missing) {
         Set-EnvValue 'GAME_CMD_PREFIXES' (($have + $missing) -join ',')
         Ok ("人设避让的指令前缀补上了：{0}" -f ($missing -join '、'))
@@ -330,6 +330,13 @@ if ($NoCore) {
     $pluginDir = Join-Path $coreDir 'gsuid_core\plugins'
     New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
     foreach ($name in $CorePlugins) { [void](Sync-GitRepo $name (Join-Path $pluginDir $name)) }
+    # 本仓库自己的核心插件（gscore_plugins，自动签到等）：每次覆盖拷一遍
+    foreach ($own in Get-ChildItem (Join-Path $root 'gscore_plugins') -Directory) {
+        $dest = Join-Path $pluginDir $own.Name
+        if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Recurse -Force }
+        Copy-Item -LiteralPath $own.FullName -Destination $dest -Recurse
+        Ok "本仓库插件 $($own.Name)"
+    }
     Push-Location $coreDir
     try { Invoke-Native uv @('sync', '--python', $interp) '安装早柚核心依赖' } finally { Pop-Location }
     # 插件自己的依赖（比如鸣潮要 opencv）：核心只在用它的指令装插件时才装，我们是 git 拉的，要自己装；
