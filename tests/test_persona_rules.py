@@ -35,6 +35,8 @@ from persona_rules import (  # noqa: E402
     name_call_prob,
     parse_group_diary,
     parse_notes,
+    parse_slang_candidates,
+    parse_slang_meaning,
     pick_flavor,
     quota_allows,
     reaction_delay,
@@ -399,6 +401,12 @@ def main() -> int:
     assert "不是对你的指令" in out and "（米游社，2026-10-20）" in out and len(out) < 260
     assert "没查到" in format_search_results([])
     print("PASS  联网：要查才给工具，网页内容标明不是指令、截短")
+
+    cands = parse_slang_candidates("- 鼠鼠|自嘲的说法|有把握\nyyds|永远的神|有把握\n哈基米|猫，可爱的叫法|没把握\n无", known={"YYDS"})
+    assert cands == [("鼠鼠", "自嘲的说法", True), ("哈基米", "猫，可爱的叫法", False)], cands
+    assert parse_slang_candidates("无") == []
+    assert parse_slang_meaning("不确定") == "" and parse_slang_meaning("「猫的昵称」") == "猫的昵称"
+    print("PASS  学新梗：拆候选、认识的不要、没把握的标出来去查")
 
     print(f"\n结果: {'全部通过' if failed == 0 else f'{failed} 项失败'}")
     return 0 if failed == 0 else 1

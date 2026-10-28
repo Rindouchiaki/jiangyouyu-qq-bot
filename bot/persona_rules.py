@@ -1121,3 +1121,44 @@ def format_search_results(results: list[dict], max_items: int = 5, max_chars: in
     if not lines:
         return head + "\n没查到相关结果。"
     return head + "\n" + "\n".join(lines)
+
+
+# ---------------------------------------------------------------- 学新梗
+SLANG_MINE_PROMPT = (
+    "下面是一段 QQ 聊天记录。挑出里面的网络新梗、黑话、缩写或者这个圈子自创的说法"
+    "（一般人第一次看会看不懂的那种），最多 3 个；常见词、人名、群名片、游戏名和角色名不要。\n"
+    "每行一个，格式：词|意思（不超过 20 字）|有把握 或 没把握\n"
+    "一个都没有就只输出：无"
+)
+SLANG_EXPLAIN_PROMPT = (
+    "根据下面的网页摘要，用不超过 20 字解释「{term}」在网络聊天里是什么意思。"
+    "只输出解释本身；摘要里看不出来就只输出：不确定"
+)
+
+
+def parse_slang_candidates(
+    raw: str, known: set[str] | None = None, max_items: int = 3, max_chars: int = 20
+) -> list[tuple[str, str, bool]]:
+    """「词|意思|有把握」逐行拆开；已经认识的词、太长的词、「无」都丢掉。"""
+    seen = {k.lower() for k in (known or set())}
+    out: list[tuple[str, str, bool]] = []
+    for line in (raw or "").replace("\r", "").split("\n"):
+        cells = [c.strip(" 「」\"'“”") for c in re.split(r"[|｜]", _NOTE_BULLET.sub("", line))]
+        if len(cells) < 2:
+            continue
+        term, meaning = cells[0], " ".join(cells[1].split())
+        if not (1 <= len(term) <= 12) or term.lower() in seen or term in _NOTE_EMPTY:
+            continue
+        sure = len(cells) > 2 and "没" not in cells[2] and "不" not in cells[2]
+        seen.add(term.lower())
+        out.append((term, meaning[:max_chars], sure))
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def parse_slang_meaning(raw: str, max_chars: int = 20) -> str:
+    t = " ".join((raw or "").split()).strip(" 。\"'“”「」")
+    if not t or "不确定" in t:
+        return ""
+    return t[:max_chars]
