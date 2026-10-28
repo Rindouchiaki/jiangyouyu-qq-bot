@@ -18,7 +18,7 @@
 - **部署**：`scripts/setup.ps1` 要能重复跑（已装的跳过、已有的配置不覆盖；只有 `-Update` 按上面的规则重写 persona.env），新增的安装步骤也照这个写；改了部署流程同步更新 `docs/部署指南.md`。
 - **依赖**：新增第三方包写进 `requirements.txt`（写范围），再跑 `python tools/update_deps.py` 重新生成 `requirements.lock`；外部组件的版本只改 `external.lock.json`（平时由自动更新 PR 改）。
 - **游戏功能**：游戏查询都交给早柚核心的插件（列表在 `external.lock.json`，加新游戏照 `docs/早柚核心接入.md` 第六节），本仓库只管连接、登录拦截、人设避让和全员自动签到（`gscore_plugins/JiangyouyuAuto`，一键部署拷进核心），不再自己写游戏接口。
-- **权限判断**：开发者专用指令一律写成 `if not DEV_UIN or str(event.get_user_id()) != DEV_UIN: return`，未配置时拒绝所有人，不要写成 `if DEV_UIN and ...`。
+- **权限判断**：开发者名单写死在 `bot/devs.py`（个人项目：酱酱鱼 289635657、小帽 189963059，不走 persona.env）。开发者专用指令一律写成 `if not devs.is_dev(event.get_user_id()): return`；认人、提示词里的开发者、`/记` 署名、防冒充的保留名也都从 `devs` 取，别再读环境变量。
 - **纯逻辑放 `bot/persona_rules.py`**：不依赖 NoneBot，方便离线测。
 - **提交**：一个问题一个分支一个 PR，squash merge；提交信息用 `fix(范围): 中文说明`。
 
@@ -136,7 +136,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 ### 配置
 
 1. `nonebot-plugin-parser` 锁在 `>=2.6,<2.8`（`parser_video_only.py` 改它的内部渲染类，这两个版本相关结构一致）。作者本机已实测装的是 2.7.1，patch 用到的 `BaseRenderer.render_contents` / `ImageRenderer.render_messages` / `VideoContent` / `ImageContent` 都在，可结案；换大版本时仍要复核这几个符号。
-2. `BOT_UIN` 未配置时不过滤：SnowLuma 同时登录两个号（样例里第二个号就是开发者自己）时两个号都会以人设回话。可以考虑未配置时额外丢掉 `self_id == DEV_UIN` 的事件。
+2. `BOT_UIN` 未配置时不过滤：SnowLuma 同时登录两个号（样例里第二个号就是开发者自己）时两个号都会以人设回话。可以考虑未配置时额外丢掉 `self_id` 是开发者号（`devs.is_dev`）的事件。
 3. `/模式` 状态文案用 `:.0%` 显示概率，米游抽卡的 1.8% 会显示成「2%」。
 
 ### 早柚核心

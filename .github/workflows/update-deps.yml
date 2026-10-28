@@ -56,7 +56,6 @@ jobs:
         run: |
           . .\scripts\common.ps1
           Set-EnvValue BOT_UIN 100000001
-          Set-EnvValue DEV_UIN 100000002
           Set-EnvValue LLM_MOCK 1
           Set-EnvValue REPLY_PROB_CALLED 1
           Set-EnvValue QQ_EXE 'C:\no-qq-on-ci\QQ.exe'

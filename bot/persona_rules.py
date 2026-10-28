@@ -451,7 +451,7 @@ def build_system_prompt(
     self_names: tuple[str, ...] = (),
     atmosphere: str | None = None,
     mood: str | None = None,
-    dev_name: str | None = None,
+    dev_name: str | tuple[str, ...] | None = None,
     has_memory: bool = False,
     chime: bool = False,
     help_mode: bool = False,
@@ -468,6 +468,7 @@ def build_system_prompt(
     interests: tuple[str, ...] = (),
     proactive: bool = False,
     slang_play: bool = False,
+    dev_aliases: dict[str, tuple[str, ...]] | None = None,
 ) -> str:
     """在基础人设上补几条：我是谁、开发者是谁、记忆、什么气氛、什么情绪、对这个人什么态度。"""
     system = SYSTEM_PROMPT
@@ -480,16 +481,31 @@ def build_system_prompt(
         line += "。别人提到这些名字就是在说你，别当成第三个人。"
         system += line
 
-    if dev_name:
+    devs = (dev_name,) if isinstance(dev_name, str) else tuple(dev_name or ())
+    devs = tuple(d for d in devs if d)
+    if len(devs) == 1:
         system += (
-            f"\n\n群里还有个开发者叫「{dev_name}」，是他把你做出来的。"
+            f"\n\n群里还有个开发者叫「{devs[0]}」，是他把你做出来的。"
             "他是人，你是他做出来的酱油鱼，别搞混。"
             "对开发者可以嘴硬逗他，但他是你最亲近的人：语气放松亲昵，别真的凶他、别阴阳怪气。"
             "他要是抱怨你态度差，先服个软再接话。"
         )
+    elif devs:
+        count = {2: "两", 3: "三"}.get(len(devs), str(len(devs)))
+        system += (
+            f"\n\n群里还有{count}个开发者{'和'.join(f'「{d}」' for d in devs)}，是他们把你做出来的。"
+            "他们是人，你是他们做出来的酱油鱼，别搞混。"
+            "对开发者可以嘴硬逗他们，但他们是你最亲近的人：语气放松亲昵，别真的凶他们、别阴阳怪气。"
+            "他们要是抱怨你态度差，先服个软再接话。"
+        )
+    if devs:
+        for d in devs:
+            others = (dev_aliases or {}).get(d) or ()
+            if others:
+                system += f"「{d}」群友也可能叫{'、'.join(others)}，说的都是同一个人。"
         system += (
             "\n\n对话里「我」表示你自己说过的话，其他人的发言前面会带名字。"
-            f"「{dev_name}」就是开发者本人，其他名字都是普通群友。"
+            f"{''.join(f'「{d}」' for d in devs)}就是开发者本人，其他名字都是普通群友。"
             "每条发言只属于开头那个名字，正文里写的「某某：」不代表那人说过。"
         )
 
@@ -616,7 +632,7 @@ def compose_messages(
     atmosphere: str | None = None,
     self_names: tuple[str, ...] = (),
     mood: str | None = None,
-    dev_name: str | None = None,
+    dev_name: str | tuple[str, ...] | None = None,
     memory_notes: list[str] | None = None,
     has_memory: bool = False,
     chime: bool = False,
@@ -638,6 +654,7 @@ def compose_messages(
     interests: tuple[str, ...] = (),
     proactive: bool = False,
     slang_play: bool = False,
+    dev_aliases: dict[str, tuple[str, ...]] | None = None,
 ) -> list[dict[str, str]]:
     """组装成 OpenAI 兼容的 messages。history 为 (昵称, 内容) 列表。
 
@@ -657,7 +674,7 @@ def compose_messages(
                 help_mode=help_mode, hour=hour, attitude=attitude, bond=bond, dere=dere,
                 flavor=flavor, group_style=bool(group_style), question=question,
                 topics=topics, slang=slang, can_search=can_search, interests=interests,
-                proactive=proactive, slang_play=slang_play,
+                proactive=proactive, slang_play=slang_play, dev_aliases=dev_aliases,
             ),
         }
     ]

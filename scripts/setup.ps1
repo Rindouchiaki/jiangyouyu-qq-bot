@@ -228,7 +228,6 @@ $cur = Read-EnvFile
 $required = [ordered]@{
     LLM_API_KEY = 'DeepSeek（或其它 OpenAI 兼容接口）的 API Key'
     BOT_UIN     = '机器人的 QQ 号'
-    DEV_UIN     = '你自己的 QQ 号（管理指令只认这个号）'
 }
 foreach ($key in $required.Keys) {
     if ($placeholders -notcontains [string]$cur[$key]) { continue }
