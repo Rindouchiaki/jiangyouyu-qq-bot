@@ -1,5 +1,6 @@
 # 本地配置与运行产物，不入库
 bot/persona.env
+bot/persona.local.env
 bot/*.env
 !bot/persona.env.example
 bot/persona.env.bak-*
