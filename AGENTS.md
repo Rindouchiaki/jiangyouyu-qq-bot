@@ -80,6 +80,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #41 | 调了默认值以后旧 `persona.env` 会盖过去，每次要手动改 | 一键更新（`setup.ps1 -Update`）按样例重写 persona.env：`PersonalEnvKeys`（账号、密钥、路径）和样例里没有的项保留，其余换成样例值，先备份、列出改动，`-KeepEnv` 跳过；自己要保留的调参写 `persona.local.env`（bot.py 后读、盖过同名项）；`tests/test_env_sync.ps1` 进 CI |
 | #42 | `/忘了我` 谁都能用，不太好 | 去掉；改成开发者的 `/小本本 删除 @某人`（或 QQ 号），本人要求删记录时由开发者处理 |
 | #6 | 私聊发 `core添加` 贴 Cookie / Stoken、`core绑定设备` / `mys绑定设备` 贴设备 JSON 时，`core`、`mys` 不在 `GAME_CMD_PREFIXES` 里，人设当聊天接话，原文写进白守日记并发给模型 | `gscore_guard.has_credential`：这几个前缀和 Cookie / 设备字段（`stoken`、`cookie_token`、`deviceFingerprint` 等）一律跳过，写死在代码里不走配置；只记 QQ 号不记原文。之前已经写进日记的要手动清 |
+| #8 | 回复一问一答、秒回、接不上话题；拆开发的几句、跟着的表情被逐条回；群里 @ 时偶尔回的是上一个话题（前一条的模型调用晚到） | 每个会话先攒一批（防抖：冷清 3 秒、正聊着 5 秒，同一人续 3 秒，一批最多 12 秒，被 @ 最多再等 2.5 秒）再一起回；模型按行输出，`split_reply` 拆成 1～3 条或只发表情，按字数打字；生成期间对方补话就作废重想，群里别人插话则被叫的引用原消息照发、接续插话不补；历史放宽到 40 条 / 1200 字，回话路数按会话保持，提示词去 AI 腔；去掉 `REPLY_AT_COOLDOWN` |
 
 **自动记忆仍然开着**：`PRIVATE_MIRROR`、`GROUP_MIRROR` 默认 1；私聊每条都落盘，群聊只记被叫/接续的对话；问到「记得/上次」照常带本会话最近 5 条。改的只是按会话隔离和手动指令的权限。
 
@@ -121,7 +122,8 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 
 12. `vision._match_sticker` 每次命中都重读 `index.json`；`_save_cards` 每张图都同步重写整个缓存文件。
 13. `/回忆` 和自动回忆每次都全量扫描日记目录，日记多了会慢。
-14. 测试只覆盖 `persona_rules` 和离线识图；`persona.py` 的主处理流程、`memory.py` 的标签过滤没有测试。
+14. 测试只覆盖 `persona_rules` 和离线识图；`persona.py` 的主处理流程只有 `smoke_stack.py` 用 mock 跑「@ 有回复」「私聊连发合成一批、不秒回」；`memory.py` 的标签过滤没有测试。
+15. `LLM_MODEL` 默认 `deepseek-chat`：DeepSeek 现在的文档只列 `deepseek-flash` / `deepseek-v4-pro`，没提 `deepseek-chat` 还能不能用，作者确认后再改样例。
 
 ---
 
@@ -135,3 +137,4 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 - **限流分档是刻意的**：`persona_rules.QUOTA_TIERS` 决定额度用到多少时停哪类回复。私聊、被叫触发的抽卡定型文、游戏查询指令按需求不拦，不要顺手加进去。
 - **早柚核心**：安装、核心侧配置（主人账号、「扫码登陆」设 `DIRECT`、`core_command` 保持 `SV`）和群友用法见 `docs/早柚核心接入.md`；核心数据目录里有群友的米游社凭据，不要进 git。
 - **群名片会进 prompt**：任何新加的「名字 → 身份」逻辑都要走 `safe_name`，不要直接拿 `sender.card` 拼进模型输入。
+- **先攒一批再回是刻意的**：`persona.py` 收消息（`_handle`）只记上下文、进本会话队列，`_worker` 等防抖（`persona_rules.DEBOUNCE`）到期才交给 `_respond` 一起回。作者要求「拆开发的几句、跟着的表情当一件事」「别秒回」，不要改回一条一回。生成期间又来了消息：对方补话就作废重想（`REPLY_RESTART_MAX`），群里只是别人插话则被叫的照发、引用原消息，接续/插话不补——这是为了修「被 @ 时接的是上一个话题」，别去掉 `_stale` 判断。一批里每条仍各自压成一行（防伪造发言），别把整批原文拼成一段塞进去。

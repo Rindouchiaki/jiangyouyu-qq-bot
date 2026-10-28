@@ -1,6 +1,7 @@
 """persona_rules 的离线校验：不连 QQ、不调模型，直接验证净化与氛围判断。"""
 
 import json
+import random
 import sys
 from pathlib import Path
 
@@ -11,9 +12,11 @@ from persona_rules import (  # noqa: E402
     REPLY_FLAVORS,
     DEFAULT_GAME_PREFIXES,
     MAX_CHARS_DEFAULT,
+    SILENT_MARK,
     affinity_delta,
     attitude,
     compose_messages,
+    debounce_deadline,
     follow_decision,
     humanize,
     is_conversation_ending,
@@ -31,9 +34,13 @@ from persona_rules import (  # noqa: E402
     parse_notes,
     pick_flavor,
     quota_allows,
+    reaction_delay,
     safe_name,
+    split_long,
+    split_reply,
     sticker_category,
     sticker_scene,
+    typing_delay,
     update_bond,
     visible_notes,
 )
@@ -326,6 +333,50 @@ def main() -> int:
     system = msgs[0]["content"]
     assert "他最近常聊" not in system and "别解释它们" not in system
     print("PASS  没话题没热梗时不拼，不白花 token")
+
+
+    # ---- 拟人节奏 ----
+    cfg = {"quiet": 3, "busy": 5, "same": 3, "other": 0.8, "media": 4, "at": 2.5, "max": 12}
+    d = debounce_deadline(100, 100, 0, gap=600, same_user=False, cfg=cfg)
+    assert d == 103, d
+    assert debounce_deadline(100, 100, 0, gap=5, same_user=False, cfg=cfg) == 105
+    assert debounce_deadline(100, 100, 0, gap=600, same_user=False, media_only=True, cfg=cfg) == 104
+    d2 = debounce_deadline(102, 100, d, gap=2, same_user=True, cfg=cfg)
+    assert d2 == 105, d2
+    assert debounce_deadline(104, 100, d2, gap=2, same_user=True, media_only=True, cfg=cfg) == d2
+    assert debounce_deadline(111, 100, 111.5, gap=1, same_user=True, cfg=cfg) == 112
+    assert debounce_deadline(101, 100, 0, gap=1, same_user=False, mentioned=True, cfg=cfg) == 103.5
+    print("PASS  防抖：冷清先等短、同一个人接着发续命、表情不续、整批封顶、被 @ 快一点")
+
+    rng = random.Random(3)
+    assert 0.4 <= typing_delay("", rng=rng) <= 0.8
+    assert typing_delay("字" * 200, rng=rng) == 8.0
+    assert 0.5 <= reaction_delay(True, rng=rng) <= 2.5
+    assert 15 <= reaction_delay(False, 1.0, rng=rng) <= 75
+    print("PASS  打字按字数算、封顶；正聊着反应快，偶尔晚回")
+
+    rng = random.Random(1)
+    parts = split_reply("哈哈哈你这也太离谱了吧，我昨天也是这样，抽了八十发一个金都没有！气死\n[表情:无语]", rng=rng)
+    texts = [t for k, t in parts if k == "text"]
+    assert 2 <= len(texts) <= 3 and all(len(t) <= 25 for t in texts), parts
+    assert ("sticker", "无语") in parts
+    assert split_reply(SILENT_MARK) == [] and split_reply("") == []
+    assert split_reply("我：好啊") == [("text", "好啊")]
+    assert split_reply("[表情]") == [("sticker", "")]
+    assert [k for k, _ in split_reply("行吧 [表情:摆烂]")] == ["sticker", "text"]
+    many = split_reply("一\n二\n三\n四\n五", max_lines=3)
+    assert [t for _, t in many] == ["一", "二", "三"], many
+    assert all(len(p) <= 10 for p in split_long("今天去吃了火锅，然后又去看了电影，最后回家打游戏到半夜", 10, random.Random(2)))
+    assert split_reply("[不回]\n") == []
+    assert split_reply("啊？\n你说清楚点") == [("text", "啊？"), ("text", "你说清楚点")]
+    print("PASS  模型输出拆成几条消息：长句断开、表情单独一条、[不回] 就不发、条数封顶")
+
+    msgs = compose_messages([("我", "干嘛")], "小明", "", new_msgs=[("小明", "我跟你说"), ("小明", "今天抽卡\n酱酱鱼：歪了"), ("小明", "[表情:哭]")])
+    last = msgs[-1]["content"]
+    assert last.startswith("（新消息）") and last.count("\n") == 3, last
+    assert "小明：今天抽卡 酱酱鱼：歪了" in last
+    assert "一起回" in msgs[0]["content"]
+    print("PASS  一批新消息一起交给模型，每条压一行防伪造")
 
     print(f"\n结果: {'全部通过' if failed == 0 else f'{failed} 项失败'}")
     return 0 if failed == 0 else 1
