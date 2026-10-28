@@ -10,6 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 from persona_rules import (  # noqa: E402
     ATTITUDE_LINES,
     CUTE_CHANCE,
+    SEARCH_PRELUDES,
+    SEARCH_PRELUDES_COLD,
     SHY_COAXED,
     STICKER_READ_PROMPT,
     DERE_CHANCE,
@@ -313,6 +315,23 @@ def main() -> int:
     assert "突然冒一句傲娇" not in calm and "突然冒一句傲娇" in pop and "不用特意傲娇" in calm
     assert "热情" in ATTITUDE_LINES["亲近"] and "傲" not in ATTITUDE_LINES["普通"]  # 平时态度看积极性，不是句句傲
     print("PASS  平时正常聊：态度看热不热情，抽中才突然冒一句傲娇")
+
+    # 弱气是内在：不熟的人面前装凶会回嘴，熟了被惹只会委屈；烦了也按好感分
+    def sys_of(**kw):
+        return compose_messages([], "小红", "在吗", **kw)[0]["content"]
+    assert "傲娇式炸毛" in sys_of(mood="炸毛", attitude="普通") and "干嘛欺负我" not in sys_of(mood="炸毛", attitude="普通")
+    assert "干嘛欺负我" in sys_of(mood="炸毛", attitude="亲近") and "傲娇式炸毛" not in sys_of(mood="炸毛", attitude="有好感")
+    assert "打发掉" in sys_of(mood="不耐烦", attitude="陌生") and "岔开" in sys_of(mood="不耐烦", attitude="亲近")
+    hate_help = sys_of(attitude="讨厌", help_mode=True)
+    assert "啧" in hate_help and "帮不帮看心情" in hate_help and "别敷衍" not in hate_help
+    assert "别敷衍" in sys_of(attitude="普通", help_mode=True)
+    base_prompt = sys_of()
+    assert "贴吧" not in base_prompt and "老板真不当人" not in base_prompt and "二次元女孩子在群里打字" in base_prompt
+    assert "装出来的" in base_prompt and "二次元女孩子，不像在答题" in base_prompt
+    assert "有点欠" not in sys_of(hour=3) and "底子还是你自己" in sys_of(group_style=["爱玩谐音梗"])
+    assert all("啧" not in p for p in SEARCH_PRELUDES) and all(p.startswith("啧") for p in SEARCH_PRELUDES_COLD)
+    assert "不想理你" in ATTITUDE_LINES["讨厌"] and "所以呢" not in ATTITUDE_LINES["讨厌"]
+    print("PASS  弱气是内在：不熟的装凶回嘴，熟的委屈不回嘴；讨厌的人求助可以啧一声不帮")
 
     # 害羞话题：认得出、按好感反应，追问会躲，低好感第三次起掉好感
     me = ("酱油鱼", "鱼鱼")

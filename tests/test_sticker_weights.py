@@ -88,7 +88,8 @@ def main() -> int:
         seen[item["id"]] += 1
         cats[item["category"]] += 1
     assert len(seen) >= 25, f"只抽到 {len(seen)} 张"
-    assert cats["生气"] > 20 and cats["无文字"] > 10, cats
+    # 炸毛多是委屈害羞（persona 先按读后感找），按分类抽时生气脸只占一小部分
+    assert 5 < cats["生气"] < 40 and cats["无文字"] > 10, cats
     assert cats["拒绝"] == 0, "只有 1 张的分类不该被抽到"
     print(f"PASS  炸毛时 {len(seen)} 张不同、生气 {cats['生气']}/120、无文字 {cats['无文字']}/120")
 
