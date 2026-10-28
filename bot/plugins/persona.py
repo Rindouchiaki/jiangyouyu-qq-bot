@@ -13,6 +13,7 @@
 每条 ≤ REPLY_MAX_CHARS 字、一次最多 REPLY_MAX_LINES 条，去掉 emoji / 括号动作 / AI 字样。
 
 联网（web_search.py）：有人跟她说话、像是要查东西时把 DeepSeek 搜索交给模型，模型自己决定查不查。
+学新梗：跟着日记一起从聊天里挑没见过的说法，没把握的查一下，存进 slang 学到的词表。
 
 小本本（bonds.py）：每个群友按 QQ 号一份好感度、熟悉度和简短日记，群聊私聊共用；
 态度跟着档位变（persona_rules.attitude），日记隔一阵让模型从最近聊天里摘一两条。
@@ -51,6 +52,8 @@ import web_search
 from persona_rules import (
     AFF_PESTER,
     SEARCH_PRELUDES,
+    SLANG_EXPLAIN_PROMPT,
+    SLANG_MINE_PROMPT,
     ATTITUDE_REPLY_FACTOR,
     DERE_CHANCE,
     DEFAULT_GAME_PREFIXES,
@@ -77,6 +80,8 @@ from persona_rules import (
     name_call_prob,
     parse_group_diary,
     parse_notes,
+    parse_slang_candidates,
+    parse_slang_meaning,
     pick_flavor,
     quota_allows,
     reaction_delay,
@@ -172,6 +177,9 @@ CHIME_BACKOFF_BASE = float(os.getenv("CHIME_BACKOFF_BASE", "120"))
 # 联网：一次回话最多查几轮；先说一声「我查查」的概率
 SEARCH_MAX_ROUNDS = int(os.getenv("SEARCH_MAX_ROUNDS", "2"))
 SEARCH_PRELUDE_PROB = float(os.getenv("SEARCH_PRELUDE_PROB", "0.6"))
+# 学新梗：跟着群日记 / 个人日记一起挑，没把握的每天最多查几个
+SLANG_LEARN = os.getenv("SLANG_LEARN", "1").strip() not in ("0", "false", "False")
+SLANG_SEARCH_DAILY = int(os.getenv("SLANG_SEARCH_DAILY", "20"))
 
 _data_env = os.getenv("PERSONA_DATA_DIR", "").strip()
 _DATA_DIR = Path(_data_env) if _data_env else Path(__file__).resolve().parent.parent / "data"
@@ -838,6 +846,7 @@ _chats: dict[str, _Chat] = {}
 _flavor: dict[str, tuple[str, float]] = {}
 _chime_skips: dict[str, int] = defaultdict(int)
 _last_chime_try: dict[str, float] = defaultdict(float)
+_slang_search_day = {"date": "", "n": 0}
 
 
 def _pending_from(key: str, user_id: str) -> bool:
@@ -1010,6 +1019,7 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         if _diary_group_msgs[key] >= DIARY_GROUP_EVERY and now - _diary_group_last[key] >= DIARY_GROUP_GAP:
             _diary_group_msgs[key], _diary_group_last[key] = 0, now
             _background(_diary_group(str(event.group_id), list(history)))
+            _background(_learn_slang(list(history)))
 
     # 静音 = 完全不出声（不接续、不插话、不主动配图）；/模式、/表情、查询等命令走别的 matcher，照常可用
     if _mode_name("group" if is_group else "private", key) == "静音":
@@ -1448,6 +1458,8 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             _diary_user_turns[user_id], _diary_user_last[user_id] = 0, now
             src = f"g{group_id}" if is_group else "p"
             _background(_diary_user(user_id, name, list(history), src))
+            if not is_group:
+                _background(_learn_slang(list(history)))
 
     if sent and not is_group and PRIVATE_MIRROR:
         try:
@@ -1483,6 +1495,53 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
                     _mark_sent(key, now, called)
                 logger.info(f"persona: 顺手配图 {got['file']}（{mood}，概率 {chance:.0%}）")
     return True
+
+
+# ---------------------------------------------------------------- 学新梗
+async def _learn_slang(lines: list[tuple[str, str]]) -> None:
+    """从最近的聊天里挑看不懂的新梗：有把握的直接记，没把握的上网查一下再记。"""
+    if MOCK or not API_KEY or not SLANG_LEARN:
+        return
+    talk = [f"{who}：{t}" for who, t in lines if who != "我" and not t.startswith("[")][-30:]
+    if len(talk) < 6:
+        return
+    try:
+        raw = await ask_llm(
+            [{"role": "system", "content": SLANG_MINE_PROMPT}, {"role": "user", "content": "\n".join(talk)}],
+            120, temperature=0.2, stop=None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"persona: 挑新梗失败 {type(exc).__name__}: {exc}")
+        return
+    for term, meaning, sure in parse_slang_candidates(raw, slang.known_terms()):
+        how = "猜"
+        if not sure:
+            today = datetime.now().strftime("%Y-%m-%d")
+            if _slang_search_day["date"] != today:
+                _slang_search_day.update(date=today, n=0)
+            if not web_search.enabled() or _slang_search_day["n"] >= SLANG_SEARCH_DAILY:
+                continue
+            _slang_search_day["n"] += 1
+            # 只拿词本身去搜，不带聊天原文和人名
+            results = await asyncio.to_thread(web_search.search, f"{term} 是什么梗 网络用语")
+            if not results:
+                continue
+            try:
+                raw2 = await ask_llm(
+                    [
+                        {"role": "system", "content": SLANG_EXPLAIN_PROMPT.format(term=term)},
+                        {"role": "user", "content": format_search_results(results, 4, 200)},
+                    ],
+                    60, temperature=0.2, stop=None,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"persona: 查新梗失败 {type(exc).__name__}: {exc}")
+                continue
+            meaning, how = parse_slang_meaning(raw2), "查"
+            if not meaning:
+                continue
+        if slang.add_learned(term, meaning, how):
+            logger.info(f"persona: 学到新梗 {term}={meaning}（{how}）")
 
 
 mode_cmd = on_command("模式", priority=16, block=True)
