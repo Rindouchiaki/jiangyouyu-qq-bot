@@ -14,6 +14,7 @@
       .\scripts\启动全部.ps1 -NoVl            # 不启本地视觉模型（省 1GB 内存）
       .\scripts\启动全部.ps1 -NoAutoLoad      # SnowLuma 不自动注入 QQ 账号
       .\scripts\启动全部.ps1 -NoCore          # 不启早柚核心（米哈游等游戏的查询）
+      .\scripts\启动全部.ps1 -NoOllama        # 不启 Ollama（白守的向量模型 bge-m3）
       .\scripts\启动全部.ps1 -NoQQ            # 不去拉起 QQ
 
 .NOTES
@@ -27,10 +28,12 @@ param(
     [switch]$NoAutoLoad,
     [switch]$NoCore,
     [switch]$NoQQ,
+    [switch]$NoOllama,
     [int]$NoneBotPort = 18080,
     [int]$WebUiPort = 5099,
     [int]$VlPort = 11435,
-    [int]$CorePort = 8765
+    [int]$CorePort = 8765,
+    [int]$OllamaPort = 11434
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,6 +55,9 @@ $vlMmproj = Join-Path $cfg.Tools 'vl-model\mmproj-F16.gguf'
 $qqExe = $cfg.QQ
 $ffmpegBin = $cfg.Ffmpeg
 $coreDir = $cfg.Core
+# Ollama 装在 Z:\Ollama，模型放在 OLLAMA_MODELS 指定的目录（默认是用户目录，会比较挤）
+$ollamaExe = $cfg.Ollama
+$ollamaModels = $cfg.OllamaModels
 # 守护开关：起过之后留个标记，scripts\watchdog.ps1 只在标记存在时才补服务；
 # -Stop 会删掉它，这样手动停掉之后守护不会又把服务拉回来。
 $runFlag = Join-Path $logs '.stack-on'
@@ -65,7 +71,8 @@ function Show-Status {
             @{ Port = 3001; Name = 'OneBot WS' },
             @{ Port = $CorePort; Name = '早柚核心' },
             @{ Port = $NoneBotPort; Name = 'NoneBot2' },
-            @{ Port = $VlPort; Name = '本地视觉模型' })) {
+            @{ Port = $VlPort; Name = '本地视觉模型' },
+            @{ Port = $OllamaPort; Name = 'Ollama 向量模型' })) {
         $conn = Get-NetTCPConnection -State Listen -LocalPort $item.Port -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($conn) {
             $pr = Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
@@ -115,7 +122,32 @@ if ($qqRunning) {
     Write-Host 'QQ 已在运行（如果还没登录，脚本照样能起，只是 SnowLuma 注入不到账号）' -ForegroundColor DarkGray
 }
 
-# ------------------------------------------------------------------ 2) 本地视觉模型
+# ------------------------------------------------------------------ 2) Ollama（白守的向量模型 bge-m3）
+# 注意：Ollama 桌面版会把模型目录写死到 C:\Users\<you>\.ollama\models，
+# 这里直接用 ollama serve 并把 OLLAMA_MODELS 指到 Z 盘那份，白守才能读到 bge-m3。
+if (-not $NoOllama) {
+    if (Test-Listening $OllamaPort) {
+        Write-Host "Ollama 已在 $OllamaPort 运行，跳过" -ForegroundColor DarkGray
+    } elseif (-not (Test-Path $ollamaExe)) {
+        Write-Host '没装 Ollama（可选），跳过；白守的向量检索会不可用' -ForegroundColor DarkGray
+    } else {
+        Write-Host '启动 Ollama（bge-m3 向量模型）...' -ForegroundColor Yellow
+        $prevModels = $env:OLLAMA_MODELS
+        $env:OLLAMA_MODELS = $ollamaModels
+        $p = Start-Process -FilePath $ollamaExe -ArgumentList @('serve') -WorkingDirectory (Split-Path $ollamaExe) `
+            -RedirectStandardOutput (Join-Path $logs 'ollama.out.log') `
+            -RedirectStandardError (Join-Path $logs 'ollama.err.log') `
+            -PassThru -WindowStyle Hidden
+        if ($null -eq $prevModels) { Remove-Item Env:\OLLAMA_MODELS -ErrorAction SilentlyContinue } else { $env:OLLAMA_MODELS = $prevModels }
+        if (-not (Wait-Listening $OllamaPort 30)) {
+            Write-Warning "Ollama 没起来，看 $logs\ollama.err.log（不影响聊天，只是白守不能做向量检索）"
+        } else {
+            Write-Host "Ollama 已启动 (pid $($p.Id))  http://127.0.0.1:$OllamaPort" -ForegroundColor Green
+        }
+    }
+}
+
+# ------------------------------------------------------------------ 3) 本地视觉模型
 if (-not $NoVl) {
     if (Test-Listening $VlPort) {
         Write-Host "本地视觉模型已在 $VlPort 运行，跳过" -ForegroundColor DarkGray

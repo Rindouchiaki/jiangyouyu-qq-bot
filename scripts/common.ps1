@@ -119,6 +119,9 @@ function Get-StackConfig {
         Tools    = $tools
         Ffmpeg   = Join-Path $tools 'ffmpeg\bin'
         QQ       = Resolve-StackPath $envMap['QQ_EXE'] 'C:\Program Files\Tencent\QQNT\QQ.exe'
+        # Ollama（白守的向量模型）：可执行文件和模型目录都能在 persona.env 里覆盖
+        Ollama   = Resolve-StackPath $envMap['OLLAMA_EXE'] 'Z:\Ollama\ollama.exe'
+        OllamaModels = if ($envMap['OLLAMA_MODELS']) { $envMap['OLLAMA_MODELS'] } else { 'Z:\Ollama\models' }
     }
 }
 
