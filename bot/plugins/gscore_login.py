@@ -43,11 +43,15 @@ async def _is_login(event: MessageEvent) -> bool:
 login_hint = on_message(rule=_is_login, priority=10, block=True)
 
 
+def _in_group(event: MessageEvent) -> bool:
+    return getattr(event, "message_type", "") == "group"
+
+
 async def _is_confusing(event: MessageEvent) -> bool:
-    return gscore_guard.confusing_hint(_texts(event.get_message())) is not None
+    return gscore_guard.confusing_hint(_texts(event.get_message()), _in_group(event)) is not None
 
 
-# 米游社报错里写的「绑定设备」核心并没有这条指令：直接给正确说法，别让人设抢答
+# 照着米游社报错发的「绑定设备」、群里发的设备指令，核心都不会回：直接给正确说法，别让人设抢答
 confusing_cmd = on_message(rule=_is_confusing, priority=11, block=True)
 
 
@@ -57,7 +61,7 @@ async def _keep_login_out_of_group(matcher: Matcher, event: MessageEvent) -> Non
     if matcher.plugin_name != LINK_PLUGIN or getattr(event, "message_type", "") != "group":
         return
     for message in (event.get_message(), event.original_message):
-        if gscore_guard.is_login_command(_texts(message)) or gscore_guard.confusing_hint(_texts(message)):
+        if gscore_guard.is_login_command(_texts(message)) or gscore_guard.confusing_hint(_texts(message), True):
             raise IgnoredException("群里的登录指令不转给早柚核心")
 
 
@@ -105,7 +109,7 @@ async def _hint(bot: Bot, event: GroupMessageEvent) -> None:
 async def _confuse_hint(bot: Bot, event: MessageEvent) -> None:
     if not is_our_bot(event):
         return
-    hint = gscore_guard.confusing_hint(_texts(event.get_message()))
+    hint = gscore_guard.confusing_hint(_texts(event.get_message()), _in_group(event))
     if hint:
-        logger.info(f"gscore_login: 提示 {event.get_user_id()} 正确指令「{hint}」")
+        logger.info(f"gscore_login: 提示 {event.get_user_id()} 绑定设备的正确用法")
         await confusing_cmd.finish(hint)

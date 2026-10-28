@@ -6,11 +6,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 
 from gscore_guard import (  # noqa: E402
+    DEVICE_GROUP_HINT,
     QR_CAPTION,
     bare_core_command,
-    has_credential,
     command_text,
     confusing_hint,
+    has_credential,
     is_group_send,
     is_login_command,
     login_hint,
@@ -80,8 +81,13 @@ def main() -> int:
     assert bare_core_command(["今天天气不错"]) is None
     assert bare_core_command(["绑定设备 123"]) is None  # 带参数就不管，交给人设/核心
     _hint = confusing_hint(["绑定设备"])
-    assert _hint is not None and "core绑定设备" in _hint and "zzz绑定uid" in _hint
+    assert _hint is not None and "mys绑定设备" in _hint and "私聊" in _hint and "zzz绑定uid" in _hint
+    assert confusing_hint(["设备登录"]) == _hint and confusing_hint(["/绑定设备"]) == _hint
     assert confusing_hint(["zzz绑定设备"]) is None and confusing_hint(["绑定uid"]) is None
+    # 群里带前缀贴设备 JSON：核心不收，提示撤回、改私聊；私聊里同样的指令交给核心，不提示
+    _dev = 'mys绑定设备 {"deviceId": "x"}'
+    assert confusing_hint([_dev], group=True) == DEVICE_GROUP_HINT and confusing_hint(["CORE 绑定设备 {}"], True)
+    assert confusing_hint([_dev]) is None and confusing_hint(["core绑定设备 {}"]) is None
     print("PASS  bare_core_command / confusing_hint：人设不抢核心指令")
 
     # 凭据：core添加、core / mys 绑定设备、直接贴的 Cookie 和设备 JSON 都不能进日记和模型
