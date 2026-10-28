@@ -48,7 +48,7 @@ jobs:
       - name: 用新版本从零部署（和朋友电脑上的一键部署走同一个脚本）
         if: steps.check.outputs.changed == 'true' || inputs.validate_only
         shell: cmd
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1 -Yes
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1 -Yes -NoVl
 
       - name: 测试用配置
         if: steps.check.outputs.changed == 'true' || inputs.validate_only
