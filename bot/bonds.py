@@ -112,11 +112,11 @@ def find_user(text: str) -> list[str]:
         ]
 
 
-def touch(uid: str, name: str, delta: int, now: float | None = None) -> dict:
-    """这个人跟我说了句话：更新好感、熟悉度和最近用的名字。"""
+def touch(uid: str, name: str, delta: int, now: float | None = None, private: bool = False) -> dict:
+    """这个人跟我说了句话：更新好感、熟悉度（只有私聊才加）和最近用的名字。"""
     with _lock:
         rec = _data["users"].get(str(uid)) or {"notes": []}
-        rec.update(update_bond(rec, delta, now, dev=devs.is_dev(uid)))
+        rec.update(update_bond(rec, delta, now, dev=devs.is_dev(uid), private=private))
         rec["name"] = name
         _data["users"][str(uid)] = rec
         _state["dirty"] = True

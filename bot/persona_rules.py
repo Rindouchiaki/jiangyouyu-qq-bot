@@ -745,7 +745,7 @@ def compose_messages(
 # 好感 -100~100、熟悉 0~100，按 QQ 号存，群聊私聊共用。难涨，但正常来往守得住：
 # - 好感不按单句关键词算，由模型隔几轮看整段聊天打分（-2~+2，见 diary_user_prompt），另外只有被追着烦会扣；
 # - 每天涨的上限按当天起点 3 / 2 / 1（<30 / <60 / 其它），一天最多掉 12；
-# - 熟悉度是一起聊过的天数：有来往的那天 +1，只有「亲近」看它；
+# - 熟悉度是私聊过的天数：那天私聊过 +1，群里聊得再多也不加；只有「亲近」看它，所以没私聊过的人最多到「有好感」；
 # - 只要还在来往好感就不自己掉；48 小时没来往起每天掉 1、2、3（之后每天 3），掉到初始值为止；记仇（负的）每 7 天回 1。
 AFF_RANGE = (-100, 100)
 FAM_MAX = 100
@@ -843,9 +843,10 @@ def bond_view(bond: dict | None, now: float | None = None, dev: bool = False) ->
 
 
 def update_bond(
-    bond: dict | None, delta: int, now: float | None = None, dev: bool = False, met: bool = True
+    bond: dict | None, delta: int, now: float | None = None, dev: bool = False, met: bool = True,
+    private: bool = False,
 ) -> dict:
-    """记一次好感变化。met=True 是对方跟她说了话：先结算冷落、当天熟悉度 +1；False 只是事后打分。"""
+    """记一次好感变化。met=True 是对方跟她说了话：先结算冷落；private=True 是私聊，当天熟悉度 +1。met=False 只是事后打分。"""
     now = time.time() if now is None else now
     if dev:
         bond = dev_floor(bond or {})
@@ -858,8 +859,8 @@ def update_bond(
     day = _local_day(now)
     if b["day"] != day:
         b["day"], b["day_aff"] = day, 0
-        if met:
-            b["fam"] = min(FAM_MAX, b["fam"] + 1)
+    if met and private and b.get("fday") != day:
+        b["fday"], b["fam"] = day, min(FAM_MAX, b["fam"] + 1)
     start = b["aff"] - int(b["day_aff"])
     gain_cap, loss_cap = _day_gain_cap(start), DAY_AFF_LOSS
     if dev:
