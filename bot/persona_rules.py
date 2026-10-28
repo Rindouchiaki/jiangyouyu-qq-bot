@@ -76,7 +76,7 @@ _CASUAL_WORDS = (
 
 # 早柚核心插件的指令前缀（和 external.lock.json 里各插件的 prefixes 对齐）加核心自带的扫码登录；
 # 「原神」「绝区零」这类中文前缀不放进来，免得平常聊游戏时人设也闭嘴
-DEFAULT_GAME_PREFIXES = ("gs", "sr", "zzz", "bbb", "ww", "扫码登录", "扫码登陆")
+DEFAULT_GAME_PREFIXES = ("gs", "sr", "zzz", "bbb", "ww", "zmd", "end", "扫码登录", "扫码登陆")
 
 
 def is_game_command(text: str, prefixes: tuple[str, ...]) -> bool:

@@ -55,6 +55,17 @@
       ],
       "help": "ww帮助",
       "login": "ww登录"
+    },
+    "EndUID": {
+      "repo": "https://github.com/Loping151/EndUID.git",
+      "commit": "e08cd754217f85250eefe0b158db0362584f414b",
+      "game": "明日方舟：终末地",
+      "prefixes": [
+        "zmd",
+        "end"
+      ],
+      "help": "zmd帮助",
+      "login": "zmd扫码登录"
     }
   }
 }

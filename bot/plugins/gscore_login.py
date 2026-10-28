@@ -26,7 +26,7 @@ from nonebot.message import run_preprocessor
 
 LINK_PLUGIN = "GenshinUID"
 QR_LOCK_SEC = 60
-TIP_PRIVATE = "登录只在私聊进行：直接在这里回复「{cmd}」，二维码或登录结果会发在这里，别人看不到。"
+TIP_PRIVATE = "登录和账号凭据相关的指令只在私聊用：直接在这里回复「{cmd}」，结果会发在这里，别人看不到。"
 
 # 群号 -> 截止时间：刚拦过二维码文案的群，这段时间里的图片一律不发
 _qr_lock: dict[str, float] = {}

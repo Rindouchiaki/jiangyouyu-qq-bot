@@ -71,6 +71,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #33 | 外部依赖不锁版本（pip 只有范围、核心和插件 clone 最新、SnowLuma 装 latest 且不校验哈希），更新全靠手动 | `requirements.lock` + `external.lock.json` 锁定确切版本，一键部署按锁安装（SnowLuma 校验 sha256）；`update-deps.yml` 每天查新版本，在 Windows 上从零部署 + 启动整套 + 冒烟测试通过才开 PR；合并后双击 `一键更新.cmd`（`update.ps1`：拉代码 → 停服务 → `setup.ps1 -Update` → 重启），SnowLuma 原地升级并备份旧文件。另加 `ci.yml`（脚本语法、单测、NoneBot 冒烟）和 Actions 版本的 Dependabot |
 | #35 | 要加原神 | 核心插件 GenshinUID（前缀 `gs`，米游社扫码和星铁等共用）。顺带把加游戏变成「锁文件加一项 + 文档」：`external.lock.json` 的插件项带 `game` / `prefixes` / `help`，一键部署按它装插件并装各插件自己的依赖，给旧 `persona.env` 补前缀；冒烟测试对每个插件发帮助；`update-deps.yml` 加 `validate_only` 手动验证分支。CI 验证时发现人设对「扫码 登录」（带空格）会插话：`is_game_command` 改为和核心一样不看空白 |
 | #36 | 要加鸣潮 | 核心插件 XutheringWavesUID（前缀 `ww`，原 WutheringWavesUID 仓库已删）。它的登录是库街区网页链接 / 短信验证码，不走核心扫码：`gscore_guard` 改成按插件认登录指令（`PREFIXED_LOGIN`）、私聊提醒按插件给（`LOGIN_HINTS`，鸣潮提示短信登录）、群内拦截认多种文案和链接（`LOGIN_MARKERS`，含 `/waves/i/`）；人设前缀后紧跟同一字母不算指令（`www笑死`、`www.` 链接）；冒烟测试按锁文件的 `login` 查各插件登录不进群、回到临时会话，并核对 `LOGIN_MARKERS` 都还在源码里 |
+| #37 | 要加明日方舟：终末地 | 核心插件 EndUID（前缀 `zmd` / `end`，森空岛扫码登录）。`gscore_guard` 加终末地的登录指令和三条登录文案；新增 `PREFIXED_PRIVATE`：会贴出或显示凭据的指令（`ww添加token`、`zmd绑定 cred`、`zmd我的cred` 等）群里也不转给核心，私聊提醒原样到私聊发且不回显凭据 |
 
 **自动记忆仍然开着**：`PRIVATE_MIRROR`、`GROUP_MIRROR` 默认 1；私聊每条都落盘，群聊只记被叫/接续的对话；问到「记得/上次」照常带本会话最近 5 条。改的只是按会话隔离和手动指令的权限。
 

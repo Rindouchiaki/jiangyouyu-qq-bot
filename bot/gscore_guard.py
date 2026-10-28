@@ -12,16 +12,32 @@ LOGIN_MARKERS = (
     QR_CAPTION,
     "/waves/i/",  # 鸣潮 XutheringWavesUID：登录 / 邮箱登录 / 抽卡登录的网页链接（login.py 的 send_login）
     "请用浏览器扫描获取地址",  # 鸣潮开了 WavesQRLogin 时，链接换成二维码的文案
+    "请使用森空岛APP扫码登录",  # 终末地 EndUID：森空岛扫码登录（end_bind/__init__.py）
+    "/end/i/",  # 终末地配了 EndLoginUrl 时的手机号登录网页链接（end_bind/web_login.py）
+    "请用浏览器扫描打开，完成手机号登录",  # 同上，开了 EndQRLogin 时链接换成二维码的文案
 )
-# 带前缀的登录指令：前缀 -> 前缀后面接的登录词（照各插件 xxx_login 里注册的指令抄）
+# 带前缀的登录指令：前缀 -> 前缀后面接的登录词（照各插件 xxx_login / end_bind 里注册的指令抄）
+_END_LOGIN = ("扫码登录", "扫码登陆", "扫码登入", "扫码登龙", "扫码login", "扫码dl",
+              "登录", "登陆", "登入", "登龙", "login", "dl")
 PREFIXED_LOGIN = {
     "ww": ("登录", "登陆", "登入", "登龙", "login", "dl", "邮箱登录", "国际服登录",
            "抽卡登录", "抽卡登陆", "抽卡登入", "云鸣潮登", "云登录", "云登陆", "云登入"),
+    "zmd": _END_LOGIN,
+    "end": _END_LOGIN,
+}
+# 会贴出或显示账号凭据的指令：群里也不转给核心，私聊提醒到私聊里发（终末地的「我的cred」只给主人，但会发在问的地方）
+_END_PRIVATE = ("绑定", "bind", "我的cred", "查看cred", "获取cred", "我的token", "查看token", "获取token", "获取tk")
+PREFIXED_PRIVATE = {
+    "ww": ("添加ck", "添加token", "获取ck", "获取token"),
+    "zmd": _END_PRIVATE,
+    "end": _END_PRIVATE,
 }
 # 私聊提醒里让对方发的指令：鸣潮的网页登录链接指向本机核心，手机打不开，提示用短信验证码登录
 LOGIN_HINTS = {
     "": "扫码登录",
     "ww": "ww登录 手机号,验证码",
+    "zmd": "zmd扫码登录",
+    "end": "end扫码登录",
 }
 _BLANKS = " \t\r\n　 "
 
@@ -35,12 +51,25 @@ def command_text(texts: Iterable[str]) -> str:
     return "".join(ch for ch in joined if ch not in _BLANKS)
 
 
+def _private_cmd(cmd: str) -> str | None:
+    """只在私聊用的凭据指令（ww添加token、zmd我的cred 等）原样返回「前缀+指令词」，不是返回 None。"""
+    for prefix, words in PREFIXED_PRIVATE.items():
+        if cmd.startswith(prefix):
+            word = next((w for w in words if cmd[len(prefix):].startswith(w)), None)
+            if word:
+                return prefix + word
+    return None
+
+
 def login_kind(texts: Iterable[str]) -> str | None:
-    """是登录指令就返回它属于哪个前缀（核心自带的扫码登录是 ""），不是返回 None。"""
+    """登录或凭据指令就返回它属于哪个前缀（核心自带的扫码登录是 ""），不是返回 None。"""
     cmd = command_text(texts).lower()
     for prefix, words in PREFIXED_LOGIN.items():
         if cmd.startswith(prefix) and cmd[len(prefix):].startswith(words):
             return prefix
+    private = _private_cmd(cmd)
+    if private:
+        return next(p for p in PREFIXED_PRIVATE if private.startswith(p))
     return "" if "扫码登" in cmd else None
 
 
@@ -53,9 +82,13 @@ def login_hint(texts: Iterable[str]) -> str | None:
 
     比拦截严：核心自带的扫码登录要整句就是「扫码登录」，「我不会扫码登录」这种聊天不提醒、也不挡人设。
     """
+    cmd = command_text(texts).lower()
     kind = login_kind(texts)
-    if kind is None or (kind == "" and command_text(texts) not in ("扫码登录", "扫码登陆")):
+    if kind is None or (kind == "" and cmd not in ("扫码登录", "扫码登陆")):
         return None
+    if kind and not cmd[len(kind):].startswith(PREFIXED_LOGIN.get(kind, ())):
+        # 凭据指令：让对方到私聊发同一条，不回显后面的内容（可能就是凭据）
+        return _private_cmd(cmd)
     return LOGIN_HINTS.get(kind, LOGIN_HINTS[""])
 
 
