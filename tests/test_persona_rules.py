@@ -36,7 +36,6 @@ from persona_rules import (  # noqa: E402
     parse_sticker_read,
     follow_decision,
     format_search_results,
-    in_quiet_hours,
     is_coaxing,
     interest_hits,
     humanize,
@@ -54,6 +53,8 @@ from persona_rules import (  # noqa: E402
     parse_group_diary,
     parse_notes,
     parse_user_diary,
+    note_active_hour,
+    habit_hours,
     parse_slang_candidates,
     parse_slang_meaning,
     pick_flavor,
@@ -585,19 +586,32 @@ def main() -> int:
     print("PASS  听得懂不等于要接：吵架、正事、求助、烦了不接，抽中才顺手玩一下")
     print("PASS  学新梗：拆候选、认识的不要、没把握的标出来去查")
 
-    assert in_quiet_hours(3, "1-9") and not in_quiet_hours(12, "1-9")
-    assert in_quiet_hours(23, "23-7") and in_quiet_hours(2, "23-7") and not in_quiet_hours(8, "23-7")
-    assert not in_quiet_hours(3, "乱写")
-    now = 1_000_000.0
-    rec = {"lp": now - 7 * 3600, "pa": 0, "pu": 0}
-    assert proactive_due(rec, now, "亲近") and not proactive_due(rec, now, "普通")
-    assert not proactive_due({**rec, "pu": 2}, now, "亲近")
-    assert not proactive_due({**rec, "lp": now - 3600}, now, "亲近")
-    assert not proactive_due({**rec, "pa": now - 3600}, now, "亲近")
-    assert not proactive_due({}, now, "亲近")
+    # 平时晚上 8 点常聊：每个钟点一天只记一次，聊过 3 天才算习惯
+    evening = datetime(2026, 10, 1, 20, 5).timestamp()
+    habit = {}
+    for d in range(3):
+        for m in (0, 10, 20):
+            habit = note_active_hour(habit, evening + d * 86400 + m * 60)
+    assert habit["hrs"][20] == 3 and habit_hours(habit) == {20}
+    assert habit_hours(note_active_hour({}, evening)) == set()  # 才聊过一天，不算习惯
+    now = datetime(2026, 10, 5, 20, 50).timestamp()
+    rec = {**habit, "lp": now - 45 * 60, "last": now - 45 * 60, "pa": 0, "pu": 0}
+    assert proactive_due(rec, now, "亲近")  # 平时这个点聊，45 分钟没说话就找
+    assert not proactive_due(rec, now, "有好感")  # 只找亲近的
+    assert not proactive_due(rec, now + 3 * 3600, "亲近")  # 23 点不是平时聊的点
+    night = {**note_active_hour(note_active_hour(note_active_hour({}, evening - 18 * 3600), evening + 6 * 3600), evening + 30 * 3600)}
+    late = datetime(2026, 10, 5, 2, 50).timestamp()
+    assert habit_hours(night) == {2} and proactive_due({**night, "lp": late - 3600, "last": late - 3600}, late, "亲近")  # 常在凌晨 2 点聊，就凌晨 2 点找
+    assert not proactive_due({**rec, "lp": now - 20 * 60}, now, "亲近")  # 私聊刚聊过
+    assert proactive_due({**rec, "last": now - 60}, now, "亲近")  # 群里刚聊过不算
+    assert not proactive_due({**rec, "pu": 2}, now, "亲近")  # 连着两次没回
+    assert not proactive_due({**rec, "pa": now - 20 * 60}, now, "亲近")  # 刚主动发过，私聊里还不到 40 分钟
+    assert proactive_due({**rec, "pa": now - 41 * 60, "pu": 1}, now, "亲近")  # 不用隔几小时，冷了一会儿就能再找
+    assert not proactive_due({**rec, "lp": 0}, now, "亲近") and not proactive_due({}, now, "亲近")  # 没私聊过
     proactive_msgs = compose_messages([], "小明", "", proactive=True)
     assert "突然想找小明" in proactive_msgs[-1]["content"] and "主动" not in proactive_msgs[-1]["content"]
-    print("PASS  主动找人：好感够、沉默够久、没被连着晾才找，深夜不打扰")
+    assert "找点话题" in proactive_msgs[0]["content"]
+    print("PASS  主动找人：只找亲近的，平时常聊的点有一阵没说话就找，没被连着晾")
 
     # ---- 开发者写死在 devs.py ----
     import devs
