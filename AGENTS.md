@@ -46,18 +46,18 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #3 | 管理指令在 `DEV_UIN` 为空时人人可用；`/缓存` 每次都 ImportError | 统一改成未配置即拒绝；`cache_cleanup` 从环境变量读 `DEV_UIN` |
 | #4 | `config/onebot.reverse-ws.json` 监听 `0.0.0.0`，反向 WS 连 8080 且 token 为空 | 改 `127.0.0.1`、`18080`、token 占位符 |
 | #5 | 任何人都能让机器人拿号主的米游社 Cookie 查体力 | 体力/便笺仅 `DEV_UIN`；米游社便笺接口本来只能查 Cookie 所属账号 |
-| #7 | 全局限流 `REPLY_PER_MIN` 只拦随机插话，被 @、接续、嫌烦收尾、配图都不受限 | 群聊所有主动消息都计入一分钟总额度并分档：用到 1/2 停插话和自动配图，3/4 停接续，用满才停被叫；私聊、被叫触发的抽卡定型文、指令不拦（抽卡模式下的随机插话照常按插话档）；样例去掉重复的 `REPLY_PER_MIN`（仍为 4） |
+| #7 | 全局限流 `REPLY_PER_MIN` 只拦随机插话，被 @、接续、嫌烦收尾、配图都不受限 | 群聊所有主动消息都计入一分钟总额度并分档：用到 1/2 停插话和自动配图，3/4 停接续；被 @ 必回、不受额度限制（#40 起），私聊、被叫触发的抽卡定型文、指令同样不拦（抽卡模式下的随机插话照常按插话档）；样例去掉重复的 `REPLY_PER_MIN`（为 4） |
 | #8 | 游戏数据定时刷新的 `asyncio.create_task` 没留引用，可能被回收 | 存进模块级 `_refresh_task` |
 | #9 | `vision.py` 连写两个 `if desc:`，视觉模型描述的动图被改标成图片 | 删掉第二个（旧图卡缓存 7 天后自然过期） |
 | #10 | `scripts/启动全部.ps1` 调用不存在的 `scripts\scripts\start-all-here.ps1` | 改调同目录脚本，用法说明对齐 README |
 | #11 | 从仓库根目录跑 `python bot\bot.py` 时插件一个都不加载（NoneBot 按 cwd 找插件目录） | 启动时 `os.chdir` 到 `bot/`，与 `run-nonebot.ps1` 一致 |
-| #12 | 样例里 `ENGAGE_MAX_TURNS` 写了两次 | 去掉被覆盖的那条，仍为 4 |
+| #12 | 样例里 `ENGAGE_MAX_TURNS` 写了两次 | 去掉被覆盖的那条，样例为 2（见 `bot/plugins/persona.py:110`） |
 | #13 | 测试和 `tools/build_game_data.py` 往 `sys.path` 加不存在的 `nonebot/` | 改指 `bot/` |
 | #15 | README 写米游抽卡被叫 10%，代码和样例是 1.8% | README 改为 1.8%，样例注释 `1.8%%` 改成 `1.8%` |
 | #16 | 样例里 `REPLY_FOLLOW_COOLDOWN` 没有代码读 | 删掉；省话档的被叫/接续冷却实际是 `REPLY_GROUP_COOLDOWN`（其它档位写死）；`REPLY_COOLDOWN` 注释改为「主动插话的冷却」 |
 | #17 | `bot_guard.py` 的 `BOT_UIN` 默认是作者的号，没配置时其它号的机器人全部静默 | 默认改为空（不过滤），未配置时启动告警 |
 | #18 | 代码默认值和样例不一致（`SNUB_SECONDS` 300/100、`ENGAGE_MAX_TURNS` 8/4、`HISTORY_SIZE` 16/24、`STICKER_AUTO_PROB` 0.15/0.08） | 代码默认对齐样例 |
-| #19 | 没有依赖清单，README 装的裸 `nonebot2` 没有 FastAPI 驱动，启动不了 | 新增 `requirements.txt`，README 改为 `pip install -r requirements.txt` |
+| #19 | 没有依赖清单，README 装的裸 `nonebot2` 没有 FastAPI 驱动，启动不了 | 新增 `requirements.txt`，README 安装入口改为一键部署（`一键部署.cmd`） |
 | #21 | 要支持三款游戏的抽卡、深渊、面板和米游社登录 | 接入早柚核心连接插件 `GenshinUID`；`persona.env` 的 `GSUID_CORE_*` 显式传给 `nonebot.init`（NoneBot 只从自己的 `.env` 读插件自定义配置） |
 | #22 | 连接插件转发每条消息，人设会对 `sr深渊` 这类指令接话、记日记 | `GAME_CMD_PREFIXES` 开头的消息人设直接跳过 |
 | #23 | 二维码发在群里谁都能扫，还可能被风控 | 群里发「扫码登录」改为群临时会话提醒；核心侧「扫码登陆」设 `DIRECT` |
@@ -95,7 +95,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 
 ### 配置
 
-1. `nonebot-plugin-parser` 锁在 `>=2.6,<2.8`（`parser_video_only.py` 改它的内部渲染类，这两个版本相关结构一致）。作者本机实际版本未知，最好 `pip freeze` 确认一次。
+1. `nonebot-plugin-parser` 锁在 `>=2.6,<2.8`（`parser_video_only.py` 改它的内部渲染类，这两个版本相关结构一致）。作者本机已实测装的是 2.7.1，patch 用到的 `BaseRenderer.render_contents` / `ImageRenderer.render_messages` / `VideoContent` / `ImageContent` 都在，可结案；换大版本时仍要复核这几个符号。
 2. `BOT_UIN` 未配置时不过滤：SnowLuma 同时登录两个号（样例里第二个号就是开发者自己）时两个号都会以人设回话。可以考虑未配置时额外丢掉 `self_id == DEV_UIN` 的事件。
 3. `/模式` 状态文案用 `:.0%` 显示概率，米游抽卡的 1.8% 会显示成「2%」。
 
@@ -114,7 +114,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 
 9. `docs/SnowLuma-QQ机器人调查报告.md`、`docs/SnowLuma-拓展路线评估-Docker.md` 还是 8080 + 空 token 的旧示例。
 10. 提醒（未实测）：已有的账号级 `onebot_<uin>.json` 会叠加在全局 `onebot.json` 上，可能把 `0.0.0.0` / 8080 带回来；README 可以提醒检查。
-11. `docs/SnowLuma-参数与原理.md` 里有三个 accessToken 的首尾片段；虽然截断了，建议换一组新 token。
+11. `docs/SnowLuma-参数与原理.md` 里原有的三个 accessToken 首尾片段已换成 `<ONEBOT_*_TOKEN>` 占位符；线上 token 本身要不要轮换由作者定（这篇文档还提到 WebUI 口令，同理）。
 
 ### 性能和测试
 

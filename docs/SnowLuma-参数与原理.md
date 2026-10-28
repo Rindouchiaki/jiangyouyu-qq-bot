@@ -14,12 +14,12 @@
 | --- | --- | --- |
 | `httpServers[0]` | name / host / port / path | `http-default` / `127.0.0.1` / `3000` / `/` |
 | | enableWebSocket / messageFormat | `false` / `array` |
-| | accessToken | `wFzfbI2…sXL8` |
+| | accessToken | `<ONEBOT_HTTP_TOKEN>` |
 | `wsServers[0]` | name / host / port / path / role | `ws-default` / `127.0.0.1` / `3001` / `/` / `Universal` |
-| | accessToken | `tAgwVnib…vII` |
+| | accessToken | `<ONEBOT_WS_SERVER_TOKEN>` |
 | `wsClients[0]` | name / url | `nonebot` / `ws://127.0.0.1:18080/onebot/v11/ws` |
 | | role / reconnectIntervalMs | `Universal` / `5000` |
-| | accessToken | `X0UiJMRo…aDA` |
+| | accessToken | `<ONEBOT_WS_CLIENT_TOKEN>` |
 | `httpClients` | — | 空 |
 | `statusCommand` | enabled / swallow / cooldownSeconds / trigger | `true` / `false` / `5` / `#sl` |
 | `historySync` | enabled | `false` |
@@ -60,7 +60,7 @@
 | `consent.json` | EULA 版本 `dcb31a7b03a0b64d`，接受于 2026-10-25T12:42:31Z | 你已经点过同意 |
 | `ui.json` | 主题/配色/字号等 2.8 KB 外观设置 | 只影响 WebUI 显示 |
 
-### 1.5 启动时注入的环境变量（`scripts\start-all.ps1`）
+### 1.5 启动时注入的环境变量（`scripts\start-all-here.ps1`）
 
 | 变量 | 值 | 生效条件 |
 | --- | --- | --- |
@@ -73,10 +73,10 @@
 | 变量 | 值 |
 | --- | --- |
 | `HOST` / `PORT` | `127.0.0.1` / `18080` |
-| `ONEBOT_ACCESS_TOKEN` | `X0UiJMRo…aDA`（与 wsClients 成对） |
+| `ONEBOT_ACCESS_TOKEN` | `<ONEBOT_WS_CLIENT_TOKEN>`（与 wsClients 成对） |
 | `LOG_LEVEL` | `INFO` |
 
-### 1.7 persona 插件参数（`stack\nonebot\persona.env`，全量 14 项）
+### 1.7 persona 插件参数（`bot\persona.env`，共 50 项，这里只列常用）
 
 | 键 | 值 | 作用 |
 | --- | --- | --- |
@@ -86,14 +86,14 @@
 | `LLM_MODEL` | `deepseek-chat` | 实际返回 `deepseek-flash` |
 | `LLM_API_KEY` | `sk-***` | 明文存放 |
 | `REPLY_MAX_CHARS` | 20 | 单条上限 |
-| `HISTORY_SIZE` | 16 | 每会话上下文条数 |
+| `HISTORY_SIZE` | 24 | 每会话上下文条数 |
 | `REPLY_COOLDOWN` | 8 | 同会话冷却（秒） |
 | `REPLY_CHIME_PROB` | 0.02 | 未被点名时的插话概率 |
-| `REPLY_CHIME_COOLDOWN` | 180 | 两次插话最小间隔（秒） |
+| `REPLY_CHIME_COOLDOWN` | 2700 | 两次插话最小间隔（秒） |
 | `ENGAGE_TTL` | 120 | 被叫后「还在聊」时长（秒） |
 | `ENGAGE_FOLLOW_WINDOW` | 45 | 别人接话的窗口（秒） |
-| `ENGAGE_MAX_TURNS` | 8 | 单段对话最多来回 |
-| `REPLY_PER_MIN` | 8 | 全局限流 |
+| `ENGAGE_MAX_TURNS` | 2 | 单段对话最多来回 |
+| `REPLY_PER_MIN` | 4 | 全局限流 |
 
 ---
 
