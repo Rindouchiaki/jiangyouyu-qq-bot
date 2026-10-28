@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    酱油鱼守护：一键启动过之后，NoneBot2 或本地视觉模型掉了就自动补起来。
+    酱油鱼守护：一键启动过之后，NoneBot2 掉了就自动补起来（配了本地视觉模型的，它掉了也补）。
 
 .DESCRIPTION
     只在 logs\.stack-on 这个标记存在时才干活。「一键停止.cmd」（= start-all-here.ps1 -Stop）
@@ -36,7 +36,7 @@ function Test-Listening([int]$port) {
 
 $down = @()
 if (-not (Test-Listening $NoneBotPort)) { $down += 'NoneBot2' }
-if (-not (Test-Listening $VlPort)) { $down += '本地视觉模型' }
+if ($cfg.VlEnabled -and -not (Test-Listening $VlPort)) { $down += '本地视觉模型' }
 if ($down.Count -eq 0) { return }
 
 Add-Content -LiteralPath $watchLog -Value ("[{0}] 发现掉线: {1}，尝试拉起" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($down -join '、')) -Encoding utf8
@@ -45,6 +45,6 @@ Add-Content -LiteralPath $watchLog -Value ("[{0}] 发现掉线: {1}，尝试拉�
 
 $after = @()
 if (-not (Test-Listening $NoneBotPort)) { $after += 'NoneBot2' }
-if (-not (Test-Listening $VlPort)) { $after += '本地视觉模型' }
+if ($cfg.VlEnabled -and -not (Test-Listening $VlPort)) { $after += '本地视觉模型' }
 $result = if ($after.Count -eq 0) { '已恢复' } else { "仍未恢复: $($after -join '、')" }
 Add-Content -LiteralPath $watchLog -Value ("[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $result) -Encoding utf8

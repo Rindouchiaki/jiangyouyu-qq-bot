@@ -65,7 +65,8 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 | #15 | README 写米游抽卡被叫 10%，代码和样例是 1.8% | README 改为 1.8%，样例注释 `1.8%%` 改成 `1.8%` |
 | #16 | 人设像现实里嘴硬顶牛的小孩，不像二次元傲娇；开发者单开一档、处处另算 | 参照萌娘百科「傲娇」：底子改成弱气、怕羞、不坦率，傲是对不熟的人戴的面具，五档按「讨厌冷冰冰 / 陌生淡淡偶尔犟嘴 / 普通端着傲基本不娇 / 有好感会害羞撒娇 / 亲近又傲又娇」重写；去掉阴阳怪气、狠话，炸毛改成「你、你说什么呢」式的慌；露真心改为普通 15%、有好感 35%、亲近 50%；新增 `CUTE_CHANCE` 抽签句尾带「喵」「呐」或「…」（讨厌、陌生不带），`humanize` 不再吃掉「…」「~」；开发者不再单开一档：喊名字、露真心、嫌烦、私聊晚回、主动找人都按好感档，只保留提示词里「最亲近的人」；好感保底「有好感」、涨×2 掉÷2、不受「30 + 熟悉度」封顶（`dev_floor`） |
 | #17 | #16 之后平常聊天也句句傲娇，语气词和「…」太多 | 平时正常聊，五档改成看热不热情、积不积极；突然冒一句傲娇（`DERE_CHANCE`）和带「喵」「…」（`CUTE_CHANCE`）都降到普通 3% / 有好感 6% / 亲近 10%。新增害羞话题（`shy_topic`：问喜不喜欢 / 想不想 / 在不在意，夸、表白、撒娇，关心、约玩，说她傲娇），按好感反应（`shy_reaction`：讨厌陌生不傲娇、普通大声否认、亲近多数小声），普通及以下同一人追问第二次更不高兴、第三次起 -2；同一人 10 分钟 3 次躲这个人、一个群 10 分钟被问满 5 次整群躲，躲 10 分钟，人设不说话、@ 也不理，游戏查询照常；亲近的人哄（`is_coaxing`）能提前哄回来 |
-| #18 | 几轮改人设、改开发者以后，文档、注释和提示词里还留着旧说法（甩脸子、毒舌、「开发者」态度档、主人不看好感、回话路数里的傲娇），还有早就过期的调研文档和没人用的脚本 | 删掉 `docs/改动记录.md`（只记了 #4，已被本表取代）、`docs/调研-星铁绝区零与B站解析.md` 和四篇 SnowLuma 调研文档、`scripts/start-vl.ps1`、`scripts/smoke-test-onebot.ps1`、`config/onebot.native.json`；README、使用手册、架构与运维、样例注释、`devs.py` 对齐现在的设计；回话路数（会在一个会话里粘一阵）去掉傲娇路数；`test_topics.py`、`test_sticker_weights.py` 进 CI；视觉模型配置对不上记进待确认 11 |
+| #18 | 几轮改人设、改开发者以后，文档、注释和提示词里还留着旧说法（甩脸子、毒舌、「开发者」态度档、主人不看好感、回话路数里的傲娇），还有早就过期的调研文档和没人用的脚本 | 删掉 `docs/改动记录.md`（只记了 #4，已被本表取代）、`docs/调研-星铁绝区零与B站解析.md` 和四篇 SnowLuma 调研文档、`scripts/start-vl.ps1`、`scripts/smoke-test-onebot.ps1`、`config/onebot.native.json`；README、使用手册、架构与运维、样例注释、`devs.py` 对齐现在的设计；回话路数（会在一个会话里粘一阵）去掉傲娇路数；`test_topics.py`、`test_sticker_weights.py` 进 CI；视觉模型配置对不上的事见 #19 |
+| #19 | 一键启动和看护默认拉起本地视觉模型（llama.cpp + Qwen3-VL，11435），但 `vision.py` 默认 `VLM_ENABLED=0`、不用它；没装模型的机器看护每 5 分钟都当它掉线去重跑启动脚本 | 按作者决定保持默认不开：`common.ps1` 的 `VlEnabled` 跟 `vision.py` 同一个开关（`VLM_ENABLED=1` 且 `VLM_PROVIDER=openai`，可写在 `persona.local.env`），配了才拉起、看护才查；`-Vl` 临时开一次，`-NoVl` 留着不报错；代码默认值和样例不动 |
 | #16 | 样例里 `REPLY_FOLLOW_COOLDOWN` 没有代码读 | 删掉；省话档的被叫/接续冷却实际是 `REPLY_GROUP_COOLDOWN`（其它档位写死）；`REPLY_COOLDOWN` 注释改为「主动插话的冷却」 |
 | #17 | `bot_guard.py` 的 `BOT_UIN` 默认是作者的号，没配置时其它号的机器人全部静默 | 默认改为空（不过滤），未配置时启动告警 |
 | #18 | 代码默认值和样例不一致（`SNUB_SECONDS` 300/100、`ENGAGE_MAX_TURNS` 8/4、`HISTORY_SIZE` 16/24、`STICKER_AUTO_PROB` 0.15/0.08） | 代码默认对齐样例 |
@@ -160,14 +161,13 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 
 9. 提醒（未实测）：已有的账号级 `onebot_<uin>.json` 会叠加在全局 `onebot.json` 上，可能把 `0.0.0.0` / 8080 带回来；README 可以提醒检查。
 10. 线上 OneBot token 和 WebUI 口令要不要轮换由作者定（早先写在已删的调研文档里，git 历史里还能看到首尾片段）。
-11. 本地视觉模型：一键启动和看门狗会拉起 llama.cpp 的 Qwen3-VL（11435），但 `vision.py` 默认 `VLM_ENABLED=0`、`VLM_PROVIDER=ollama`，样例里也没有这几项，不配就用不上。没写进样例是因为一键更新会按样例值冲掉作者机器上的设置；要不要默认打开、启动脚本要不要默认不拉起它，等作者确认。`vision.py` 的其它配置（`IMAGE_*`、`STICKER_*`）也都不在样例里。
 
 ### 性能和测试
 
-12. `vision._match_sticker` 每次命中都重读 `index.json`；`_save_cards` 每张图都同步重写整个缓存文件。
-13. `/回忆` 和自动回忆每次都全量扫描日记目录，日记多了会慢。
-14. 测试只覆盖 `persona_rules` 和离线识图；`persona.py` 的主处理流程只有 `smoke_stack.py` 用 mock 跑「@ 有回复」「私聊连发合成一批、不秒回」，联网、插话 `[不回]`、主动找人、害羞跑开和哄回来还没有自动测试（联网用假 DeepSeek 接口、害羞用 mock 手动跑过）；`memory.py` 的标签过滤没有测试。
-15. `LLM_MODEL` 默认 `deepseek-chat`：DeepSeek 现在的文档只列 `deepseek-flash` / `deepseek-v4-pro`，没提 `deepseek-chat` 还能不能用，作者确认后再改样例。
+11. `vision._match_sticker` 每次命中都重读 `index.json`；`_save_cards` 每张图都同步重写整个缓存文件。
+12. `/回忆` 和自动回忆每次都全量扫描日记目录，日记多了会慢。
+13. 测试只覆盖 `persona_rules` 和离线识图；`persona.py` 的主处理流程只有 `smoke_stack.py` 用 mock 跑「@ 有回复」「私聊连发合成一批、不秒回」，联网、插话 `[不回]`、主动找人、害羞跑开和哄回来还没有自动测试（联网用假 DeepSeek 接口、害羞用 mock 手动跑过）；`memory.py` 的标签过滤没有测试。
+14. `LLM_MODEL` 默认 `deepseek-chat`：DeepSeek 现在的文档只列 `deepseek-flash` / `deepseek-v4-pro`，没提 `deepseek-chat` 还能不能用，作者确认后再改样例。
 
 ---
 

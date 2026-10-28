@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    酱油鱼一键启动：QQ → 本地视觉模型 → SnowLuma(协议端) → 早柚核心(游戏查询) → NoneBot2(人格/插件)。
+    酱油鱼一键启动：QQ → SnowLuma(协议端) → 早柚核心(游戏查询) → NoneBot2(人格/插件)，可选本地视觉模型。
 
 .DESCRIPTION
     每一步都先查端口，已经在跑的不会重复起。退出脚本后服务继续跑
@@ -11,7 +11,7 @@
       .\scripts\启动全部.ps1                  # 全套拉起
       .\scripts\启动全部.ps1 -Status          # 只看现在谁在跑
       .\scripts\启动全部.ps1 -Stop            # 全停
-      .\scripts\启动全部.ps1 -NoVl            # 不启本地视觉模型（省 1GB 内存）
+      .\scripts\启动全部.ps1 -Vl              # 这次也拉起本地视觉模型（默认不开；persona.env 配了 VLM_ENABLED=1、VLM_PROVIDER=openai 时自动开）
       .\scripts\启动全部.ps1 -NoAutoLoad      # SnowLuma 不自动注入 QQ 账号
       .\scripts\启动全部.ps1 -NoCore          # 不启早柚核心（米哈游等游戏的查询）
       .\scripts\启动全部.ps1 -NoOllama        # 不启 Ollama（白守的向量模型 bge-m3）
@@ -24,7 +24,8 @@
 param(
     [switch]$Stop,
     [switch]$Status,
-    [switch]$NoVl,
+    [switch]$Vl,
+    [switch]$NoVl,  # 旧参数：现在默认就不开视觉模型，留着免得旧命令报错
     [switch]$NoAutoLoad,
     [switch]$NoCore,
     [switch]$NoQQ,
@@ -71,7 +72,7 @@ function Show-Status {
             @{ Port = 3001; Name = 'OneBot WS' },
             @{ Port = $CorePort; Name = '早柚核心' },
             @{ Port = $NoneBotPort; Name = 'NoneBot2' },
-            @{ Port = $VlPort; Name = '本地视觉模型' },
+            @{ Port = $VlPort; Name = '本地视觉模型（可选）' },
             @{ Port = $OllamaPort; Name = 'Ollama 向量模型' })) {
         $conn = Get-NetTCPConnection -State Listen -LocalPort $item.Port -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($conn) {
@@ -147,8 +148,8 @@ if (-not $NoOllama) {
     }
 }
 
-# ------------------------------------------------------------------ 3) 本地视觉模型
-if (-not $NoVl) {
+# ------------------------------------------------------------------ 3) 本地视觉模型（可选，默认不开）
+if (($Vl -or $cfg.VlEnabled) -and -not $NoVl) {
     if (Test-Listening $VlPort) {
         Write-Host "本地视觉模型已在 $VlPort 运行，跳过" -ForegroundColor DarkGray
     } elseif (-not (Test-Path $vlBin) -or -not (Test-Path $vlModel) -or -not (Test-Path $vlMmproj)) {

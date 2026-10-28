@@ -86,7 +86,7 @@ DeepSeek（OpenAI 兼容接口）—— 只在真要回话时才调用
 **看图和表情**
 - 表情库用**多帧**感知哈希索引（513 张 / 736 帧）。QQ 把动图表情压成静态预览时，也能靠任意一帧认出来，
   输出 `[表情:动图｜其他｜截图选老婆]` 这种图卡，几 token 就够。
-- 库外的图：Windows 自带 OCR（中文）认字，图卡塞进上下文，一条 5–40 token。没字的图可选交给本地视觉模型描述一句：默认关，要用在 `persona.local.env` 写 `VLM_ENABLED=1`，用一键启动拉起的 llama.cpp（Qwen3-VL-2B，11435）再加 `VLM_PROVIDER=openai`。
+- 库外的图：Windows 自带 OCR（中文）认字，图卡塞进上下文，一条 5–40 token。没字的图可选交给本地视觉模型描述一句：默认关，要用在 `persona.local.env` 写 `VLM_ENABLED=1`、`VLM_PROVIDER=openai`，一键启动就会顺带拉起 llama.cpp（Qwen3-VL-2B，11435），不配就不开。
 - 有人追问「刚才那张图啥意思」时，会把最近一张图重新做成图卡补进上下文。
 - 群友发了库里没有的表情，她会看心情收藏（20%，讨厌的人发的不收），存进 `stickers/saved/`，以后配图会优先挑自己收藏的。
   这是机器人自己的本地表情库，OneBot 没有往 QQ「收藏表情」里加图的接口。
@@ -133,7 +133,7 @@ git clone https://github.com/Rindouchiaki/jiangyouyu-qq-bot.git
 
 ```powershell
 .\scripts\setup.ps1 -Start          # 部署 + 启动（= 一键部署.cmd）
-.\scripts\启动全部.ps1             # QQ → 本地视觉模型 → SnowLuma → 早柚核心 → NoneBot
+.\scripts\启动全部.ps1             # QQ → SnowLuma → 早柚核心 → NoneBot（本地视觉模型默认不开）
 .\scripts\启动全部.ps1 -Status     # 只看状态
 .\scripts\启动全部.ps1 -Stop       # 全停（QQ 保留）
 .\scripts\verify-stack.ps1         # 全链路自检
