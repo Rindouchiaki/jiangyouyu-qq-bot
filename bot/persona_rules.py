@@ -1544,8 +1544,6 @@ def parse_slang_meaning(raw: str, max_chars: int = 20) -> str:
 # 平时常私聊的钟点：每个钟点一天只记一次，满 HABIT_MIN 天、且不少于最常聊那个钟点的 1/4 才算
 HABIT_MIN = int(os.getenv("PROACTIVE_HABIT_MIN", "3"))
 HABIT_CAP = 60
-# 说了「睡了 / 拜拜」之后这么久不去找
-BYE_QUIET_SEC = 8 * 3600
 
 
 def note_active_hour(rec: dict, now: float) -> dict:
@@ -1579,7 +1577,7 @@ def proactive_due(
     min_gap: float = 3 * 3600,
     max_unanswered: int = 2,
 ) -> bool:
-    """这个人现在能不能主动找：亲近、这会儿是平时常私聊的钟点、私聊有一阵没说话、离上次主动够久、没被连着晾、没刚说过晚安。
+    """这个人现在能不能主动找：亲近、这会儿是平时常私聊的钟点、私聊有一阵没说话、离上次主动够久、没被连着晾。
 
     只看私聊：群里聊得再多也不算常聊、也不算刚聊过。
     """
@@ -1590,7 +1588,5 @@ def proactive_due(
     if int(rec.get("pu") or 0) >= max_unanswered:
         return False
     if now - float(rec.get("lp") or 0) < min_silence:
-        return False
-    if now - float(rec.get("bye") or 0) < BYE_QUIET_SEC:
         return False
     return now - float(rec.get("pa") or 0) >= min_gap

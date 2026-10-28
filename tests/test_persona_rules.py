@@ -609,12 +609,11 @@ def main() -> int:
     assert proactive_due({**rec, "last": now - 60}, now, "亲近")  # 群里刚聊过不算
     assert not proactive_due({**rec, "pu": 2}, now, "亲近")  # 连着两次没回
     assert not proactive_due({**rec, "pa": now - 3600}, now, "亲近")  # 一小时前刚找过
-    assert not proactive_due({**rec, "bye": now - 3600}, now, "亲近")  # 刚说了晚安
     assert not proactive_due({**rec, "lp": 0}, now, "亲近") and not proactive_due({}, now, "亲近")  # 没私聊过
     proactive_msgs = compose_messages([], "小明", "", proactive=True)
     assert "突然想找小明" in proactive_msgs[-1]["content"] and "主动" not in proactive_msgs[-1]["content"]
     assert "找点话题" in proactive_msgs[0]["content"]
-    print("PASS  主动找人：只找亲近的，平时常聊的点有一阵没说话就找，没被连着晾、没说晚安")
+    print("PASS  主动找人：只找亲近的，平时常聊的点有一阵没说话就找，没被连着晾")
 
     # ---- 开发者写死在 devs.py ----
     import devs

@@ -252,16 +252,6 @@ def mark_private(uid: str, now: float | None = None) -> None:
         _state["dirty"] = True
 
 
-def mark_bye(uid: str, now: float | None = None) -> None:
-    """对方说了「睡了 / 拜拜」：一阵子不主动找他（见 persona_rules.proactive_due）。"""
-    with _lock:
-        rec = _data["users"].get(str(uid))
-        if rec is None:
-            return
-        rec["bye"] = now or time.time()
-        _state["dirty"] = True
-
-
 def mark_proactive(uid: str, now: float | None = None) -> None:
     """我主动找了他一次：记时间，没回的次数 +1，他一回就清零。"""
     with _lock:

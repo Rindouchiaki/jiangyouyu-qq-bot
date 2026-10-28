@@ -1276,8 +1276,6 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     bond = _bond_touch(user_id, name, 0, private=not is_group) if addressed else bonds.user(user_id)
     if not is_group:
         bonds.mark_private(user_id, now)
-    if addressed and is_conversation_ending(focus["text"]):
-        bonds.mark_bye(user_id, now)
     att = attitude(int(bond.get("aff", 0)), int(bond.get("fam", 0)))
 
     # 话题自学习：说到的类别记一笔（谁说的记谁）；好感高/熟的人才在提示词里顺他的话题，省 token
