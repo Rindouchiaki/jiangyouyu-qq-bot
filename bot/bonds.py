@@ -46,6 +46,9 @@ def load(path: Path | None = None) -> None:
         _data["groups"] = raw.get("groups") if isinstance(raw.get("groups"), dict) else {}
         _data["floor"] = raw.get("floor", 0)
         _state["dirty"] = _raise_floor()
+        if _state["dirty"]:
+            # 迁移的结果先落盘，别等下一次互动才写，避免重启后又回到旧值再迁一次
+            save(force=True)
 
 
 def _raise_floor() -> bool:
