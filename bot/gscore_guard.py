@@ -57,13 +57,16 @@ BARE_CORE = (
     "绑定", "绑定uid", "绑定设备", "设备登录", "设备登陆", "绑定ck", "添加ck", "删除ck", "我的ck", "我的token",
     "刷新面板", "刷新抽卡记录", "抽卡记录", "签到", "全部签到", "帮助", "面板", "体力", "更新",
 )
-# 米游社报错里写着「请进行[绑定设备]」，但那是要在核心私聊贴设备 JSON 的指令，照着一句「绑定设备」发没反应
-CONFUSING_HINT = {
-    "绑定设备": (
-        "绑定设备是米游社设备验证，要带 core 前缀贴设备 JSON：core绑定设备 {...}；"
-        "只绑游戏 UID 用 zzz绑定uid（星铁 sr绑定uid、原神 gs绑定uid）"
-    ),
-}
+# 米游社报错里写着「请进行[绑定设备]」，但核心的这条指令要带前缀、后面贴设备 JSON，而且只收私聊（「添加CK」服务是 DIRECT），
+# 照着一句「绑定设备」发没反应。mys绑定设备 是核心注册的免前缀写法，不管核心前缀怎么配都认
+_DEVICE_HINT = (
+    "绑定设备是米游社设备验证：先扫码登录过，再私聊我发「mys绑定设备 {设备 JSON}」，群里发没用；"
+    "只绑游戏 UID 用 zzz绑定uid（星铁 sr绑定uid、原神 gs绑定uid）"
+)
+CONFUSING_HINT = {"绑定设备": _DEVICE_HINT, "设备登录": _DEVICE_HINT, "设备登陆": _DEVICE_HINT}
+# 群里带前缀的设备指令：核心不收群消息，设备信息也不该贴在群里
+DEVICE_CMDS = ("core绑定设备", "core设备登录", "core设备登陆", "mys绑定设备", "mys设备登录", "mys设备登陆")
+DEVICE_GROUP_HINT = "设备信息别发群里，赶紧撤回；先扫码登录过，再私聊我发「mys绑定设备 {设备 JSON}」"
 
 
 # 会带出凭据的核心指令：core添加（贴 Cookie / Stoken）、core / mys 绑定设备（贴设备 JSON）。
@@ -88,9 +91,12 @@ def bare_core_command(texts: Iterable[str]) -> str | None:
     return cmd if cmd in BARE_CORE else None
 
 
-def confusing_hint(texts: Iterable[str]) -> str | None:
-    """照着核心报错里的错词发的指令，给一句正确说法的提示。"""
-    return CONFUSING_HINT.get(command_text(texts).lower())
+def confusing_hint(texts: Iterable[str], group: bool = False) -> str | None:
+    """照着核心报错里的错词发的指令、或在群里发的设备指令，给一句正确说法的提示。"""
+    cmd = command_text(texts).lstrip("/").lower()
+    if group and cmd.startswith(DEVICE_CMDS):
+        return DEVICE_GROUP_HINT
+    return CONFUSING_HINT.get(cmd)
 
 
 def _private_cmd(cmd: str) -> str | None:
