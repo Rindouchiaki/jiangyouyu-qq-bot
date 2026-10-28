@@ -37,7 +37,7 @@ def main() -> int:
     bonds.add_group_notes("123", ["小红/小明：常一起打鸣潮"], now=1000.0)
     people = bonds.known_people(["10002", "10003", a, "99999"])
     assert [uid for uid, _ in people][:1] == ["10003"] and len(people) == 3, people  # 熟悉度高的在前，没记录的不算
-    assert dict(people)[a]["aff"] >= 25  # 开发者按保底算
+    assert dict(people)[a]["aff"] >= 30  # 开发者按保底算
     assert bonds.known_groups() == ["123"]
     print("PASS  小本本能按群成员挑出记过的人、列出记过群日记的群")
 

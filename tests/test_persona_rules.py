@@ -284,21 +284,23 @@ def main() -> int:
         capped = update_bond(capped, 2, t0 + i * 60, met=False)
     assert capped["aff"] == INITIAL_AFF + 3, capped  # 好感 30 以下一天最多涨 3
     plain = chat(60, 0)
-    assert plain["aff"] == INITIAL_AFF and attitude(plain["aff"], plain["fam"]) == "普通"  # 光说话不涨
-    warm = chat(10, 2)
-    assert attitude(warm["aff"], warm["fam"]) == "有好感", warm  # 好好聊一两周到有好感
+    assert plain["aff"] == INITIAL_AFF == 0 and attitude(plain["aff"], plain["fam"]) == "陌生"  # 光说话不涨，新认识的人是陌生
+    assert attitude(chat(5, 2)["aff"], 0) == "普通"  # 好好聊几天到普通
+    warm = chat(15, 2)
+    assert attitude(warm["aff"], warm["fam"]) == "有好感", warm  # 两三周到有好感
     close = chat(30, 2)
     assert attitude(close["aff"], close["fam"]) == "亲近", close  # 坚持一个月左右到亲近
     kept = chat(30, 0, bond=close, start=close["last"] + day)
     assert kept["aff"] == close["aff"], kept  # 一直在来往就守得住，不会自己掉
     assert attitude(80, CLOSE_FAM - 1) == "有好感" and attitude(60, CLOSE_FAM) == "亲近"  # 亲近要熟悉度 30
+    assert [attitude(a, 0) for a in (-10, -9, 9, 10, 29, 30)] == ["讨厌", "陌生", "陌生", "普通", "普通", "有好感"]  # 其它档只看好感
     assert [idle_loss(h * 3600) for h in (47, 48, 72, 96, 120)] == [0, 1, 3, 6, 9]  # 每天 1、2、3，之后每天 3
     back = update_bond(close, 0, close["last"] + 4 * day)
     assert back["aff"] == close["aff"] - 6, back  # 4 天没来往掉 1+2+3
     view = bond_view(close, close["last"] + 4 * day)
     assert view["aff"] == back["aff"] and view["last"] == close["last"]  # 只读看也算上冷落，但不落盘
     gone = update_bond(close, 0, close["last"] + 60 * day)
-    assert gone["aff"] == INITIAL_AFF, gone  # 冷落再久也只掉回初始值
+    assert gone["aff"] == INITIAL_AFF, gone  # 冷落再久也只掉回初始值（0）
     rude = close
     for i in range(10):
         rude = update_bond(rude, -2, close["last"] + day + i * 60, met=False)
@@ -325,7 +327,7 @@ def main() -> int:
     dev_new = update_bond(None, 0, t0, dev=True)
     assert attitude(dev_new["aff"], dev_new["fam"]) == "有好感", dev_new
     dev_fan = update_bond(dev_new, 2, t0 + 60, dev=True, met=False)
-    assert dev_fan["aff"] == 29, dev_fan  # 涨两倍
+    assert dev_fan["aff"] == 34, dev_fan  # 涨两倍
     dev_rude = chat(1, 0, bond=chat(40, 2, dev=True), start=t0 + 41 * day, dev=True)
     top = dev_rude["aff"]
     for i in range(10):
@@ -334,7 +336,7 @@ def main() -> int:
     dev_grudge = chat(30, -2, dev=True)
     dev_idle = update_bond(dev_grudge, 0, dev_grudge["last"] + 90 * day, dev=True)
     assert attitude(dev_grudge["aff"], dev_grudge["fam"]) == "有好感" == attitude(dev_idle["aff"], dev_idle["fam"])
-    assert dev_floor({"aff": -50, "fam": 0}) == {"aff": 25, "fam": 8}
+    assert dev_floor({"aff": -50, "fam": 0}) == {"aff": 30, "fam": 8}
     print("PASS  开发者：保底「有好感」，涨得快、掉得慢")
 
     assert set(DERE_CHANCE) == set(ATTITUDE_LINES)  # 开发者不再单开一档
@@ -440,7 +442,7 @@ def main() -> int:
     assert is_offensive("你个傻逼") and is_offensive("滚蛋") and not is_offensive("滚去睡") and not is_offensive("才不理你呢") and not is_offensive("")
     print("PASS  可以嘴毒但不辱骂：人设写明底线，带脏话的回复重说；日常的「滚去睡」不算骂人")
 
-    assert attitude(0, 0) == "陌生" and attitude(0, 20) == "普通" and attitude(30, 20) == "有好感"
+    assert attitude(0, 0) == "陌生" and attitude(0, 20) == "陌生" and attitude(10, 0) == "普通" and attitude(30, 20) == "有好感"
     assert attitude(60, 40) == "亲近" and attitude(60, 10) == "有好感" and attitude(-40, 50) == "讨厌"
     msgs = compose_messages([], "小红", "在吗", attitude="亲近", user_notes=["喜欢原神"], group_notes=["小红和小明常一起打鸣潮"])
     assert "很亲近" in msgs[0]["content"] and "小红" not in msgs[0]["content"]

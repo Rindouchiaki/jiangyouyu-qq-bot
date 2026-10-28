@@ -745,17 +745,21 @@ def compose_messages(
 # 好感 -100~100、熟悉 0~100，按 QQ 号存，群聊私聊共用。难涨，但正常来往守得住：
 # - 好感不按单句关键词算，由模型隔几轮看整段聊天打分（-2~+2，见 diary_user_prompt），另外只有被追着烦会扣；
 # - 每天涨的上限按当天起点 3 / 2 / 1（<30 / <60 / 其它），一天最多掉 12；
-# - 熟悉度是一起聊过的天数：有来往的那天 +1；
+# - 熟悉度是一起聊过的天数：有来往的那天 +1，只有「亲近」看它；
 # - 只要还在来往好感就不自己掉；48 小时没来往起每天掉 1、2、3（之后每天 3），掉到初始值为止；记仇（负的）每 7 天回 1。
 AFF_RANGE = (-100, 100)
 FAM_MAX = 100
 DAY_AFF_LOSS = -12
 IDLE_GRACE_SEC = 48 * 3600
 IDLE_DAY_MAX = 3
-# 亲近要的熟悉度：至少一起聊过这么多天
+# 态度档的好感门槛；亲近另要熟悉度（至少一起聊过这么多天）
+HATE_AFF = -10
+STRANGER_AFF = 10
+LIKE_AFF = 30
+CLOSE_AFF = 60
 CLOSE_FAM = 30
-# 刚认识的人的底子：给一点礼貌的余量（好感 10、熟悉 8 → 态度「普通」），别一上来就「陌生」爱答不理
-INITIAL_AFF = int(os.getenv("BOND_INITIAL_AFF", "10"))
+# 刚认识的人从 0 开始，是「陌生」：好好聊几天才到「普通」
+INITIAL_AFF = int(os.getenv("BOND_INITIAL_AFF", "0"))
 INITIAL_FAM = int(os.getenv("BOND_INITIAL_FAM", "8"))
 
 
@@ -818,7 +822,7 @@ def _fade(b: dict, now: float) -> dict:
 
 
 # 开发者：好感最低「有好感」，涨×2、掉÷2；其它和群友一样
-DEV_AFF_FLOOR = 25
+DEV_AFF_FLOOR = LIKE_AFF
 DEV_FAM_FLOOR = 8
 
 
@@ -909,14 +913,14 @@ CUTE_LINE = (
 
 
 def attitude(aff: int, fam: int) -> str:
-    """好感 + 熟悉度 → 态度档位。"""
-    if aff <= -30:
+    """好感 → 态度档位；只有「亲近」另看熟悉度。"""
+    if aff <= HATE_AFF:
         return "讨厌"
-    if fam < 8:
+    if aff < STRANGER_AFF:
         return "陌生"
-    if aff >= 60 and fam >= CLOSE_FAM:
+    if aff >= CLOSE_AFF and fam >= CLOSE_FAM:
         return "亲近"
-    if aff >= 25:
+    if aff >= LIKE_AFF:
         return "有好感"
     return "普通"
 
