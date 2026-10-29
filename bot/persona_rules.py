@@ -164,15 +164,17 @@ GROUP_SUB_USAGE = (
     "/群订阅 群号 加 946974 —— 给这个群订一个 UP（UID、UID:946974 或主页链接都行）\n"
     "/群订阅 群号 加 946974 视频 专栏文章 —— 顺带指定类别，不写就是「一般动态」，写「全部」就是全类别\n"
     "/群订阅 群号 删 946974 —— 取消这个 UP\n"
+    "在群里可以省掉群号：/群订阅、/群订阅 加 946974 都是本群。\n"
     "私聊里可以给任意群配；群里只能配这个群。"
 )
 
 
-def parse_group_sub(text: str) -> tuple[str, str, str, list[str]]:
+def parse_group_sub(text: str, default_group: str = "") -> tuple[str, str, str, list[str]]:
     """拆 `/群订阅` 的参数 → (动作, 群号, 目标, 类别名)。
 
     动作是 usage / list / add / del；群号是数字串（可能为空）。
     只做字符串解析，不碰 NoneBot 也不查库，方便离线测。
+    default_group 是「在群里没写群号时按本群算」用的，私聊留空。
     """
     t = (text or "").strip()
     if t.startswith("/"):
@@ -180,17 +182,24 @@ def parse_group_sub(text: str) -> tuple[str, str, str, list[str]]:
     if t.startswith("群订阅"):
         t = t[3:].strip()
     if not t:
-        return "usage", "", "", []
+        return ("list", default_group, "", []) if default_group else ("usage", "", "", [])
     parts = t.split()
     group = ""
     rest: list[str] = []
-    for idx, part in enumerate(parts):
+    if not default_group and parts and parts[0] in ("加", "添加", "订", "订阅", "删", "删除", "取关", "取消"):
+        return "usage", "", "", []  # 私聊没写群号，光写「加 UID」说明还没说清是哪个群
+    # 群里没写群号、直接以「加/删」开头时，整句都算参数，别把 UP 的 UID 误当成群号
+    if default_group and parts and parts[0] in ("加", "添加", "订", "订阅", "删", "删除", "取关", "取消"):
+        group, rest = default_group, parts
+    for idx, part in enumerate(parts if not group else []):
         if not group and part.isdigit() and len(part) >= 5:
             group = part
             rest = parts[idx + 1:]
             break
     if not group:
-        return "usage", "", "", []
+        if not default_group:
+            return "usage", "", "", []
+        group, rest = default_group, parts
     if not rest:
         return "list", group, "", []
     action_word = rest[0]

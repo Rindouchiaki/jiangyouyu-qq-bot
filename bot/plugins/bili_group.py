@@ -140,12 +140,14 @@ async def _handle(bot: Bot, event: Event) -> None:
         return
 
     text = event.get_plaintext()
-    action, group_id, target, cat_words = parse_group_sub(text)
+    in_group = getattr(event, "message_type", "") == "group"
+    # 群里没写群号就按本群算：/群订阅 → 看本群订了谁，/群订阅 加 946974 → 给本群订
+    now_group = str(getattr(event, "group_id", "")) if in_group else ""
+    action, group_id, target, cat_words = parse_group_sub(text, default_group=now_group)
     if action == "usage" or not group_id:
         await bili_group.finish(Message(_usage()))
 
     # 群里只能配本群，免得群友看着你在群里点别的群；私聊随便
-    in_group = getattr(event, "message_type", "") == "group"
     if in_group and str(getattr(event, "group_id", "")) != group_id:
         await bili_group.finish("群里只能配这个群；要给别的群配，私聊我。")
 

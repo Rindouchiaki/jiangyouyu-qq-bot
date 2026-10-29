@@ -29,6 +29,12 @@ def main() -> int:
     assert pr.parse_group_sub("/群订阅 913506590 加") == ("usage", "913506590", "", [])
     assert pr.parse_group_sub("/群订阅 913506590 随便说说") == ("usage", "913506590", "", [])
 
+    # 群里不写群号 → 按本群算；私聊不写群号 → 还是提示用法
+    assert pr.parse_group_sub("/群订阅", "913506590") == ("list", "913506590", "", [])
+    assert pr.parse_group_sub("/群订阅 加 946974", "913506590") == ("add", "913506590", "946974", [])
+    assert pr.parse_group_sub("/群订阅 删 946974", "913506590") == ("del", "913506590", "946974", [])
+    assert pr.parse_group_sub("/群订阅 加 946974") == ("usage", "", "", [])
+
     assert pr.is_bili_command("/群订阅 913506590")
     assert pr.is_bili_command("/群订阅")
     assert not pr.is_bili_command("群订阅 913506590")
