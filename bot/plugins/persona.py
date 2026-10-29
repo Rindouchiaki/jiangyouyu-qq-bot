@@ -1470,6 +1470,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         slang_play=slang_play,
         new_msgs=new_msgs,
         can_search=can_search,
+        search_ready=web_search.enabled(),
         interests=INTERESTS if chime else (),
     )
 
