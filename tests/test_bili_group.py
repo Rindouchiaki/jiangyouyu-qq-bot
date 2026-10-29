@@ -71,7 +71,7 @@ def main() -> int:
     assert pr.bili_notice(["来源: B站 绝区零"]) == ""  # 没有详情链接不发通知
     assert pr.bili_notice(["详情: https://t.bilibili.com/1"]).startswith("【B站】")
 
-    assert pr.bili_shot_url("1066") == "https://t.bilibili.com/1066"
+    assert pr.bili_shot_url("1066") == "https://www.bilibili.com/opus/1066"
     assert pr.bili_shot_url(None) == "" and pr.bili_shot_url("") == ""
 
     assert pr.compact_desc("一行\n\n两行  三行") == "一行 两行 三行"

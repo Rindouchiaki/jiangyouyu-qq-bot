@@ -9,12 +9,15 @@
 import asyncio
 import base64
 import html
+import os
 import time
 
 import httpx
 from nonebot.log import logger
 
 from persona_rules import bili_notice, bili_shot_url, compact_desc
+
+import push_marks
 
 try:
     import nonebot_bison.send as bison_send
@@ -68,12 +71,18 @@ def _ago(ts) -> str:
 
 _SHOT_CSS = """
 .bili-header, .bili-header__bar, .header-channel, .bili-header__banner,
-.bili-dyn-detail__header, .right-container, .bili-dyn-detail__bottom { display: none !important; }
+.bili-dyn-detail__header, .right-container, .bili-dyn-detail__bottom,
+.article-comment, .comment-container, .article-action,
+.bili-login-card, .login-tip, .bili-occlusion-modal, .bili-occlusion-screen,
+.fixed-open-app { display: none !important; }
 html, body { background: #fff !important; }
 """
 
-# 动态页（t.bilibili.com）和跳转过去的 opus 页，那条动态的外框各叫这几个名字
-_SHOT_SELECTOR = ".bili-dyn-item, .bili-opus-view, .opus-detail"
+# opus 页（www.bilibili.com/opus/…）的正文区；转发类动态会跳回 t.bilibili.com，那边是 .bili-dyn-item；
+# 专栏页（/read/cv…）是 .article-holder
+_SHOT_SELECTOR = ".bili-dyn-item, .bili-opus-view, .opus-detail, .article-holder, #read-article-holder"
+# 专栏能长到两万像素，只截开头一段，不然一张图好几兆
+_MAX_SHOT_H = int(os.getenv("BILI_SHOT_MAX_HEIGHT", "1600"))
 _shot_lock = asyncio.Lock()
 # 同一条动态订了几个群就会生成几次消息，截过的按链接留 10 分钟
 _CARD_TTL = 600
@@ -95,6 +104,10 @@ async def _shot_card(url: str) -> bytes | None:
                 return None
             await el.scroll_into_view_if_needed()
             await page.wait_for_timeout(200)
+            # 直接限元素高度再截：page.screenshot 的 clip 超出视口（1200）的部分会被裁掉
+            await el.evaluate(
+                "(e, h) => { e.style.maxHeight = h + 'px'; e.style.overflow = 'hidden'; }", _MAX_SHOT_H
+            )
             return await el.screenshot(type="png")
 
 
@@ -259,9 +272,25 @@ if Bilibili is not None:
     AbstractPost.generate_messages = _gen_with_card
 
     async def _send_msgs_with_notice(send_target, msgs):
-        """先发通知（文字 + 整条动态的卡片图）、再发合并转发，一共两条；视频、直播本来就一条，不动。"""
+        """一条图文动态发两条：先「通知文字 + 整条动态的截图」，再一条合并转发（全文 + 配图）。
+
+        以前变成一串套娃，是因为机器人自己发的消息也被当成新事件、又被解析插件抓去解析，
+        转发的聊天记录里还带着链接，于是一层层往下套。现在 `bot/bot.py` 的账号守卫会把
+        机器人自己发的消息直接丢掉，这两条就安分了。视频、直播本来只有一条，原样放过。
+        """
         card = _cards.pop(0) if _cards else None
         notice = _notice_of(msgs)
+        # 记下这次推出去的链接：万一这条消息又被当成用户消息推回来，解析插件认出来就不解析
+        try:
+            for msg in msgs:
+                for seg in msg:
+                    cut = getattr(seg, "data", {}).get("text") or ""
+                    if cut:
+                        push_marks.mark_text(cut)
+            if notice:
+                push_marks.mark_text(notice)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"bili_push: 推送链接没记上（{type(exc).__name__}: {exc}）")
         if notice and len(msgs) > 1:
             first = MessageFactory([notice, SaaImage(card)]) if card else MessageFactory(notice)
             await _send_msgs_dispatch(send_target, first)

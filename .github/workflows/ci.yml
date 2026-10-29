@@ -73,6 +73,7 @@ jobs:
           .venv\Scripts\python tests\test_backstage.py || exit /b 1
           .venv\Scripts\python tests\test_migrate_journal_tags.py || exit /b 1
           .venv\Scripts\python tests\test_bili_group.py || exit /b 1
+          .venv\Scripts\python tests\test_push_marks.py || exit /b 1
 
       - name: NoneBot 冒烟
         shell: cmd
