@@ -91,6 +91,10 @@ if not _BOT_UIN:
 async def _only_bot_account(bot, event, state) -> None:
     if _BOT_UIN and str(getattr(event, "self_id", "")) != _BOT_UIN:
         raise IgnoredException(f"非机器人账号 {getattr(event, 'self_id', '?')} 的事件")
+    # SnowLuma 会把自己发的消息也当事件推上来；不挡掉的话，B 站推送里带的链接会被
+    # 解析插件再抓一次，它转发的聊天记录又带链接，一层层套下去。
+    if str(getattr(event, "user_id", "")) == str(getattr(event, "self_id", "")):
+        raise IgnoredException("机器人自己发的消息")
 
 
 # 第三方解析插件要先加载，后面的 plugins 里有针对它的行为调优（只发视频不发封面）

@@ -259,12 +259,19 @@ if Bilibili is not None:
     AbstractPost.generate_messages = _gen_with_card
 
     async def _send_msgs_with_notice(send_target, msgs):
-        """先发通知（文字 + 整条动态的卡片图）、再发合并转发，一共两条；视频、直播本来就一条，不动。"""
+        """一条图文动态发两条：先「通知文字 + 整条动态的截图」，再一条合并转发（全文 + 配图）。
+
+        以前变成一串套娃，是因为机器人自己发的消息也被当成新事件、又被解析插件抓去解析，
+        转发的聊天记录里还带着链接，于是一层层往下套。现在 `bot/bot.py` 的账号守卫会把
+        机器人自己发的消息直接丢掉，这两条就安分了。视频、直播本来只有一条，原样放过。
+        """
         card = _cards.pop(0) if _cards else None
         notice = _notice_of(msgs)
         if notice and len(msgs) > 1:
             first = MessageFactory([notice, SaaImage(card)]) if card else MessageFactory(notice)
             await _send_msgs_dispatch(send_target, first)
+            await _send_msgs(send_target, msgs)
+            return
         await _send_msgs(send_target, msgs)
 
     bison_send.send_msgs = _send_msgs_with_notice
