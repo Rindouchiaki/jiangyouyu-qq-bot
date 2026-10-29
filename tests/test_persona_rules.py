@@ -26,6 +26,7 @@ from persona_rules import (  # noqa: E402
     PESTER_AT_WINDOW,
     at_history,
     pester_step,
+    keeps_pestering,
     MAX_CHARS_DEFAULT,
     SILENT_MARK,
     attitude,
@@ -333,14 +334,21 @@ def main() -> int:
     assert "不算对我" in diary_user_prompt("普通") and "要好感" in diary_user_prompt("亲近")
     assert "没什么好感" in diary_user_prompt("普通") and "没什么好感" not in diary_user_prompt("有好感")
     assert AFF_PESTER < 0 and PESTER_AT_COUNT == 3
-    # 不高兴那次算第 1 次：再 @ 一次不扣，第 3 次扣，之后接着 @ 每次都扣；隔太久就清掉
-    st, hit = pester_step([t0, 1], t0 + 10)
-    assert st == [t0 + 10, 2] and not hit
+    # 不高兴那次算第 1 次：再纠缠一次不扣，第 3 次扣，扣了还纠缠就接着扣；隔太久就清掉
+    pressed = ["你到底喜不喜欢我", "说啊喜不喜欢我"]
+    st, hit = pester_step([t0, 1, pressed], t0 + 10)
+    assert st == [t0 + 10, 2, pressed] and not hit
     st, hit = pester_step(st, t0 + 20)
     assert st[1] == 3 and hit
     st, hit = pester_step(st, t0 + 30)
-    assert st[1] == 4 and hit
-    assert pester_step(st, t0 + 30 + PESTER_AT_WINDOW + 1) == (None, False)
+    assert st[1] == 4 and hit and st[2] == pressed
+    st, hit = pester_step(st, t0 + 40)
+    assert st[1] == 5 and hit
+    # 纠缠不一定要 @：喊她、抓着那件事不放都算；和别人聊别的不算
+    assert keeps_pestering("哈哈", True, False) and keeps_pestering("酱油鱼你说嘛", False, True)
+    assert keeps_pestering("所以到底喜不喜欢我嘛", False, False, pressed)
+    assert not keeps_pestering("今晚吃什么", False, False, pressed)
+    assert pester_step(st, t0 + 40 + PESTER_AT_WINDOW + 1) == (None, False)
     assert pester_step(None, t0) == (None, False)
     print("PASS  parse_user_diary / diary_user_prompt：好感看整段打分")
 

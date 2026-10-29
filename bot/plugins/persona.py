@@ -107,6 +107,7 @@ from persona_rules import (
     split_at_batch,
     at_history,
     pester_step,
+    keeps_pestering,
     split_reply,
     sticker_category,
     sticker_like,
@@ -734,12 +735,15 @@ def _bond_touch(user_id: str, name: str, delta: int, private: bool = False) -> d
 
 
 def _count_pester_at(key: str, batch: list[dict], now: float) -> None:
-    """她不高兴算第 1 次，之后同一个人接着 @ 她，第 3 次起每次扣好感；重想时同一条不重复算。"""
+    """她不高兴算第 1 次，之后同一个人还不停手（@、喊她、抓着话题不放），第 3 次起每次扣好感；重想时同一条不重复算。"""
     for it in batch:
         mark = (key, it["uid"])
-        if not it["at"] or it.get("pester_seen") or mark not in _upset:
+        if it.get("pester_seen") or mark not in _upset:
             continue
         it["pester_seen"] = True
+        pressed = _upset[mark][2] if len(_upset[mark]) > 2 else ()
+        if not keeps_pestering(it["text"], it["at"], it["called"], pressed):
+            continue
         state, deduct = pester_step(_upset.get(mark), now)
         if state is None:
             _upset.pop(mark, None)
@@ -747,7 +751,7 @@ def _count_pester_at(key: str, batch: list[dict], now: float) -> None:
         _upset[mark] = state
         if deduct:
             _bond_touch(it["uid"], it["name"], AFF_PESTER)
-            logger.info(f"persona: {it['name']} 她不高兴了还追着 @（第 {state[1]} 次），好感 {AFF_PESTER}")
+            logger.info(f"persona: {it['name']} 她不高兴了还纠缠（第 {state[1]} 次），好感 {AFF_PESTER}")
 
 
 async def _diary_user(user_id: str, name: str, lines: list[tuple[str, str]], src: str) -> None:
@@ -1228,7 +1232,9 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     if is_group and annoyed:
         # 这次只表现出不高兴、不扣好感；之后他还追着 @ 才扣（见 _count_pester_at）
         pester = _bond_touch(user_id, name, 0)
-        _upset[(key, user_id)] = [now, 1]
+        # 已经在不高兴的那段里就不从头数（那几条前面按纠缠算过了）
+        if pester_step(_upset.get((key, user_id)), now)[0] is None:
+            _upset[(key, user_id)] = [now, 1, same_user[-5:]]
         # 喜欢的人追着烦：别别扭扭地岔开；好感不高的：二次元式地打发掉
         pester_att = attitude(int(pester.get("aff", 0)), int(pester.get("fam", 0)))
         snub_line = "…不想说这个了啦" if pester_att in ("有好感", "亲近") else "哼，不想聊了"

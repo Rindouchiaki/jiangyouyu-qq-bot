@@ -780,18 +780,26 @@ def new_bond() -> dict:
 
 # 只用来判断情绪（生气），不再按它扣好感：骂别的事、骂游戏也会命中
 _AFF_RUDE = ("傻逼", "sb", "闭嘴", "恶心", "有病", "滚", "废物", "垃圾", "去死", "拉黑", "爬", "丑")
-# 被追着烦：她表现出不高兴算第 1 次，之后同一个人隔不到 10 分钟又在群里 @ 她，第 3 次起每次都扣
+# 被追着烦：她表现出不高兴算第 1 次，之后同一个人隔不到 10 分钟还不停手（@ 她、喊她、抓着那个话题不放），第 3 次起每次都扣
 AFF_PESTER = -3
 PESTER_AT_COUNT = 3
 PESTER_AT_WINDOW = 600
+PESTER_TOPIC_SIM = 0.3
+
+
+def keeps_pestering(text: str, at: bool, called: bool, pressed: list[str] | tuple[str, ...] = ()) -> bool:
+    """她已经不乐意了，这条算不算还在纠缠：找她（@ / 喊名字）或者还在说让她烦的那件事。和别人聊别的不算。"""
+    if at or called:
+        return True
+    return any(_similarity(text, p) >= PESTER_TOPIC_SIM for p in pressed if p)
 
 
 def pester_step(state: list | None, now: float) -> tuple[list | None, bool]:
-    """又被 @ 了一次。state 是 [上次时间, 第几次]（不高兴那次记 [时间, 1]）；返回（新 state, 这次扣不扣）。"""
+    """又纠缠了一次。state 是 [上次时间, 第几次, 让她烦的那几句]（不高兴那次记第 1 次）；返回（新 state, 这次扣不扣）。"""
     if not state or now - state[0] > PESTER_AT_WINDOW:
         return None, False
     count = int(state[1]) + 1
-    return [now, count], count >= PESTER_AT_COUNT
+    return [now, count, *state[2:]], count >= PESTER_AT_COUNT
 
 
 # 回复里出现这些就不发：人设再傲也不能骂人（模型偶尔会被带偏）
