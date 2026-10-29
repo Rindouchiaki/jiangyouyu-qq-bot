@@ -64,6 +64,7 @@ from persona_rules import (  # noqa: E402
     results_mention,
     safe_name,
     slang_play_ok,
+    split_at_batch,
     split_long,
     shy_reaction,
     shy_topic,
@@ -520,6 +521,16 @@ def main() -> int:
     assert debounce_deadline(111, 100, 111.5, gap=1, same_user=True, cfg=cfg) == 112
     assert debounce_deadline(101, 100, 0, gap=1, same_user=False, mentioned=True, cfg=cfg) == 103.5
     print("PASS  防抖：冷清先等短、同一个人接着发续命、表情不续、整批封顶、被 @ 快一点")
+
+    sticker = {"uid": "1", "at": False}
+    ask = {"uid": "2", "at": True}
+    ask_more = {"uid": "2", "at": False}
+    other_at = {"uid": "3", "at": True}
+    now_, later = split_at_batch([sticker, ask, ask_more, other_at])
+    assert now_ == [ask, ask_more] and later == [sticker, other_at], (now_, later)
+    assert split_at_batch([sticker, ask_more]) == ([sticker, ask_more], [])
+    assert split_at_batch(later) == ([other_at], [sticker])
+    print("PASS  被 @ 时只回 @ 的人，别人的话留到下一轮，好几个人 @ 按先后来")
 
     rng = random.Random(3)
     assert 0.4 <= typing_delay("", rng=rng) <= 0.8

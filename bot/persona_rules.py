@@ -1326,6 +1326,18 @@ def debounce_deadline(
     return new
 
 
+def split_at_batch(batch: list[dict]) -> tuple[list[dict], list[dict]]:
+    """群里一批消息有人 @ 她：这轮只回这个人说的，别人的话留到下一轮按接续 / 插话另算。
+
+    批里每条要有 uid、at；有好几个人 @ 就按先后一个个来。返回（这轮回的，留着的）。
+    """
+    first = next((it for it in batch if it.get("at")), None)
+    if first is None:
+        return batch, []
+    uid = first["uid"]
+    return [it for it in batch if it["uid"] == uid], [it for it in batch if it["uid"] != uid]
+
+
 def typing_delay(text: str, per_char: float = 0.25, cap: float = 8.0, rng: random.Random | None = None) -> float:
     """按字数估个打字时间：每字 per_char 秒，上下浮动两成，最多 cap 秒。"""
     r = rng or random
