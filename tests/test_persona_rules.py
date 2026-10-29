@@ -60,6 +60,7 @@ from persona_rules import (  # noqa: E402
     looks_self_disclosure,
     merge_notes,
     name_call_prob,
+    follow_prob,
     parse_group_diary,
     parse_notes,
     parse_user_diary,
@@ -515,7 +516,13 @@ def main() -> int:
 
     probs = [name_call_prob(a, 0.5) for a in ("讨厌", "陌生", "普通", "有好感", "亲近")]
     assert probs == sorted(probs) and probs[0] <= 0.05 and probs[-1] == 1.0, probs  # 好感越高越愿意理，亲近的必回
-    assert name_call_prob("讨厌", 1.0) == 1.0 and name_call_prob("亲近", 0.0) == 0.0  # 自宅档必回、冬眠档不回
+    assert name_call_prob("普通", 1.0) == 1.0 and name_call_prob("亲近", 0.0) == 0.0  # 自宅档必回、冬眠档不回
+    # 讨厌的人不吃自宅档：喊名字、接续都最多照默认档，不想理就不理
+    assert name_call_prob("讨厌", 1.0) == name_call_prob("讨厌", 0.5) == 0.05 and name_call_prob("讨厌", 0.0) == 0.0
+    assert follow_prob("普通", 1.0, 0.3) == 1.0 and abs(follow_prob("讨厌", 1.0, 0.3) - 0.18) < 1e-9
+    assert abs(follow_prob("亲近", 0.3, 0.3) - 0.39) < 1e-9 and follow_prob("讨厌", 0.0, 0.3) == 0.0
+    hate_chime = compose_messages([], "小红", "在吗", attitude="讨厌", chime=True)[0]["content"]
+    assert SILENT_MARK in hate_chime
     print("PASS  喊名字回不回看态度")
 
     base = compose_messages([], "小红", "在吗", attitude="讨厌", chime=True)[0]["content"]

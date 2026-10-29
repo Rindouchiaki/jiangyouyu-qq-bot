@@ -60,7 +60,6 @@ from persona_rules import (
     SLANG_EXPLAIN_PROMPT,
     SLANG_MINE_PROMPT,
     THING_EXPLAIN_PROMPT,
-    ATTITUDE_REPLY_FACTOR,
     CUTE_CHANCE,
     DERE_CHANCE,
     DEFAULT_GAME_PREFIXES,
@@ -93,6 +92,7 @@ from persona_rules import (
     looks_addressed,
     looks_self_disclosure,
     name_call_prob,
+    follow_prob,
     parse_group_diary,
     parse_user_diary,
     parse_slang_candidates,
@@ -1312,13 +1312,18 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
                 # 插话看兴趣：聊到她感兴趣的话题，冒泡的概率翻几倍；模型最后还能说「不回」
                 interest = interest_hits(topics.detect(batch_text), INTERESTS)
                 chime_prob = mcfg["chime"]
+                # 讨厌的人说的话不吃自宅档：照默认档的概率、退避和看气氛，不想插就不插
+                pre = bonds.user(user_id)
+                hated = attitude(int(pre.get("aff", 0)), int(pre.get("fam", 0))) == "讨厌"
+                if hated:
+                    chime_prob = min(chime_prob, CHIME_PROB)
                 if interest and chime_prob > 0:
                     chime_prob = min(1.0, chime_prob * INTEREST_BOOST)
                 if chime_prob <= 0 or random.random() >= chime_prob:
                     return True
                 if now - _last_chime.get(key, 0) < mcfg["chime_cd"] or not _quota_ok("插话", key):
                     return True
-                free = mcfg["free"]
+                free = mcfg["free"] and not hated
                 if not free and now - _last_chime_try[key] < chime_backoff(_chime_skips[key], CHIME_BACKOFF_BASE):
                     logger.debug(f"persona: 不插话（最近连着 {_chime_skips[key]} 次没兴趣，退避中）")
                     return True
@@ -1392,9 +1397,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         if called:
             prob = name_call_prob(att, mcfg["called"], PROB_CALLED or 0.5)
         else:
-            prob = mcfg["follow"]
-            if prob < 1.0:
-                prob = min(1.0, prob * ATTITUDE_REPLY_FACTOR.get(att or "普通", 1.0))
+            prob = follow_prob(att, mcfg["follow"], PROB_FOLLOW)
         if random.random() > prob:
             logger.info(f"persona: 这次不接（{mode}，概率 {prob:.0%}）")
             return True
@@ -1524,7 +1527,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         can_search=can_search,
         search_ready=web_search.enabled(),
         interests=INTERESTS if chime else (),
-        chime_free=mcfg["free"],
+        chime_free=mcfg["free"] and att != "讨厌",
     )
 
     limit = HELP_MAX_TOKENS if help_mode or can_search else 120 if question else 100

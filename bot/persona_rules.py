@@ -1143,10 +1143,21 @@ NAME_CALL_PROB = {"讨厌": 0.05, "陌生": 0.15, "普通": 0.4, "有好感": 0.
 
 
 def name_call_prob(att: str | None, called: float, base: float = 0.5) -> float:
-    """喊名字时的回话概率：called 是当前档位的被叫概率（默认 0.5、自宅 1、冬眠 0）。"""
+    """喊名字时的回话概率：called 是当前档位的被叫概率（默认 0.5、自宅 1、冬眠 0）。讨厌的人不吃自宅档，最多照默认档。"""
+    if att == "讨厌":
+        return min(NAME_CALL_PROB["讨厌"], NAME_CALL_PROB["讨厌"] * called / base)
     if called >= 1.0:
         return 1.0
     return min(1.0, NAME_CALL_PROB.get(att or "普通", 0.5) * called / base)
+
+
+def follow_prob(att: str | None, follow: float, default: float) -> float:
+    """接续时的回话概率：follow 是当前档位的（自宅 1），按态度微调；讨厌的人不吃自宅档，最多照默认档 default。"""
+    if att == "讨厌":
+        follow = min(follow, default)
+    if follow >= 1.0:
+        return 1.0
+    return min(1.0, follow * ATTITUDE_REPLY_FACTOR.get(att or "普通", 1.0))
 # 平时聊天里突然冒一句傲娇的概率：很少见，越亲近越常见；讨厌、陌生不冒
 DERE_CHANCE = {"讨厌": 0.0, "陌生": 0.0, "普通": 0.03, "有好感": 0.06, "亲近": 0.10}
 DERE_LINE = (
