@@ -192,6 +192,10 @@ TYPING_SEC_PER_CHAR = float(os.getenv("TYPING_SEC_PER_CHAR", "0.25"))
 TYPING_MAX_SEC = float(os.getenv("TYPING_MAX_SEC", "8"))
 # 私聊里隔了一阵才回的消息，偶尔晚几十秒再回（像在忙别的）
 REPLY_LATE_PROB = float(os.getenv("REPLY_LATE_PROB", "0.1"))
+# 群里被 @ 要尽快回：不再停一下才「看到」，每条打字最多等这么久（模型想的时间也算在里面）
+AT_TYPING_MAX = float(os.getenv("REPLY_AT_TYPING_MAX", "1.5"))
+# 群里只喊名字：照常攒批、像正聊着那样很快「看到」，每条打字最多这么久
+CALLED_TYPING_MAX = float(os.getenv("REPLY_CALLED_TYPING_MAX", "4"))
 # 打字时对方又补了话：最多重想几次，之后照发
 RESTART_MAX = int(os.getenv("REPLY_RESTART_MAX", "2"))
 # 回话路数在一个会话里粘多久（秒）
@@ -916,6 +920,8 @@ class _Chat:
         self.restarts = 0
         # 这一批已经交给模型了：再来的消息重新起一个防抖窗口
         self.fresh = False
+        # 来了新消息就叫醒正在等防抖的 worker（被 @ 不用等满原来的窗口）
+        self.wake = asyncio.Event()
         self.bot: Bot | None = None
 
 
@@ -940,13 +946,14 @@ def _enqueue(bot: Bot, key: str, item: dict, gap: float) -> None:
     same = bool(st.pending) and st.pending[-1]["uid"] == item["uid"]
     st.deadline = debounce_deadline(
         now, st.start, st.deadline, gap=gap, same_user=same,
-        media_only=item["media"], mentioned=item["at"] or item["called"],
+        media_only=item["media"], mentioned=item["called"], at=item["at"],
     )
     st.pending.append(item)
     if len(st.pending) > 30:
         st.pending = st.pending[-30:]
     st.gen += 1
     st.bot = bot
+    st.wake.set()
     if st.task is None or st.task.done():
         st.task = asyncio.create_task(_worker(key))
         _bg_tasks.add(st.task)
@@ -958,7 +965,11 @@ async def _worker(key: str) -> None:
     while st.pending:
         wait = st.deadline - time.time()
         if wait > 0:
-            await asyncio.sleep(wait)
+            st.wake.clear()
+            try:
+                await asyncio.wait_for(st.wake.wait(), wait)
+            except asyncio.TimeoutError:
+                pass
             continue
         batch = list(st.pending)
         if key.startswith("group_"):
@@ -1526,9 +1537,12 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     def _arrived() -> list[dict]:
         return [it for it in _newer(key, batch) if id(it) not in held]
 
+    # 群里被 @：只回那一条，后来的话多半不相干，不重想、不中途停，也不磨蹭
+    fast = is_group and mode == "被叫@"
+
     def _stale() -> bool | None:
         newer = _arrived()
-        if not newer or force:
+        if not newer or force or fast:
             return None
         if not is_group or any(it["uid"] == user_id or it["at"] or it["called"] for it in newer):
             return False
@@ -1541,13 +1555,15 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         logger.info("persona: 会话已翻篇，这句不补了")
         return True
 
-    # 先「看到消息」、再「打字」：思考花掉的时间算在里面
-    active = now - _last_reply.get(key, 0) < 120
+    # 先「看到消息」、再「打字」：思考花掉的时间算在里面；群里被 @ 不磨蹭，喊名字照常攒批但也别让人等太久
+    name_call = is_group and mode == "被叫"
+    type_cap = AT_TYPING_MAX if fast else min(TYPING_MAX_SEC, CALLED_TYPING_MAX) if name_call else TYPING_MAX_SEC
+    active = name_call or now - _last_reply.get(key, 0) < 120
     first_text = next((t for kind, t in parts if kind == "text"), "")
     spent = time.time() - now
     await _sleep(
-        reaction_delay(active, 0.0 if is_group else REPLY_LATE_PROB)
-        + typing_delay(first_text, TYPING_SEC_PER_CHAR, TYPING_MAX_SEC) - spent
+        (0.0 if fast else reaction_delay(active, 0.0 if is_group else REPLY_LATE_PROB))
+        + typing_delay(first_text, TYPING_SEC_PER_CHAR, type_cap) - spent
     )
     verdict = _stale()
     if verdict is False:
@@ -1571,9 +1587,9 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     for i, (kind, content) in enumerate(parts):
         if i > 0:
             # 后面几条按字数打字；对方又开口了就先停下，剩下的不硬发
-            await _sleep(typing_delay(content, TYPING_SEC_PER_CHAR, TYPING_MAX_SEC) if kind == "text" else random.uniform(0.8, 2.0))
+            await _sleep(typing_delay(content, TYPING_SEC_PER_CHAR, type_cap) if kind == "text" else random.uniform(0.8, 2.0))
             newer = _arrived()
-            if any(it["uid"] == user_id or it["at"] or it["called"] for it in newer):
+            if not fast and any(it["uid"] == user_id or it["at"] or it["called"] for it in newer):
                 logger.info(f"persona: 对方又说话了，剩下 {len(parts) - i} 条先不发")
                 break
         if kind == "sticker":

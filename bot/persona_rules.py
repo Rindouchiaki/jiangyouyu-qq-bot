@@ -1303,13 +1303,17 @@ def debounce_deadline(
     same_user: bool,
     media_only: bool = False,
     mentioned: bool = False,
+    at: bool = False,
     cfg: dict | None = None,
 ) -> float:
     """来了一条新消息，这一批最晚等到什么时候再处理。
 
     deadline 为 0 表示这是一批的第一条；gap 是离上一条消息过了多久（群里冷清时先等短一点）。
-    纯表情不续命（「说完补个表情」本来就跟着前一句）；整批不超过 max，被 @ 时最多再等 at 秒。
+    纯表情不续命（「说完补个表情」本来就跟着前一句）；整批不超过 max，喊名字时最多再等 at 秒；
+    群里被 @ 不等：@ 她的人该一口气把话说完，攒批只给私聊和闲聊。
     """
+    if at:
+        return now
     c = cfg or DEBOUNCE
     if deadline <= 0:
         wait = c["quiet"] if gap >= 30 else c["busy"]
@@ -1327,15 +1331,14 @@ def debounce_deadline(
 
 
 def split_at_batch(batch: list[dict]) -> tuple[list[dict], list[dict]]:
-    """群里一批消息有人 @ 她：这轮只回这个人说的，别人的话留到下一轮按接续 / 插话另算。
+    """群里一批消息有人 @ 她：这轮只回那一条 @，其余（包括同一个人前后的话）留到下一轮按接续 / 插话另算。
 
-    批里每条要有 uid、at；有好几个人 @ 就按先后一个个来。返回（这轮回的，留着的）。
+    @ 她的人该一口气把话说完，前后的话多半不相干。批里每条要有 at；好几条 @ 按先后一条条来。返回（这轮回的，留着的）。
     """
     first = next((it for it in batch if it.get("at")), None)
     if first is None:
         return batch, []
-    uid = first["uid"]
-    return [it for it in batch if it["uid"] == uid], [it for it in batch if it["uid"] != uid]
+    return [first], [it for it in batch if it is not first]
 
 
 def typing_delay(text: str, per_char: float = 0.25, cap: float = 8.0, rng: random.Random | None = None) -> float:
