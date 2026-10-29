@@ -75,9 +75,9 @@ function New-Token {
 }
 
 # 外部命令失败（退出码非 0）时抛错；PS 5.1 不会自己抛
-function Invoke-Native([string]$Exe, [string[]]$Arguments, [string]$What) {
+function Invoke-Native([string]$Exe, [string[]]$Arguments, [string]$What, [switch]$AllowFail) {
     & $Exe @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "$What 失败（退出码 $LASTEXITCODE）" }
+    if ($LASTEXITCODE -ne 0 -and -not $AllowFail) { throw "$What 失败（退出码 $LASTEXITCODE）" }
 }
 
 # uv 管理的 Python 解释器完整路径；没有就先下载。
@@ -261,6 +261,19 @@ if (-not (Test-Path -LiteralPath $py)) {
 # requirements.lock 是 CI 验证过的确切版本；requirements.txt 只写范围，给自动更新算新版本用
 Invoke-Native uv @('pip', 'install', '--python', $py, '-r', (Join-Path $root 'requirements.lock')) '安装依赖'
 Ok '依赖已装好'
+
+# B 站订阅（Bison）的推送卡片要用无头浏览器渲染；没装成也不影响订阅本身，只是退化成纯文字
+Step '无头浏览器（B 站订阅卡片）'
+$pwOk = $false
+try {
+    & $py -c 'import playwright' 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Invoke-Native $py @('-m', 'playwright', 'install', 'chromium') '安装 chromium' -AllowFail
+        $pwOk = $LASTEXITCODE -eq 0
+    }
+} catch { }
+if ($pwOk) { Ok 'chromium 已就绪' }
+else { Warn 'chromium 没装上：B 站订阅的卡片会退化成纯文字，之后可手动补装（见 docs\部署指南.md）' }
 
 $cfg = Get-StackConfig
 $ffmpegExe = Join-Path $cfg.Ffmpeg 'ffmpeg.exe'

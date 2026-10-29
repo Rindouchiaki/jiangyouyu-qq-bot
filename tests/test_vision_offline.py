@@ -56,7 +56,8 @@ def main() -> int:
         uri = (STICKER_DIR / item["file"]).resolve().as_uri()
         card = asyncio.run(vision.image_card(FakeEvent([Seg(uri)])))
         print("sticker card:", card)
-        ok &= card.startswith("[表情:")
+        # 表情图卡有两种：`[表情｜画面｜意思]`（读过）和 `[表情:动图｜…]`
+        ok &= card.startswith("[表情")
     else:
         print(f"SKIP  表情库命中：没有 {STICKER_DIR / item['file']}")
 

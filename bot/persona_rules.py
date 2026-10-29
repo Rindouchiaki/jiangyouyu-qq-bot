@@ -150,6 +150,78 @@ def is_game_command(text: str, prefixes: tuple[str, ...]) -> bool:
     return False
 
 
+# B 站订阅插件的管理指令（Bison）：只有带 / 前缀、且整词命中时人设才让开。
+# 「动态」「直播」这类词日常聊天太常见，光看开头会误伤。
+BILI_COMMANDS = (
+    "添加订阅", "查询订阅", "删除订阅", "修改订阅", "群管理",
+    "后台管理", "管理后台", "群订阅",
+    "添加cookie", "删除cookie", "关联cookie", "取消关联cookie",
+)
+
+GROUP_SUB_USAGE = (
+    "用法：\n"
+    "/群订阅 群号 —— 看这个群订了谁\n"
+    "/群订阅 群号 加 946974 —— 给这个群订一个 UP（UID、UID:946974 或主页链接都行）\n"
+    "/群订阅 群号 加 946974 视频 专栏文章 —— 顺带指定类别，不写就是「一般动态」，写「全部」就是全类别\n"
+    "/群订阅 群号 删 946974 —— 取消这个 UP\n"
+    "在群里可以省掉群号：/群订阅、/群订阅 加 946974 都是本群。\n"
+    "私聊里可以给任意群配；群里只能配这个群。"
+)
+
+
+SUB_ADD_WORDS = ("加", "添加", "订", "订阅")
+SUB_DEL_WORDS = ("删", "删除", "取关", "取消")
+
+
+def parse_group_sub(text: str, default_group: str = "") -> tuple[str, str, str, list[str]]:
+    """拆 `/群订阅` 的参数 → (动作, 群号, 目标, 类别名)。
+
+    动作是 usage / list / add / del；群号是数字串（可能为空）。
+    只做字符串解析，不碰 NoneBot 也不查库，方便离线测。
+    default_group 是「在群里没写群号时按本群算」用的，私聊留空。
+    """
+    t = (text or "").strip()
+    if t.startswith("/"):
+        t = t[1:].strip()
+    if t.startswith("群订阅"):
+        t = t[3:].strip()
+    parts = t.split()
+    if default_group:
+        # 群里只配本群：写了本群群号就去掉，其余数字一律当 UP 的 UID，不能拿来当群号
+        if parts and parts[0] == default_group:
+            parts = parts[1:]
+        group, rest = default_group, parts
+    else:
+        # 私聊里群号必须写在最前面；光写「加 UID」说明还没说清是哪个群
+        if not parts or not (parts[0].isdigit() and len(parts[0]) >= 5):
+            return "usage", "", "", []
+        group, rest = parts[0], parts[1:]
+    if not rest:
+        return "list", group, "", []
+    if rest[0] in SUB_ADD_WORDS:
+        action = "add"
+    elif rest[0] in SUB_DEL_WORDS:
+        action = "del"
+    else:
+        return "usage", group, "", []
+    body = rest[1:]
+    if not body:
+        return "usage", group, "", []
+    return action, group, body[0], body[1:]
+
+
+def is_bili_command(text: str) -> bool:
+    """是不是 /添加订阅、/查询订阅 这类 Bison 指令（必须带 /，整词命中，不分大小写）。"""
+    t = (text or "").strip()
+    if not t.startswith("/"):
+        return False
+    body = t[1:].strip().lower()
+    for word in BILI_COMMANDS:
+        if body == word or body.startswith(word) and body[len(word):len(word) + 1].isspace():
+            return True
+    return False
+
+
 def wants_help(text: str) -> bool:
     """这句是不是「正经求助」：查/看/找/翻译/出主意。
 

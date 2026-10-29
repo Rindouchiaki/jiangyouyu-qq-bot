@@ -7,7 +7,7 @@ nonebot-plugin-apscheduler>=0.5,<1
 nonebot-plugin-parser>=2.6,<2.8
 python-dotenv>=0.21
 httpx>=0.27.2
-pillow>=11
+pillow>=11,<11.1
 # 早柚核心连接插件（核心本体另装，见 docs/早柚核心接入.md）
 nonebot-plugin-genshinuid>=6.1,<7
 # 解析插件合并音视频要 ffmpeg：它带一个静态版，但不会自动进 PATH，需把所在目录加进 PATH（脚本默认找 tools\ffmpeg\bin）
@@ -15,3 +15,11 @@ imageio-ffmpeg
 
 # 早柚核心连接插件运行时要（它声明的下限太低），tests/fake_onebot_client.py 也用
 websockets>=15
+# Bison 0.9.14 import 的是 htmlrender.browser（0.8 移除了），所以 htmlrender 要钉在 0.7.x
+nonebot-plugin-htmlrender>=0.7,<0.8
+# B 站动态/直播/番剧订阅推送（Bison）：它是插件形态，钉 pillow<11.1，与解析插件共存需要明确这一条
+nonebot-bison>=0.9.14,<0.10
+# Bison 的 B 站平台 import 期就 from playwright.async_api import Cookie；卡片图渲染也走它
+playwright>=1.60
+# 推送只用机器人号发（bot/bot.py）改的是它的内部函数 auto_select_bot._refresh_bot，换大版本要复核
+nonebot-plugin-send-anything-anywhere>=0.7.1,<0.8

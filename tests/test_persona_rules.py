@@ -45,6 +45,7 @@ from persona_rules import (  # noqa: E402
     is_conversation_ending,
     is_offensive,
     is_game_command,
+    is_bili_command,
     is_question,
     judge_atmosphere,
     judge_annoyance,
@@ -257,6 +258,14 @@ def main() -> int:
     assert not is_game_command("www笑死", ww) and not is_game_command("www.bilibili.com/video", ww)
     assert not is_game_command("zzzz困死了", ww)
     print("PASS  is_game_command：核心指令人设不接")
+
+    # Bison 的订阅指令：带 / 且整词才让开；「动态」「直播」当日常词出现时不能误伤
+    assert is_bili_command("/添加订阅") and is_bili_command("/查询订阅")
+    assert is_bili_command("/删除订阅") and is_bili_command("/群管理")
+    assert is_bili_command("/添加cookie 123") and is_bili_command("/后台管理")
+    assert not is_bili_command("今天发个动态") and not is_bili_command("/动态")
+    assert not is_bili_command("添加订阅") and not is_bili_command("")
+    print("PASS  is_bili_command：订阅指令人设不接")
 
     # 代码默认前缀要覆盖锁文件里每个插件的前缀，否则装了插件人设还会抢答
     lock = json.loads((Path(__file__).resolve().parents[1] / "external.lock.json").read_text(encoding="utf-8"))

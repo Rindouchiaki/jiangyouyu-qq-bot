@@ -17,6 +17,8 @@ jobs:
     env:
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"
+      # htmlrender 把浏览器装在自己的 render_storage_path 下，CI 里固定到可缓存的目录
+      RENDER_STORAGE_PATH: D:\a\htmlrender
     steps:
       # 仓库里的 .ps1 要原样的 BOM + CRLF，别让 Git 转换行符
       - run: git config --global core.autocrlf false
@@ -46,6 +48,19 @@ jobs:
           uv venv .venv --python 3.12 || exit /b 1
           uv pip install --python .venv\Scripts\python.exe -r requirements.lock
 
+      # 冒烟启动时，bison 要渲染卡片就得有 chromium；不预装会临时下载、来不及起来
+      - name: 缓存 Chromium
+        uses: actions/cache@v4
+        with:
+          path: D:\a\htmlrender
+          key: playwright-chromium-${{ hashFiles('requirements.lock') }}
+
+      - name: 装 Chromium
+        shell: cmd
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: D:\a\htmlrender
+        run: .venv\Scripts\python -m playwright install chromium
+
       - name: 单元测试
         shell: cmd
         run: |
@@ -56,7 +71,8 @@ jobs:
           .venv\Scripts\python tests\test_topics.py || exit /b 1
           .venv\Scripts\python tests\test_sticker_weights.py || exit /b 1
           .venv\Scripts\python tests\test_backstage.py || exit /b 1
-          .venv\Scripts\python tests\test_migrate_journal_tags.py
+          .venv\Scripts\python tests\test_migrate_journal_tags.py || exit /b 1
+          .venv\Scripts\python tests\test_bili_group.py || exit /b 1
 
       - name: NoneBot 冒烟
         shell: cmd

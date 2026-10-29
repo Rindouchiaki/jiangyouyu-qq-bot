@@ -11,16 +11,26 @@ aiohttp==3.14.5
     # via nonebot-plugin-genshinuid
 aiosignal==1.4.0
     # via aiohttp
+aiosqlite==0.22.1
+    # via sqlalchemy
+alembic==1.20.1
+    # via nonebot-plugin-datastore
 annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
     # via pydantic
 anyio==4.15.1
     # via
+    #   anysqlite
+    #   hishel
     #   httpx
+    #   nonebot-plugin-htmlrender
+    #   nonebot-plugin-send-anything-anywhere
     #   nonebot2
     #   starlette
     #   watchfiles
+anysqlite==0.0.5
+    # via hishel
 apilmoji==0.3.1
     # via nonebot-plugin-parser
 apscheduler==3.11.3
@@ -38,7 +48,10 @@ attrs==26.1.0
 beautifulsoup4==4.15.0
     # via
     #   bilibili-api-python
+    #   nonebot-bison
     #   nonebot-plugin-parser
+bidict==0.24.1
+    # via python-socketio
 bilibili-api-python==17.4.2
     # via nonebot-plugin-parser
 brotli==1.2.1
@@ -62,17 +75,38 @@ curl-cffi==0.17.0
 emoji==2.16.0
     # via apilmoji
 exceptiongroup==1.3.1
-    # via nonebot2
+    # via
+    #   nonebot-plugin-htmlrender
+    #   nonebot2
+expiringdictx==1.1.0
+    # via nonebot-bison
 fastapi==0.162.0
     # via nonebot2
+feedparser==6.0.14
+    # via nonebot-bison
+feedparser-sgmllib==2.1.0
+    # via feedparser
+filetype==1.2.0
+    # via nonebot-plugin-send-anything-anywhere
 frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
+greenlet==3.5.6
+    # via
+    #   playwright
+    #   sqlalchemy
 h11==0.16.0
     # via
     #   httpcore
     #   uvicorn
+    #   wsproto
+h2==4.4.1
+    # via httpx
+hishel==0.1.5
+    # via nonebot-bison
+hpack==4.2.0
+    # via h2
 httpcore==1.0.9
     # via httpx
 httptools==0.9.0
@@ -81,7 +115,12 @@ httpx==0.28.1
     # via
     #   -r requirements.txt
     #   apilmoji
+    #   hishel
+    #   nonebot-bison
     #   nonebot-plugin-parser
+    #   nonebot2
+hyperframe==6.1.0
+    # via h2
 idna==3.20
     # via
     #   anyio
@@ -94,15 +133,32 @@ importlib-metadata==10.1.0
     #   nonebot-plugin-alconna
     #   nonebot-plugin-uninfo
 jinja2==3.1.6
-    # via takumi-py
+    # via
+    #   nonebot-plugin-htmlrender
+    #   takumi-py
 loguru==0.7.3
     # via nonebot2
+lru-dict==1.4.1
+    # via expiringdictx
 lxml==6.1.3
-    # via bilibili-api-python
+    # via
+    #   bilibili-api-python
+    #   nonebot-bison
+mako==1.4.3
+    # via alembic
+markdown==3.11.2
+    # via
+    #   nonebot-plugin-htmlrender
+    #   pymdown-extensions
+    #   python-markdown-math
 markupsafe==3.0.4
-    # via jinja2
+    # via
+    #   jinja2
+    #   mako
 msgpack==1.2.4
-    # via nonebot-adapter-onebot
+    # via
+    #   hishel
+    #   nonebot-adapter-onebot
 msgspec==0.22.0
     # via
     #   nonebot-plugin-genshinuid
@@ -118,22 +174,43 @@ nepattern==0.7.8
     #   arclet-alconna-tools
     #   nonebot-plugin-alconna
 nonebot-adapter-onebot==2.4.6
+    # via
+    #   -r requirements.txt
+    #   nonebot-bison
+nonebot-bison==0.9.14
     # via -r requirements.txt
 nonebot-plugin-alconna==0.62.1
     # via
     #   nonebot-plugin-genshinuid
     #   nonebot-plugin-parser
+    #   nonebot-plugin-prometheus
 nonebot-plugin-apscheduler==0.5.0
     # via
     #   -r requirements.txt
+    #   nonebot-bison
     #   nonebot-plugin-genshinuid
     #   nonebot-plugin-parser
+nonebot-plugin-datastore==1.3.1
+    # via nonebot-bison
 nonebot-plugin-genshinuid==6.1.1
     # via -r requirements.txt
+nonebot-plugin-htmlrender==0.7.2
+    # via
+    #   -r requirements.txt
+    #   nonebot-bison
 nonebot-plugin-localstore==0.7.4
-    # via nonebot-plugin-parser
+    # via
+    #   nonebot-plugin-datastore
+    #   nonebot-plugin-htmlrender
+    #   nonebot-plugin-parser
 nonebot-plugin-parser==2.7.1
     # via -r requirements.txt
+nonebot-plugin-prometheus==0.4.1
+    # via nonebot-bison
+nonebot-plugin-send-anything-anywhere==0.7.1
+    # via
+    #   -r requirements.txt
+    #   nonebot-bison
 nonebot-plugin-uninfo==0.11.2
     # via nonebot-plugin-parser
 nonebot-plugin-waiter==0.8.1
@@ -142,25 +219,37 @@ nonebot2==2.5.0
     # via
     #   -r requirements.txt
     #   nonebot-adapter-onebot
+    #   nonebot-bison
     #   nonebot-plugin-alconna
     #   nonebot-plugin-apscheduler
+    #   nonebot-plugin-datastore
     #   nonebot-plugin-genshinuid
+    #   nonebot-plugin-htmlrender
     #   nonebot-plugin-localstore
     #   nonebot-plugin-parser
+    #   nonebot-plugin-prometheus
+    #   nonebot-plugin-send-anything-anywhere
     #   nonebot-plugin-uninfo
     #   nonebot-plugin-waiter
 nonestorage==0.1.0
     # via nonebot-plugin-localstore
 opentelemetry-api==1.45.1
     # via fastapi
-pillow==13.0.0
+pillow==11.0.0
     # via
     #   -r requirements.txt
     #   apilmoji
     #   bilibili-api-python
+    #   nonebot-bison
     #   nonebot-plugin-genshinuid
     #   nonebot-plugin-parser
     #   qrcode-terminal
+playwright==1.64.1
+    # via
+    #   -r requirements.txt
+    #   nonebot-plugin-htmlrender
+prometheus-client==0.26.0
+    # via nonebot-plugin-prometheus
 propcache==0.5.4
     # via
     #   aiohttp
@@ -173,34 +262,64 @@ pydantic==2.14.1
     # via
     #   fastapi
     #   nonebot-adapter-onebot
+    #   nonebot-bison
     #   nonebot-plugin-apscheduler
     #   nonebot-plugin-localstore
+    #   nonebot-plugin-send-anything-anywhere
     #   nonebot2
 pydantic-core==2.50.1
     # via pydantic
+pyee==14.0.0
+    # via playwright
+pygments==2.21.0
+    # via nonebot-plugin-htmlrender
 pygtrie==2.6.2
     # via nonebot2
 pyjwt==2.15.1
-    # via bilibili-api-python
+    # via
+    #   bilibili-api-python
+    #   nonebot-bison
+pymdown-extensions==12.3
+    # via nonebot-plugin-htmlrender
+pypng==0.20220715.0
+    # via qrcode
 python-dotenv==1.2.4
     # via
     #   -r requirements.txt
     #   nonebot2
     #   uvicorn
+python-engineio==4.15.1
+    # via python-socketio
+python-markdown-math==0.9
+    # via nonebot-plugin-htmlrender
+python-socketio==5.17.0
+    # via nonebot-bison
 pyyaml==6.0.3
     # via
     #   bilibili-api-python
+    #   pymdown-extensions
     #   uvicorn
-qrcode==8.2
+qrcode==7.4.2
     # via
     #   bilibili-api-python
+    #   nonebot-bison
     #   qrcode-terminal
 qrcode-terminal==0.8
     # via bilibili-api-python
+rapidfuzz==3.14.6
+    # via nonebot-bison
+simple-websocket==1.1.0
+    # via python-engineio
 soupsieve==3.0.4
     # via beautifulsoup4
+sqlalchemy==2.1.6
+    # via
+    #   alembic
+    #   nonebot-plugin-datastore
 starlette==1.10.0
     # via fastapi
+strenum==0.4.15
+    # via nonebot-plugin-send-anything-anywhere
 takumi-py==0.3.0
     # via nonebot-plugin-parser
 tarina==0.7.5
@@ -208,22 +327,32 @@ tarina==0.7.5
     #   arclet-alconna
     #   nepattern
     #   nonebot-plugin-alconna
+tenacity==9.2.1
+    # via nonebot-plugin-htmlrender
+tinydb==4.9.0
+    # via nonebot-bison
 typing-extensions==4.16.0
     # via
     #   aiohttp
     #   aiosignal
+    #   alembic
     #   anyio
     #   arclet-alconna
     #   beautifulsoup4
     #   exceptiongroup
     #   fastapi
+    #   hishel
     #   nepattern
     #   nonebot-adapter-onebot
+    #   nonebot-plugin-htmlrender
     #   nonebot-plugin-localstore
     #   nonebot2
     #   opentelemetry-api
     #   pydantic
     #   pydantic-core
+    #   pyee
+    #   qrcode
+    #   sqlalchemy
     #   starlette
     #   takumi-py
     #   tarina
@@ -247,10 +376,13 @@ websockets==17.3
     #   uvicorn
 win32-setctime==1.2.1
     # via loguru
+wsproto==1.3.2
+    # via simple-websocket
 yarl==1.25.1
     # via
     #   aiohttp
     #   bilibili-api-python
+    #   nonebot-bison
     #   nonebot2
 zipp==4.1.2
     # via importlib-metadata

@@ -286,14 +286,15 @@ def main() -> int:
         tmp = Path(tempfile.mkdtemp(prefix="smoke_"))
         env = dict(os.environ, BOT_UIN=str(self_id), LLM_MOCK="1", REPLY_PROB_CALLED="1",
                    ONEBOT_ACCESS_TOKEN=token, PERSONA_DATA_DIR=str(tmp / "data"), BAISHOU_VAULT=str(tmp / "vault"),
+                   LOCALSTORE_DATA_DIR=str(tmp / "localstore"),
                    HOST="127.0.0.1", PORT=str(args.port), PYTHONIOENCODING="utf-8", PYTHONUTF8="1",
                    GSUID_CORE_REPEAT="true")
         log = open(tmp / "nonebot.log", "wb")
         proc = subprocess.Popen([sys.executable, str(ROOT / "bot" / "bot.py")], env=env, stdout=log, stderr=subprocess.STDOUT)
-        if not wait_port(args.port, 90):
+        if not wait_port(args.port, 180):
             proc.kill()
             print((tmp / "nonebot.log").read_text(encoding="utf-8", errors="replace")[-3000:])
-            print("FAIL  NoneBot 90 秒内没起来")
+            print("FAIL  NoneBot 180 秒内没起来")
             return 1
     else:
         token = conf.get("ONEBOT_ACCESS_TOKEN", "")
