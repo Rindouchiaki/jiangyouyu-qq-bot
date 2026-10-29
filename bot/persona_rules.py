@@ -285,9 +285,13 @@ def bili_notice(texts: list[str]) -> str:
 
 
 def bili_shot_url(id_str: str | None) -> str:
-    """要截图的动态页：统一走 t.bilibili.com/动态 id（opus、专栏的 jump_url 页面结构不一样，截不到）。"""
+    """要截图的页面：统一走 opus 页。
+
+    t.bilibili.com 的动态页里，专栏类动态正文只有字面的 `[图片]` 占位，截出来是一屏「[图片]」；
+    opus 页（www.bilibili.com/opus/<动态 id>）图文都正常渲染，普通动态也一样能截，所以统一用它。
+    """
     s = (id_str or "").strip()
-    return f"https://t.bilibili.com/{s}" if s.isdigit() else ""
+    return f"https://www.bilibili.com/opus/{s}" if s.isdigit() else ""
 
 
 def compact_desc(text: str, limit: int = 60) -> str:
