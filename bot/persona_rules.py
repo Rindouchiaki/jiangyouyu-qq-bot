@@ -477,6 +477,7 @@ def build_system_prompt(
     topics: list[str] | None = None,
     slang: str = "",
     can_search: bool = False,
+    search_ready: bool = False,
     interests: tuple[str, ...] = (),
     proactive: bool = False,
     slang_play: bool = False,
@@ -595,6 +596,12 @@ def build_system_prompt(
             "查到的用自己的话说一两句，别念网页、别说「根据搜索结果」，不贴链接（他要才给）；查不到就说没查到。"
         )
 
+    if search_ready and not can_search:
+        system += (
+            "\n\n你能联网查资料：别人问你能不能联网、会不会搜，就直说能，让他说清要查什么；"
+            "真要查的时候工具会给你。别说得等谁给你开。"
+        )
+
     if help_mode and attitude == "讨厌":
         # 讨厌的人求助：可以啧一声，帮不帮看心情
         system += (
@@ -615,7 +622,7 @@ def build_system_prompt(
             "别去接更早的别人的话。"
         )
         if not can_search:
-            system += "你这会儿上不了网：拿不准的事实、实时的情况（数字、日期、结果之类）别编，不知道就直说不知道。"
+            system += "这次查不了：拿不准的事实、实时的情况（数字、日期、结果之类）别编，不知道就直说不知道。"
 
     energy = energy_by_hour(hour) if hour is not None else "清醒"
     if energy == "犯困":
@@ -685,6 +692,7 @@ def compose_messages(
     slang: str = "",
     new_msgs: list[tuple[str, str]] | None = None,
     can_search: bool = False,
+    search_ready: bool = False,
     interests: tuple[str, ...] = (),
     proactive: bool = False,
     slang_play: bool = False,
@@ -707,7 +715,7 @@ def compose_messages(
                 self_names, atmosphere, mood, dev_name, has_memory, chime,
                 help_mode=help_mode, hour=hour, attitude=attitude, bond=bond, dere=dere, cute=cute, shy=shy,
                 flavor=flavor, group_style=bool(group_style), question=question,
-                topics=topics, slang=slang, can_search=can_search, interests=interests,
+                topics=topics, slang=slang, can_search=can_search, search_ready=search_ready, interests=interests,
                 proactive=proactive, slang_play=slang_play, dev_aliases=dev_aliases,
             ),
         }
