@@ -154,9 +154,57 @@ def is_game_command(text: str, prefixes: tuple[str, ...]) -> bool:
 # 「动态」「直播」这类词日常聊天太常见，光看开头会误伤。
 BILI_COMMANDS = (
     "添加订阅", "查询订阅", "删除订阅", "修改订阅", "群管理",
-    "后台管理", "管理后台", "订阅",
+    "后台管理", "管理后台", "订阅", "群订阅",
     "添加cookie", "删除cookie", "关联cookie", "取消关联cookie",
 )
+
+GROUP_SUB_USAGE = (
+    "用法：\n"
+    "/群订阅 群号 —— 看这个群订了谁\n"
+    "/群订阅 群号 加 946974 —— 给这个群订一个 UP（UID、UID:946974 或主页链接都行）\n"
+    "/群订阅 群号 加 946974 视频 专栏文章 —— 顺带指定类别，不写就是「一般动态」，写「全部」就是全类别\n"
+    "/群订阅 群号 删 946974 —— 取消这个 UP\n"
+    "私聊里可以给任意群配；群里只能配这个群。"
+)
+
+
+def parse_group_sub(text: str) -> tuple[str, str, str, list[str]]:
+    """拆 `/群订阅` 的参数 → (动作, 群号, 目标, 类别名)。
+
+    动作是 usage / list / add / del；群号是数字串（可能为空）。
+    只做字符串解析，不碰 NoneBot 也不查库，方便离线测。
+    """
+    t = (text or "").strip()
+    if t.startswith("/"):
+        t = t[1:].strip()
+    if t.startswith("群订阅"):
+        t = t[3:].strip()
+    if not t:
+        return "usage", "", "", []
+    parts = t.split()
+    group = ""
+    rest: list[str] = []
+    for idx, part in enumerate(parts):
+        if not group and part.isdigit() and len(part) >= 5:
+            group = part
+            rest = parts[idx + 1:]
+            break
+    if not group:
+        return "usage", "", "", []
+    if not rest:
+        return "list", group, "", []
+    action_word = rest[0]
+    if action_word in ("加", "添加", "订", "订阅"):
+        action = "add"
+    elif action_word in ("删", "删除", "取关", "取消"):
+        action = "del"
+    else:
+        return "usage", group, "", []
+    body = rest[1:]
+    if not body:
+        return "usage", group, "", []
+    target = body[0]
+    return action, group, target, body[1:]
 
 
 def is_bili_command(text: str) -> bool:
