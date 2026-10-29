@@ -122,8 +122,12 @@ async def _del_sub(bot: Bot, group_id: str, target_text: str) -> str:
         target = await platform_manager["bilibili"].parse_target(target_text)
     except Exception:  # noqa: BLE001
         return "要删的话写 UID 或主页链接。"
+    user = TargetQQGroup(group_id=int(group_id))
+    subscribed = await bison_config.list_subscribe(user)
+    if not any(str(sub.target.target) == str(target) for sub in subscribed):
+        return f"{await _group_label(bot, group_id)} 本来就没订 {target}，不用删。"
     try:
-        await bison_config.del_subscribe(TargetQQGroup(group_id=int(group_id)), target, "bilibili")
+        await bison_config.del_subscribe(user, target, "bilibili")
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"bili_group: 删订阅失败（{type(exc).__name__}: {exc}）")
         return f"没删掉（{type(exc).__name__}），稍后再试。"

@@ -154,7 +154,7 @@ def is_game_command(text: str, prefixes: tuple[str, ...]) -> bool:
 # 「动态」「直播」这类词日常聊天太常见，光看开头会误伤。
 BILI_COMMANDS = (
     "添加订阅", "查询订阅", "删除订阅", "修改订阅", "群管理",
-    "后台管理", "管理后台", "订阅", "群订阅",
+    "后台管理", "管理后台", "群订阅",
     "添加cookie", "删除cookie", "关联cookie", "取消关联cookie",
 )
 
@@ -191,11 +191,15 @@ def parse_group_sub(text: str, default_group: str = "") -> tuple[str, str, str, 
     # 群里没写群号、直接以「加/删」开头时，整句都算参数，别把 UP 的 UID 误当成群号
     if default_group and parts and parts[0] in ("加", "添加", "订", "订阅", "删", "删除", "取关", "取消"):
         group, rest = default_group, parts
-    for idx, part in enumerate(parts if not group else []):
-        if not group and part.isdigit() and len(part) >= 5:
-            group = part
-            rest = parts[idx + 1:]
-            break
+    if default_group:
+        # 群里只配本群，参数里的数字一律当 UP 的 UID，不能拿来当群号
+        group, rest = default_group, parts
+    else:
+        for idx, part in enumerate(parts):
+            if part.isdigit() and len(part) >= 5:
+                group = part
+                rest = parts[idx + 1:]
+                break
     if not group:
         if not default_group:
             return "usage", "", "", []

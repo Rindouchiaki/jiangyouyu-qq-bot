@@ -34,6 +34,16 @@ def main() -> int:
     assert pr.parse_group_sub("/群订阅 加 946974", "913506590") == ("add", "913506590", "946974", [])
     assert pr.parse_group_sub("/群订阅 删 946974", "913506590") == ("del", "913506590", "946974", [])
     assert pr.parse_group_sub("/群订阅 加 946974") == ("usage", "", "", [])
+    # 群里把 UID 当群号是以前的毛病：裸数字一律当 UP，不再误判成群号
+    assert pr.parse_group_sub("/群订阅 1636034895", "913506590") == ("usage", "913506590", "", [])
+    assert pr.parse_group_sub("/群订阅 加 1636034895", "913506590") == (
+        "add",
+        "913506590",
+        "1636034895",
+        [],
+    )
+    # 「/订阅」不是 Bison 的指令，人设不该让它
+    assert not pr.is_bili_command("/订阅 xxx")
 
     assert pr.is_bili_command("/群订阅 913506590")
     assert pr.is_bili_command("/群订阅")

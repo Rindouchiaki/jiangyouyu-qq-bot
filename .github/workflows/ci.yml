@@ -17,6 +17,8 @@ jobs:
     env:
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"
+      # htmlrender 把浏览器装在自己的 render_storage_path 下，CI 里固定到可缓存的目录
+      RENDER_STORAGE_PATH: D:\a\htmlrender
     steps:
       # 仓库里的 .ps1 要原样的 BOM + CRLF，别让 Git 转换行符
       - run: git config --global core.autocrlf false
@@ -50,11 +52,13 @@ jobs:
       - name: 缓存 Chromium
         uses: actions/cache@v4
         with:
-          path: ~\AppData\Local\ms-playwright
+          path: D:\a\htmlrender
           key: playwright-chromium-${{ hashFiles('requirements.lock') }}
 
       - name: 装 Chromium
         shell: cmd
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: D:\a\htmlrender
         run: .venv\Scripts\python -m playwright install chromium
 
       - name: 单元测试

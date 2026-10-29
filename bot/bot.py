@@ -73,6 +73,24 @@ try:
 except Exception as exc:  # noqa: BLE001
     nonebot.logger.warning(f"Bison 订阅插件加载失败 {type(exc).__name__}: {exc}")
 
+# Bison 的推送走 send-anything-anywhere 的「自动挑一个 bot」：SnowLuma 同时挂着两个号时，
+# 它可能挑到开发者自己的号发出去。这里把非 BOT_UIN 的号从它的候选缓存里挡掉，
+# 保证推送只用机器人本号发。
+if _BOT_UIN:
+    try:
+        import nonebot_plugin_saa.auto_select_bot as _saa_auto
+
+        _saa_refresh = _saa_auto._refresh_bot
+
+        async def _only_bot_refresh(bot):
+            if str(getattr(bot, "self_id", "")) != _BOT_UIN:
+                return
+            await _saa_refresh(bot)
+
+        _saa_auto._refresh_bot = _only_bot_refresh
+    except Exception as exc:  # noqa: BLE001
+        nonebot.logger.warning(f"固定推送账号失败 {type(exc).__name__}: {exc}")
+
 # 早柚核心连接插件：把消息转给另起的核心进程（游戏查询，插件列表见 external.lock.json），核心没开也不影响人设
 try:
     nonebot.load_plugin("GenshinUID")
