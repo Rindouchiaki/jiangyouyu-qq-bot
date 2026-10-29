@@ -90,6 +90,23 @@ def allow(user_id: str = "") -> tuple[bool, str]:
     return True, ""
 
 
+def read_json(resp, limit: float) -> dict:
+    """读完响应再解析，总共不超过 limit 秒。
+
+    DeepSeek 排队时会一直回空行保活（最长半小时），socket 超时永远不触发，只能自己掐总时长。
+    """
+    deadline = time.monotonic() + limit
+    chunks: list[bytes] = []
+    while True:
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"{limit:.0f} 秒没读完")
+        chunk = resp.read1(8192)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    return json.loads(b"".join(chunks).decode("utf-8"))
+
+
 def _post(path: str, body: dict) -> dict:
     req = urllib.request.Request(
         f"{BASE_URL}{path}",
@@ -98,7 +115,7 @@ def _post(path: str, body: dict) -> dict:
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        return read_json(resp, TIMEOUT)
 
 
 def _cached(kind: str, key: str):
