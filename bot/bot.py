@@ -106,6 +106,18 @@ try:
 except Exception as exc:  # noqa: BLE001
     nonebot.logger.warning(f"Bison 订阅插件加载失败 {type(exc).__name__}: {exc}")
 
+# Bison 默认查开播比查动态勤（开播 5 秒、动态 60 秒）。开播提醒和动态一起推的时候，
+# 5 秒一查既浪费请求、又容易和动态那条前后脚重复；统一成跟动态一样的间隔，
+# 想改就用 BISON_LIVE_INTERVAL_SECONDS（秒）覆盖。
+try:
+    from nonebot_bison.platform.bilibili.scheduler import BililiveSite
+
+    _live_interval = int(os.getenv("BISON_LIVE_INTERVAL_SECONDS", "60"))
+    BililiveSite.schedule_setting = {"seconds": _live_interval}
+    nonebot.logger.info(f"Bison 开播轮询间隔改成 {_live_interval} 秒（与动态一致）")
+except Exception as exc:  # noqa: BLE001
+    nonebot.logger.warning(f"Bison 开播轮询间隔没改成 {type(exc).__name__}: {exc}")
+
 # Bison 的推送走 send-anything-anywhere 的「自动挑一个 bot」：SnowLuma 同时挂着两个号时，
 # 它可能挑到开发者自己的号发出去。这里把非 BOT_UIN 的号从它的候选缓存里挡掉，
 # 保证推送只用机器人本号发。
