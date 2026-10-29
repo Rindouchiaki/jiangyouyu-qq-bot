@@ -755,12 +755,12 @@ def compose_messages(
 # ---------------------------------------------------------------- 好感度 / 熟悉度
 # 好感 -100~100、熟悉 0~100，按 QQ 号存，群聊私聊共用。难涨，但正常来往守得住：
 # - 好感不按单句关键词算，由模型隔几轮看整段聊天打分（-2~+2，见 diary_user_prompt），另外只有被追着烦会扣；
-# - 每天涨的上限按当天起点 3 / 2 / 1（<30 / <60 / 其它），一天最多掉 12；
+# - 每天涨的上限按当天起点 3 / 2 / 1（<30 / <60 / 其它），一天最多掉 15；
 # - 熟悉度是私聊过的天数：那天私聊过 +1，群里聊得再多也不加；只有「亲近」看它，所以没私聊过的人最多到「有好感」；
 # - 只要还在来往好感就不自己掉；48 小时没来往起每天掉 1、2、3（之后每天 3），掉到初始值为止；记仇（负的）每 7 天回 1。
 AFF_RANGE = (-100, 100)
 FAM_MAX = 100
-DAY_AFF_LOSS = -12
+DAY_AFF_LOSS = -15
 IDLE_GRACE_SEC = 48 * 3600
 IDLE_DAY_MAX = 3
 # 态度档的好感门槛；亲近另要熟悉度（至少一起聊过这么多天）
@@ -780,8 +780,9 @@ def new_bond() -> dict:
 
 # 只用来判断情绪（生气），不再按它扣好感：骂别的事、骂游戏也会命中
 _AFF_RUDE = ("傻逼", "sb", "闭嘴", "恶心", "有病", "滚", "废物", "垃圾", "去死", "拉黑", "爬", "丑")
-# 被追着烦：她表现出不高兴算第 1 次，之后同一个人隔不到 10 分钟还不停手（@ 她、喊她、抓着那个话题不放），第 3 次起每次都扣
-AFF_PESTER = -3
+# 被追着烦：她表现出不高兴算第 1 次，之后同一个人隔不到 10 分钟还不停手（@ 她、喊她、抓着那个话题不放），
+# 第 3 次起每次都扣，越扣越多：-1、-2、-3，之后每次 -3（一天最多掉 DAY_AFF_LOSS）
+PESTER_LOSSES = (-1, -2, -3)
 PESTER_AT_COUNT = 3
 PESTER_AT_WINDOW = 600
 PESTER_TOPIC_SIM = 0.3
@@ -794,12 +795,14 @@ def keeps_pestering(text: str, at: bool, called: bool, pressed: list[str] | tupl
     return any(_similarity(text, p) >= PESTER_TOPIC_SIM for p in pressed if p)
 
 
-def pester_step(state: list | None, now: float) -> tuple[list | None, bool]:
-    """又纠缠了一次。state 是 [上次时间, 第几次, 让她烦的那几句]（不高兴那次记第 1 次）；返回（新 state, 这次扣不扣）。"""
+def pester_step(state: list | None, now: float) -> tuple[list | None, int]:
+    """又纠缠了一次。state 是 [上次时间, 第几次, 让她烦的那几句]（不高兴那次记第 1 次）；返回（新 state, 这次扣多少，0 = 不扣）。"""
     if not state or now - state[0] > PESTER_AT_WINDOW:
-        return None, False
+        return None, 0
     count = int(state[1]) + 1
-    return [now, count, *state[2:]], count >= PESTER_AT_COUNT
+    if count < PESTER_AT_COUNT:
+        return [now, count, *state[2:]], 0
+    return [now, count, *state[2:]], PESTER_LOSSES[min(count - PESTER_AT_COUNT, len(PESTER_LOSSES) - 1)]
 
 
 # 回复里出现这些就不发：人设再傲也不能骂人（模型偶尔会被带偏）

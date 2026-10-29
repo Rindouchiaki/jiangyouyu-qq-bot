@@ -18,7 +18,6 @@ from persona_rules import (  # noqa: E402
     DERE_CHANCE,
     REPLY_FLAVORS,
     DEFAULT_GAME_PREFIXES,
-    AFF_PESTER,
     CLOSE_FAM,
     INITIAL_AFF,
     INITIAL_FAM,
@@ -317,7 +316,7 @@ def main() -> int:
     rude = close
     for i in range(10):
         rude = update_bond(rude, -2, close["last"] + day + i * 60, met=False)
-    assert close["aff"] - rude["aff"] == 12, rude  # 一天最多掉 12
+    assert close["aff"] - rude["aff"] == 15, rude  # 一天最多掉 15
     grudge = chat(20, -2)
     assert attitude(grudge["aff"], grudge["fam"]) == "讨厌"
     later = update_bond(grudge, 0, grudge["last"] + 31 * day)
@@ -333,23 +332,31 @@ def main() -> int:
     assert parse_user_diary("喜欢原神") == (0, ["喜欢原神"]) and parse_user_diary("") == (0, [])
     assert "不算对我" in diary_user_prompt("普通") and "要好感" in diary_user_prompt("亲近")
     assert "没什么好感" in diary_user_prompt("普通") and "没什么好感" not in diary_user_prompt("有好感")
-    assert AFF_PESTER < 0 and PESTER_AT_COUNT == 3
-    # 不高兴那次算第 1 次：再纠缠一次不扣，第 3 次扣，扣了还纠缠就接着扣；隔太久就清掉
+    assert PESTER_AT_COUNT == 3
+    # 不高兴那次算第 1 次：再纠缠一次不扣，第 3 次起越扣越多 -1、-2、-3，之后每次 -3；隔太久就清掉
     pressed = ["你到底喜不喜欢我", "说啊喜不喜欢我"]
-    st, hit = pester_step([t0, 1, pressed], t0 + 10)
-    assert st == [t0 + 10, 2, pressed] and not hit
-    st, hit = pester_step(st, t0 + 20)
-    assert st[1] == 3 and hit
-    st, hit = pester_step(st, t0 + 30)
-    assert st[1] == 4 and hit and st[2] == pressed
-    st, hit = pester_step(st, t0 + 40)
-    assert st[1] == 5 and hit
+    st, loss = pester_step([t0, 1, pressed], t0 + 10)
+    assert st == [t0 + 10, 2, pressed] and loss == 0
+    losses = []
+    for i in range(5):
+        st, loss = pester_step(st, t0 + 20 + i * 10)
+        losses.append(loss)
+    assert losses == [-1, -2, -3, -3, -3] and st[1] == 7 and st[2] == pressed, (losses, st)
+    st = [t0 + 40, 5, pressed]
     # 纠缠不一定要 @：喊她、抓着那件事不放都算；和别人聊别的不算
     assert keeps_pestering("哈哈", True, False) and keeps_pestering("酱油鱼你说嘛", False, True)
     assert keeps_pestering("所以到底喜不喜欢我嘛", False, False, pressed)
     assert not keeps_pestering("今晚吃什么", False, False, pressed)
-    assert pester_step(st, t0 + 40 + PESTER_AT_WINDOW + 1) == (None, False)
-    assert pester_step(None, t0) == (None, False)
+    assert pester_step(st, t0 + 40 + PESTER_AT_WINDOW + 1) == (None, 0)
+    assert pester_step(None, t0) == (None, 0)
+    # 一路纠缠下去：一天最多掉 15
+    worn = {"aff": 50, "fam": 0}
+    st = [t0, 1, pressed]
+    for i in range(12):
+        st, loss = pester_step(st, t0 + 10 * (i + 1))
+        if loss:
+            worn = update_bond(worn, loss, t0 + 10 * (i + 1), met=False)
+    assert worn["aff"] == 50 - 15, worn
     print("PASS  parse_user_diary / diary_user_prompt：好感看整段打分")
 
     # 开发者：保底「有好感」，涨×2、掉÷2
@@ -361,7 +368,7 @@ def main() -> int:
     top = dev_rude["aff"]
     for i in range(10):
         dev_rude = update_bond(dev_rude, -2, dev_rude["last"] + 60, dev=True, met=False)
-    assert top - dev_rude["aff"] == 6, dev_rude  # 一天最多掉 6
+    assert top - dev_rude["aff"] == 7, dev_rude  # 一天最多掉 7（15 的一半）
     dev_grudge = chat(30, -2, dev=True)
     dev_idle = update_bond(dev_grudge, 0, dev_grudge["last"] + 90 * day, dev=True)
     assert attitude(dev_grudge["aff"], dev_grudge["fam"]) == "有好感" == attitude(dev_idle["aff"], dev_idle["fam"])

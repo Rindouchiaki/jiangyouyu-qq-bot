@@ -54,7 +54,6 @@ import topics
 import vision
 import web_search
 from persona_rules import (
-    AFF_PESTER,
     SEARCH_PRELUDES,
     SEARCH_FAILED,
     SEARCH_PRELUDES_COLD,
@@ -744,14 +743,14 @@ def _count_pester_at(key: str, batch: list[dict], now: float) -> None:
         pressed = _upset[mark][2] if len(_upset[mark]) > 2 else ()
         if not keeps_pestering(it["text"], it["at"], it["called"], pressed):
             continue
-        state, deduct = pester_step(_upset.get(mark), now)
+        state, loss = pester_step(_upset.get(mark), now)
         if state is None:
             _upset.pop(mark, None)
             continue
         _upset[mark] = state
-        if deduct:
-            _bond_touch(it["uid"], it["name"], AFF_PESTER)
-            logger.info(f"persona: {it['name']} 她不高兴了还纠缠（第 {state[1]} 次），好感 {AFF_PESTER}")
+        if loss:
+            _bond_touch(it["uid"], it["name"], loss)
+            logger.info(f"persona: {it['name']} 她不高兴了还纠缠（第 {state[1]} 次），好感 {loss}")
 
 
 async def _diary_user(user_id: str, name: str, lines: list[tuple[str, str]], src: str) -> None:
