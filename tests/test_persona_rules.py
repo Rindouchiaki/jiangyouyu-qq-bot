@@ -23,6 +23,10 @@ from persona_rules import (  # noqa: E402
     INITIAL_AFF,
     INITIAL_FAM,
     PESTER_AT_COUNT,
+    PESTER_AT_WINDOW,
+    at_history,
+    pester_step,
+    keeps_pestering,
     MAX_CHARS_DEFAULT,
     SILENT_MARK,
     attitude,
@@ -330,6 +334,22 @@ def main() -> int:
     assert "不算对我" in diary_user_prompt("普通") and "要好感" in diary_user_prompt("亲近")
     assert "没什么好感" in diary_user_prompt("普通") and "没什么好感" not in diary_user_prompt("有好感")
     assert AFF_PESTER < 0 and PESTER_AT_COUNT == 3
+    # 不高兴那次算第 1 次：再纠缠一次不扣，第 3 次扣，扣了还纠缠就接着扣；隔太久就清掉
+    pressed = ["你到底喜不喜欢我", "说啊喜不喜欢我"]
+    st, hit = pester_step([t0, 1, pressed], t0 + 10)
+    assert st == [t0 + 10, 2, pressed] and not hit
+    st, hit = pester_step(st, t0 + 20)
+    assert st[1] == 3 and hit
+    st, hit = pester_step(st, t0 + 30)
+    assert st[1] == 4 and hit and st[2] == pressed
+    st, hit = pester_step(st, t0 + 40)
+    assert st[1] == 5 and hit
+    # 纠缠不一定要 @：喊她、抓着那件事不放都算；和别人聊别的不算
+    assert keeps_pestering("哈哈", True, False) and keeps_pestering("酱油鱼你说嘛", False, True)
+    assert keeps_pestering("所以到底喜不喜欢我嘛", False, False, pressed)
+    assert not keeps_pestering("今晚吃什么", False, False, pressed)
+    assert pester_step(st, t0 + 40 + PESTER_AT_WINDOW + 1) == (None, False)
+    assert pester_step(None, t0) == (None, False)
     print("PASS  parse_user_diary / diary_user_prompt：好感看整段打分")
 
     # 开发者：保底「有好感」，涨×2、掉÷2
@@ -537,6 +557,14 @@ def main() -> int:
     assert split_at_batch([sticker, ask_more]) == ([sticker, ask_more], [])
     assert split_at_batch(later) == ([other_at], [sticker, ask_more])
     print("PASS  被 @ 时只回那一条 @，前后的话留到下一轮，好几条 @ 按先后来")
+
+    # 被 @ 时群里前面的话不进 prompt（截图里「还是个傲娇」被拿去回了下一条 @），只带引用的那条
+    assert at_history(None) == [] and at_history(("24pp", "  ")) == []
+    assert at_history(("我", "这种事怎么可能啊")) == [("我", "这种事怎么可能啊")]
+    at_msgs = compose_messages(at_history(None), "24pp", "alex要把你修了 你没有多少时间了")
+    assert [m["role"] for m in at_msgs] == ["system", "user"], at_msgs
+    assert "傲娇" not in at_msgs[-1]["content"]
+    print("PASS  被 @ 时只给那一条（和它引用的那条），群里前文不带")
 
     rng = random.Random(3)
     assert 0.4 <= typing_delay("", rng=rng) <= 0.8

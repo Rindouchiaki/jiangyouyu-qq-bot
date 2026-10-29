@@ -771,7 +771,7 @@ CLOSE_AFF = 60
 CLOSE_FAM = 30
 # 刚认识的人从 0 开始，是「陌生」：好好聊几天才到「普通」
 INITIAL_AFF = int(os.getenv("BOND_INITIAL_AFF", "0"))
-INITIAL_FAM = int(os.getenv("BOND_INITIAL_FAM", "8"))
+INITIAL_FAM = int(os.getenv("BOND_INITIAL_FAM", "0"))
 
 
 def new_bond() -> dict:
@@ -780,10 +780,26 @@ def new_bond() -> dict:
 
 # 只用来判断情绪（生气），不再按它扣好感：骂别的事、骂游戏也会命中
 _AFF_RUDE = ("傻逼", "sb", "闭嘴", "恶心", "有病", "滚", "废物", "垃圾", "去死", "拉黑", "爬", "丑")
-# 表现出不高兴以后，同一个人 10 分钟内又在群里 @ 她 3 次才扣
+# 被追着烦：她表现出不高兴算第 1 次，之后同一个人隔不到 10 分钟还不停手（@ 她、喊她、抓着那个话题不放），第 3 次起每次都扣
 AFF_PESTER = -3
 PESTER_AT_COUNT = 3
 PESTER_AT_WINDOW = 600
+PESTER_TOPIC_SIM = 0.3
+
+
+def keeps_pestering(text: str, at: bool, called: bool, pressed: list[str] | tuple[str, ...] = ()) -> bool:
+    """她已经不乐意了，这条算不算还在纠缠：找她（@ / 喊名字）或者还在说让她烦的那件事。和别人聊别的不算。"""
+    if at or called:
+        return True
+    return any(_similarity(text, p) >= PESTER_TOPIC_SIM for p in pressed if p)
+
+
+def pester_step(state: list | None, now: float) -> tuple[list | None, bool]:
+    """又纠缠了一次。state 是 [上次时间, 第几次, 让她烦的那几句]（不高兴那次记第 1 次）；返回（新 state, 这次扣不扣）。"""
+    if not state or now - state[0] > PESTER_AT_WINDOW:
+        return None, False
+    count = int(state[1]) + 1
+    return [now, count, *state[2:]], count >= PESTER_AT_COUNT
 
 
 # 回复里出现这些就不发：人设再傲也不能骂人（模型偶尔会被带偏）
@@ -1351,6 +1367,13 @@ def split_at_batch(batch: list[dict]) -> tuple[list[dict], list[dict]]:
     if first is None:
         return batch, []
     return [first], [it for it in batch if it is not first]
+
+
+def at_history(quoted: tuple[str, str] | None) -> list[tuple[str, str]]:
+    """被 @ 时给模型的前文：群里前面的话一律不带（会接错话题），只带这条 @ 用 QQ 回复引用的那条。"""
+    if not quoted or not str(quoted[1]).strip():
+        return []
+    return [(str(quoted[0]), str(quoted[1]))]
 
 
 def typing_delay(text: str, per_char: float = 0.25, cap: float = 8.0, rng: random.Random | None = None) -> float:

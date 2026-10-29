@@ -55,8 +55,6 @@ import vision
 import web_search
 from persona_rules import (
     AFF_PESTER,
-    PESTER_AT_COUNT,
-    PESTER_AT_WINDOW,
     SEARCH_PRELUDES,
     SEARCH_FAILED,
     SEARCH_PRELUDES_COLD,
@@ -107,6 +105,9 @@ from persona_rules import (
     promises_lookup,
     shy_topic,
     split_at_batch,
+    at_history,
+    pester_step,
+    keeps_pestering,
     split_reply,
     sticker_category,
     sticker_like,
@@ -734,21 +735,23 @@ def _bond_touch(user_id: str, name: str, delta: int, private: bool = False) -> d
 
 
 def _count_pester_at(key: str, batch: list[dict], now: float) -> None:
-    """她表现出不高兴以后，同一个人 10 分钟内又 @ 她满 3 次才扣好感；重想时同一条不重复算。"""
+    """她不高兴算第 1 次，之后同一个人还不停手（@、喊她、抓着话题不放），第 3 次起每次扣好感；重想时同一条不重复算。"""
     for it in batch:
         mark = (key, it["uid"])
-        upset = _upset.get(mark)
-        if not it["at"] or it.get("pester_seen") or not upset:
+        if it.get("pester_seen") or mark not in _upset:
             continue
         it["pester_seen"] = True
-        if now - upset[0] > PESTER_AT_WINDOW:
+        pressed = _upset[mark][2] if len(_upset[mark]) > 2 else ()
+        if not keeps_pestering(it["text"], it["at"], it["called"], pressed):
+            continue
+        state, deduct = pester_step(_upset.get(mark), now)
+        if state is None:
             _upset.pop(mark, None)
             continue
-        upset[1] += 1
-        if upset[1] >= PESTER_AT_COUNT:
-            _upset.pop(mark, None)
+        _upset[mark] = state
+        if deduct:
             _bond_touch(it["uid"], it["name"], AFF_PESTER)
-            logger.info(f"persona: {it['name']} 她不高兴了还追着 @ {PESTER_AT_COUNT} 次，好感 {AFF_PESTER}")
+            logger.info(f"persona: {it['name']} 她不高兴了还纠缠（第 {state[1]} 次），好感 {AFF_PESTER}")
 
 
 async def _diary_user(user_id: str, name: str, lines: list[tuple[str, str]], src: str) -> None:
@@ -1141,6 +1144,25 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     _enqueue(bot, key, item, gap)
 
 
+def _quoted(event) -> tuple[str, str] | None:
+    """这条消息用 QQ 回复引用的那条：（谁，内容）。名字照样过 safe_name。"""
+    reply = getattr(event, "reply", None)
+    if reply is None:
+        return None
+    try:
+        text = reply.message.extract_plain_text().strip()
+    except Exception:  # noqa: BLE001
+        return None
+    sender = getattr(reply, "sender", None)
+    uid = str(getattr(sender, "user_id", "") or "")
+    if uid and uid == str(event.self_id):
+        return ("我", text)
+    if devs.is_dev(uid):
+        return (devs.dev_name(uid), text)
+    raw = (getattr(sender, "card", "") or getattr(sender, "nickname", "") or "群友") if sender else "群友"
+    return (safe_name(raw, uid, (*devs.RESERVED_NAMES, *NICKNAMES)), text)
+
+
 def _shy_hit(k: str, now: float) -> int:
     """记一次害羞话题，返回 10 分钟内的次数（算上这次）。"""
     q = _shy_log[k]
@@ -1210,7 +1232,9 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     if is_group and annoyed:
         # 这次只表现出不高兴、不扣好感；之后他还追着 @ 才扣（见 _count_pester_at）
         pester = _bond_touch(user_id, name, 0)
-        _upset[(key, user_id)] = [now, 0]
+        # 已经在不高兴的那段里就不从头数（那几条前面按纠缠算过了）
+        if pester_step(_upset.get((key, user_id)), now)[0] is None:
+            _upset[(key, user_id)] = [now, 1, same_user[-5:]]
         # 喜欢的人追着烦：别别扭扭地岔开；好感不高的：二次元式地打发掉
         pester_att = attitude(int(pester.get("aff", 0)), int(pester.get("fam", 0)))
         snub_line = "…不想说这个了啦" if pester_att in ("有好感", "亲近") else "哼，不想聊了"
@@ -1443,6 +1467,9 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     # 本群风格插话时也带，冒泡才像这个群的人
     group_style = visible_notes(group_rec.get("style"), True, limit=3) if is_group else None
 
+    # 被 @ 只看那一条（和它引用的那条），群里前面的话不带，免得回成别的话题
+    if mode == "被叫@":
+        past = at_history(_quoted(event))
     messages = compose_messages(
         past,
         name,
