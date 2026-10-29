@@ -481,8 +481,8 @@ def main() -> int:
     print("PASS  语气词和「…」：讨厌陌生不带，抽中才带，发出去不被吃掉")
 
     probs = [name_call_prob(a, 0.5) for a in ("讨厌", "陌生", "普通", "有好感", "亲近")]
-    assert probs == sorted(probs) and probs[0] <= 0.15 and probs[-1] < 1.0, probs  # 好感越高越愿意理，但都不是必回
-    assert name_call_prob("亲近", 1.0) == 1.0 and name_call_prob("亲近", 0.0) == 0.0  # 话痨档必回、静音档不回
+    assert probs == sorted(probs) and probs[0] <= 0.05 and probs[-1] == 1.0, probs  # 好感越高越愿意理，亲近的必回
+    assert name_call_prob("讨厌", 1.0) == 1.0 and name_call_prob("亲近", 0.0) == 0.0  # 自宅档必回、冬眠档不回
     print("PASS  喊名字回不回看态度")
 
     base = compose_messages([], "小红", "在吗", attitude="讨厌", chime=True)[0]["content"]
