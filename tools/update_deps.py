@@ -31,7 +31,7 @@ COMPILE = [
 WATCH = {
     "nonebot-plugin-parser": "`parser_video_only.py` 改了它的内部渲染类，CI 冒烟只验证了能加载，视频链接解析最好手动发一条试试",
     "nonebot-plugin-genshinuid": "早柚核心连接插件：临时会话回复、核心断线时跳过（`gscore_link.py`）都和它有关，CI 冒烟已覆盖",
-    "nonebot-bison": "B 站订阅：`/群订阅`（`bili_group.py`）直接调它的订阅库，升级后加一条订阅、等一条推送看看",
+    "nonebot-bison": "B 站订阅：`/群订阅`（`bili_group.py`）直接调它的订阅库，推送样式（`bili_push.py`）改了 B 站平台的 parse，升级后加一条订阅、等一条推送看看",
     "nonebot-plugin-send-anything-anywhere": "推送只用机器人号发（`bot/bot.py`）改了它的 `auto_select_bot._refresh_bot`",
     "nonebot2": "框架本体",
     "nonebot-adapter-onebot": "OneBot 适配器",
