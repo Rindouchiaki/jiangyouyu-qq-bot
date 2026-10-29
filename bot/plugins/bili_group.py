@@ -13,8 +13,10 @@ import devs
 from bot_guard import is_our_bot
 from persona_rules import (
     BILI_DYN_CATS,
+    BILI_LIVE_DYN_CAT,
     GROUP_SUB_USAGE,
     PRIVATE_SUB_USAGE,
+    bili_cat_name,
     bili_sub_cats,
     parse_sub_command,
 )
@@ -116,11 +118,13 @@ async def _ups(user) -> dict[str, dict]:
 
 
 def _kinds(up: dict) -> str:
-    dyn = up["dyn"] or []
+    raw = up["dyn"] or []
+    # 6（直播推送）跟开播提醒重复，列出来的时候不提它，免得看着像订了两份
+    dyn = [c for c in raw if c != BILI_LIVE_DYN_CAT] or raw
     if dyn == sorted(BILI_DYN_CATS) and up["live"]:
         kinds = ["全部"]
     else:
-        kinds = [BILI_DYN_CATS.get(c, str(c)) for c in dyn] + (["直播"] if up["live"] else [])
+        kinds = [bili_cat_name(c) for c in dyn] + (["直播"] if up["live"] else [])
     kinds += up["other"]
     tags = f"｜标签 {'、'.join(up['tags'])}" if up["tags"] else ""
     return ("、".join(kinds) or "（没选类别）") + tags

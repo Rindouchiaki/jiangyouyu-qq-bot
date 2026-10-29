@@ -162,7 +162,10 @@ GROUP_SUB_USAGE = (
     "用法（群里可以省掉群号，私聊里要写）：\n"
     "/群订阅 群号 —— 看这个群订了谁\n"
     "/群订阅 群号 加 946974 —— 订 UP，UID、UID:946974、主页链接都行，一次能写好几个\n"
-    "/群订阅 群号 加 946974 视频 直播 —— 只推这几类（动态、专栏、视频、纯文字、转发、直播），不写就是全部；已经订过的照新写的改\n"
+    "/群订阅 群号 加 946974 视频 直播 —— 只推这几类；已经订过的照新写的改\n"
+    "类别：动态=图文动态（带图/竖屏小视频），专栏=专栏文章，视频=投稿视频，纯文字=只有字的动态，\n"
+    "      转发=转发别人的动态，直播=开播/下播提醒（单独一条，不占动态类别）\n"
+    "不写类别就是全部（动态、专栏、视频、纯文字、转发 + 直播提醒）\n"
     "/群订阅 群号 删 946974 —— 取消，写 UP 的名字也行\n"
     "群里只能配这个群；要推到私聊用 /私聊订阅。"
 )
@@ -179,9 +182,13 @@ SUB_ADD_WORDS = ("加", "添加", "订", "订阅", "关注")
 SUB_DEL_WORDS = ("删", "删除", "取关", "取消")
 SUB_LIST_WORDS = ("看", "查", "查看", "列表")
 
-# Bison B 站动态的类别号。直播走 bilibili-live 平台的开播提醒（5 秒一查，带标题和封面），
+# Bison B 站动态的类别号。直播走 bilibili-live 平台的开播提醒（带标题和封面），
 # 不用动态里的「直播推送」，免得一次开播推两条。
 BILI_DYN_CATS = {1: "一般动态", 2: "专栏文章", 3: "视频", 4: "纯文字", 5: "转发"}
+# Bison 动态类别 6 是「直播推送」：UP 开播时 B 站自动发的那条动态。我们用 bilibili-live 的
+# 开播提醒，所以不再订 6，免得一次开播推两条；列出旧订阅时还要认得它。
+BILI_LIVE_DYN_CAT = 6
+BILI_LIVE_DYN_LABEL = "直播推送"
 _BILI_CAT_WORDS = {
     "动态": 1, "一般动态": 1, "专栏": 2, "专栏文章": 2, "文章": 2,
     "视频": 3, "投稿": 3, "纯文字": 4, "文字": 4, "转发": 5,
@@ -252,6 +259,35 @@ def parse_sub_command(text: str, cmd: str = "群订阅", default_id: str = "") -
     if not uids and (action == "add" or not words):
         return "usage", owner, [], []
     return action, owner, uids, words
+
+
+def bili_cat_name(cat: int) -> str:
+    """类别号 → 中文；6 是动态里的「直播推送」，认不出的原样给号。"""
+    if cat in BILI_DYN_CATS:
+        return BILI_DYN_CATS[cat]
+    return BILI_LIVE_DYN_LABEL if cat == BILI_LIVE_DYN_CAT else str(cat)
+
+
+def bili_notice(texts: list[str]) -> str:
+    """从 Bison 拼好的文字里抠「来源」「详情」，拼成通知条；没有详情链接就不发通知（返回空串）。"""
+    name = url = ""
+    for text in texts:
+        for line in (text or "").splitlines():
+            line = line.strip()
+            if line.startswith("来源: "):
+                name = line[len("来源: "):].replace("B站", "", 1).strip()
+                name = name.removesuffix("的转发").strip()
+            elif line.startswith("详情: "):
+                url = line[len("详情: "):].strip()
+    if not url:
+        return ""
+    return f"【{name or 'B站'}】更新了新动态！\n传送门：{url}"
+
+
+def bili_shot_url(id_str: str | None) -> str:
+    """要截图的动态页：统一走 t.bilibili.com/动态 id（opus、专栏的 jump_url 页面结构不一样，截不到）。"""
+    s = (id_str or "").strip()
+    return f"https://t.bilibili.com/{s}" if s.isdigit() else ""
 
 
 def compact_desc(text: str, limit: int = 60) -> str:
