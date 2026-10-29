@@ -16,6 +16,8 @@ from nonebot.log import logger
 
 from persona_rules import bili_notice, bili_shot_url, compact_desc
 
+import push_marks
+
 try:
     import nonebot_bison.send as bison_send
     from nonebot_bison.platform.bilibili.platforms import Bilibili, Bilibililive
@@ -267,6 +269,17 @@ if Bilibili is not None:
         """
         card = _cards.pop(0) if _cards else None
         notice = _notice_of(msgs)
+        # 记下这次推出去的链接：万一这条消息又被当成用户消息推回来，事件入口能认出来并忽略
+        try:
+            for msg in msgs:
+                for seg in msg:
+                    cut = getattr(seg, "data", {}).get("text") or ""
+                    if cut:
+                        push_marks.mark_text(cut)
+            if notice:
+                push_marks.mark_text(notice)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"bili_push: 推送链接没记上（{type(exc).__name__}: {exc}）")
         if notice and len(msgs) > 1:
             first = MessageFactory([notice, SaaImage(card)]) if card else MessageFactory(notice)
             await _send_msgs_dispatch(send_target, first)

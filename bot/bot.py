@@ -82,6 +82,8 @@ if _MIGRATE_ERRORS:
 from nonebot.exception import IgnoredException  # noqa: E402
 from nonebot.message import event_preprocessor  # noqa: E402
 
+import push_marks  # noqa: E402
+
 _BOT_UIN = os.getenv("BOT_UIN", "").strip()
 if not _BOT_UIN:
     nonebot.logger.warning("未配置 BOT_UIN：所有连上来的 QQ 账号都会回话")
@@ -95,6 +97,18 @@ async def _only_bot_account(bot, event, state) -> None:
     # 解析插件再抓一次，它转发的聊天记录又带链接，一层层套下去。
     if str(getattr(event, "user_id", "")) == str(getattr(event, "self_id", "")):
         raise IgnoredException("机器人自己发的消息")
+    # 第二层：刚推送出去的那批链接，就算换了个发送通道再回来，也不再当「用户贴的链接」解析。
+    try:
+        text = getattr(event, "raw_message", "") or ""
+        if not text:
+            msg = getattr(event, "message", None)
+            text = msg.extract_plain_text() if msg is not None else ""
+        if push_marks.contains_recent(text):
+            raise IgnoredException("刚推送过的链接，不再重复解析")
+    except IgnoredException:
+        raise
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # 第三方解析插件要先加载，后面的 plugins 里有针对它的行为调优（只发视频不发封面）
