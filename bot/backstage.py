@@ -86,7 +86,7 @@ async def _talk(event: MessageEvent, topic: str, data: str) -> list[str]:
     messages = compose_messages(
         [], devs.dev_name(uid) or "开发者", event.get_plaintext().strip() or topic,
         self_names=_self_names, dev_name=devs.DEV_NAMES, dev_aliases=devs.DEV_ALIASES,
-        attitude=attitude(aff, fam), bond=(aff, fam),
+        attitude=attitude(aff, fam),
     )
     messages[0]["content"] += "\n\n" + BACKSTAGE_PROMPT.format(topic=topic)
     # 资料是群友原话整理的，只能放 user 消息
