@@ -26,10 +26,10 @@ FLOOR_VERSION = 1
 
 _data_env = os.getenv("PERSONA_DATA_DIR", "").strip()
 DATA_FILE = (Path(_data_env) if _data_env else Path(__file__).resolve().parent / "data") / "bonds.json"
-USER_NOTE_CAP = int(os.getenv("DIARY_USER_NOTES", "6"))
-GROUP_NOTE_CAP = int(os.getenv("DIARY_GROUP_NOTES", "8"))
-GROUP_STYLE_CAP = int(os.getenv("DIARY_GROUP_STYLE", "4"))
-NOTE_MAX_CHARS = int(os.getenv("DIARY_NOTE_CHARS", "20"))
+USER_NOTE_CAP = int(os.getenv("DIARY_USER_NOTES", "10"))
+GROUP_NOTE_CAP = int(os.getenv("DIARY_GROUP_NOTES", "12"))
+GROUP_STYLE_CAP = int(os.getenv("DIARY_GROUP_STYLE", "6"))
+NOTE_MAX_CHARS = int(os.getenv("DIARY_NOTE_CHARS", "30"))
 # 话题权重：聊到一次 +1，最多 TOPIC_MAX；两周没提权重减半，低于 TOPIC_MIN_SCORE 就当没这个兴趣
 TOPIC_MAX = int(os.getenv("TOPIC_MAX_WEIGHT", "60"))
 TOPIC_HALF_DAYS = float(os.getenv("TOPIC_HALF_DAYS", "14"))
