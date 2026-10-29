@@ -57,6 +57,7 @@ from persona_rules import (  # noqa: E402
     habit_hours,
     parse_slang_candidates,
     parse_slang_meaning,
+    SEARCH_FAILED,
     SLANG_MINE_PROMPT,
     THING_EXPLAIN_PROMPT,
     pick_flavor,
@@ -581,6 +582,8 @@ def main() -> int:
     assert wants_search("多伦多明天冷吗") and wants_search("查到了吗")
     assert promises_lookup("好等下") and promises_lookup("等等 我查查") and promises_lookup("我去搜一下")
     assert not promises_lookup("多伦多明天多云，白天零度上下，风大") and not promises_lookup("")
+    # 说了「我查查」却出错时交代的那句：不能本身又像在答应去查，也不能带脏字
+    assert SEARCH_FAILED and all(not promises_lookup(t) and not is_offensive(t) for t in SEARCH_FAILED)
     sys_s = compose_messages([], "小明", "查下", can_search=True, help_mode=True)[0]["content"]
     assert "web_search" in sys_s and "上不了网" not in sys_s and "绝不能自己编" in sys_s
     assert "上不了网" in compose_messages([], "小明", "帮我看看", help_mode=True)[0]["content"]

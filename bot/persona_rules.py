@@ -1476,6 +1476,8 @@ _FRESH_HINTS = (
 SEARCH_PRELUDES = ("等下 我查查", "我搜搜", "等等 我查一下", "我看看", "稍等 查下")
 # 讨厌的人让她查东西：咂个嘴
 SEARCH_PRELUDES_COLD = ("啧", "啧 等着")
+# 说了「我查查」却出错 / 没东西可说：交代一句，别不吭声
+SEARCH_FAILED = ("…没查到，网好像抽了", "查了半天没查出来", "唔 没查到")
 
 
 def find_urls(text: str) -> list[str]:

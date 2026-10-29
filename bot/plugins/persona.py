@@ -58,6 +58,7 @@ from persona_rules import (
     PESTER_AT_COUNT,
     PESTER_AT_WINDOW,
     SEARCH_PRELUDES,
+    SEARCH_FAILED,
     SEARCH_PRELUDES_COLD,
     SLANG_EXPLAIN_PROMPT,
     SLANG_MINE_PROMPT,
@@ -1480,9 +1481,11 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     per_line = MAX_CHARS_QUESTION if help_mode else MAX_CHARS
     lines = 1 if chime else REPLY_MAX_LINES + (1 if help_mode else 0)
     searched = False
+    # 已经说出口「我查查」：这轮答案一定要给，不作废、不重想，出错也得交代一句
+    promised = False
 
     async def _prelude() -> None:
-        nonlocal searched
+        nonlocal searched, promised
         searched = True
         # 像人一样先说一声「我查查」，查的时间就当在翻网页
         if random.random() >= SEARCH_PRELUDE_PROB:
@@ -1491,6 +1494,16 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         await _sleep(reaction_delay(True))
         await bot.send(event, line)
         history.append(("我", line))
+        promised = True
+
+    async def _own_up() -> bool:
+        # 说了「我查查」却没答案可给：别不吭声，说一句没查到
+        if promised:
+            line = random.choice(SEARCH_FAILED)
+            await bot.send(event, line)
+            history.append(("我", line))
+            _save_history(force=True)
+        return True
 
     try:
         if can_search:
@@ -1510,10 +1523,10 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             raw = await ask_llm(messages, limit, stop=None)
     except urllib.error.HTTPError as exc:
         logger.warning(f"persona: LLM HTTP {exc.code} {exc.reason}")
-        return True
+        return await _own_up()
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"persona: LLM 调用失败 {type(exc).__name__}: {exc}")
-        return True
+        return await _own_up()
 
     # 真查了才放宽字数：问一句就给工具，但没查的照普通问答的长度
     total = MAX_CHARS_HELP if help_mode or searched else max(MAX_CHARS_QUESTION, REPLY_TOTAL_CHARS) if question else REPLY_TOTAL_CHARS
@@ -1531,7 +1544,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             raw = await ask_llm(retry, limit, stop=None)
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"persona: 重说失败 {type(exc).__name__}: {exc}")
-            return True
+            return await _own_up()
         parts = [p for p in split_reply(raw, lines, per_line, total) if not (p[0] == "text" and is_offensive(p[1]))]
 
     if not parts:
@@ -1542,7 +1555,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             logger.info(f"persona: 看了一眼没兴趣，不插话（连续 {_chime_skips[key]} 次）")
         else:
             logger.info("persona: 模型这次清完是空的，不发")
-        return True
+        return await _own_up()
     if chime:
         _chime_skips[key] = 0
 
@@ -1555,7 +1568,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
 
     def _stale() -> bool | None:
         newer = _arrived()
-        if not newer or force or fast:
+        if not newer or force or fast or promised:
             return None
         if not is_group or any(it["uid"] == user_id or it["at"] or it["called"] for it in newer):
             return False
@@ -1602,7 +1615,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             # 后面几条按字数打字；对方又开口了就先停下，剩下的不硬发
             await _sleep(typing_delay(content, TYPING_SEC_PER_CHAR, type_cap) if kind == "text" else random.uniform(0.8, 2.0))
             newer = _arrived()
-            if not fast and any(it["uid"] == user_id or it["at"] or it["called"] for it in newer):
+            if not (fast or promised) and any(it["uid"] == user_id or it["at"] or it["called"] for it in newer):
                 logger.info(f"persona: 对方又说话了，剩下 {len(parts) - i} 条先不发")
                 break
         if kind == "sticker":
