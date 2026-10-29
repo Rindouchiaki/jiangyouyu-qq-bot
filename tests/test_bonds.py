@@ -23,7 +23,7 @@ def main() -> int:
     bonds.mark_private("10001", 2000.0)
     bonds.add_user_notes("10001", ["最近在找工作"], "p", now=2001.0)
     rec = bonds.user("10001")
-    assert rec["name"] == "明明" and rec["fam"] == 9 and len(rec["notes"]) == 2, rec  # 熟悉度只有私聊才加，一天只 +1
+    assert rec["name"] == "明明" and rec["fam"] == 1 and len(rec["notes"]) == 2, rec  # 熟悉度只有私聊才加，一天只 +1
     judged = bonds.judge("10001", 2, now=2100.0)
     assert judged["aff"] == rec["aff"] + 2 and judged["fam"] == rec["fam"] and judged["last"] == rec["last"], judged
     assert bonds.judge("88888", 2) is None and "88888" not in bonds._data["users"]  # 打分不建新记录
@@ -44,7 +44,7 @@ def main() -> int:
     assert bonds.group("123")["style"][0]["t"] == "爱玩谐音梗"
     print("PASS  落盘后重新载入不丢")
 
-    assert bonds.user("99999") == {"aff": 0, "fam": 8, "notes": [], "topics": {}} and "99999" not in bonds._data["users"]
+    assert bonds.user("99999") == {"aff": 0, "fam": 0, "notes": [], "topics": {}} and "99999" not in bonds._data["users"]
     assert bonds.forget_user("10001") and not bonds.forget_user("10001")
     assert bonds.user("10001")["notes"] == [] and bonds.group("123")["notes"]
     assert bonds.clear_group("123") and bonds.group("123")["notes"] == []
@@ -63,15 +63,15 @@ def main() -> int:
     assert after["aff"] == 100 and after["fam"] == 100, after
     print("PASS  /好感 手动调数值，越界夹紧，态度档跟着变")
 
-    # 老数据迁移：熟悉 <8 抬到初始值（初始好感现在是 0，好感不用抬），负数好感不动
+    # 老数据迁移：熟悉低于初始值才抬（初始熟悉、好感现在都是 0，都不用抬），负数好感不动
     old = TMP / "old.json"
     old.write_text(
         '{"users": {"1": {"aff": 0, "fam": 0}, "2": {"aff": -40, "fam": 2}}, "groups": {}}',
         encoding="utf-8",
     )
     bonds.load(old)
-    assert bonds.user("1")["aff"] == 0 and bonds.user("1")["fam"] == 8
-    assert bonds.user("2")["aff"] == -40 and bonds.user("2")["fam"] == 8
+    assert bonds.user("1")["aff"] == 0 and bonds.user("1")["fam"] == 0
+    assert bonds.user("2")["aff"] == -40 and bonds.user("2")["fam"] == 2
     assert bonds._data.get("floor") == 1
     print("PASS  老数据里刚认识的人抬到礼貌底线，记仇的不动，只迁一次")
 

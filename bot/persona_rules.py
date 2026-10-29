@@ -771,7 +771,7 @@ CLOSE_AFF = 60
 CLOSE_FAM = 30
 # 刚认识的人从 0 开始，是「陌生」：好好聊几天才到「普通」
 INITIAL_AFF = int(os.getenv("BOND_INITIAL_AFF", "0"))
-INITIAL_FAM = int(os.getenv("BOND_INITIAL_FAM", "8"))
+INITIAL_FAM = int(os.getenv("BOND_INITIAL_FAM", "0"))
 
 
 def new_bond() -> dict:
