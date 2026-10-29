@@ -194,6 +194,9 @@ async def run(args, token: str, self_id: int) -> None:
             got = await c.collect(20, lambda g: any(has_image(a) for a in g))
             got += await c.collect(3)
             check(any(has_image(a) for a in got) and len(got) >= 3, "开发者内部群里 /关系图：人设说话 + 图 + 文字资料", str(got)[:300])
+            await c.send("/小本本 10007", user=dev)
+            got = await c.collect(6)
+            check(len(got) == 1 and "不给翻" in str(got), "内部群里 /小本本 也不给翻日记，只提示删除 / 清空", str(got))
             c.members = [c.self_id, 10002, 10003]
             await c.send("/用量", user=10002, private=True)
             got = await c.collect(5)
