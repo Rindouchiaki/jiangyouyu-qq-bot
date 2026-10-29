@@ -22,6 +22,8 @@ load_dotenv(dotenv_path=Path(__file__).with_name("persona.local.env"), override=
 # 和 run-nonebot.ps1 的 Set-Location 一致，从仓库根目录直接启动也能加载插件
 os.chdir(Path(__file__).resolve().parent)
 
+from devs import DEVS  # noqa: E402
+
 import nonebot  # noqa: E402
 from nonebot.adapters.onebot.v11 import Adapter  # noqa: E402
 
@@ -30,6 +32,13 @@ nonebot.init(
     port=int(os.getenv("PORT", "18080")),
     # NoneBot 只从自己的 .env 读插件自定义配置，persona.env 里的早柚核心连接项要显式传进去
     **{k.lower(): v for k, v in os.environ.items() if k.upper().startswith("GSUID_CORE_")},
+    # Bison（B 站订阅）：卡片图要浏览器渲染；群里必须 @ 它才认指令，免得被闲聊词误触
+    bison_use_browser=True,
+    bison_to_me=True,
+    # htmlrender 0.7 起渲染后端要显式选，不配只警告、卡片图全出不来
+    render_backend="playwright",
+    # 开发者才能加/删 cookie、用 /群管理、/后台管理
+    superusers=set(DEVS),
 )
 
 driver = nonebot.get_driver()
@@ -56,6 +65,13 @@ try:
     nonebot.load_plugin("nonebot_plugin_parser")
 except Exception as exc:  # noqa: BLE001
     nonebot.logger.warning(f"B站解析插件加载失败 {type(exc).__name__}: {exc}")
+
+# B 站动态/直播/番剧订阅推送（Bison）：自带 /添加订阅、/查询订阅、/群管理 等指令和卡片主题；
+# 它 import 期就依赖 playwright，没装会抛 ModuleNotFoundError，这里降级成只记一条警告
+try:
+    nonebot.load_plugin("nonebot_bison")
+except Exception as exc:  # noqa: BLE001
+    nonebot.logger.warning(f"Bison 订阅插件加载失败 {type(exc).__name__}: {exc}")
 
 # 早柚核心连接插件：把消息转给另起的核心进程（游戏查询，插件列表见 external.lock.json），核心没开也不影响人设
 try:

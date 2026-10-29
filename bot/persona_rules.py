@@ -150,6 +150,27 @@ def is_game_command(text: str, prefixes: tuple[str, ...]) -> bool:
     return False
 
 
+# B 站订阅插件的管理指令（Bison）：只有带 / 前缀、且整词命中时人设才让开。
+# 「动态」「直播」这类词日常聊天太常见，光看开头会误伤。
+BILI_COMMANDS = (
+    "添加订阅", "查询订阅", "删除订阅", "修改订阅", "群管理",
+    "后台管理", "管理后台", "订阅",
+    "添加cookie", "删除cookie", "关联cookie", "取消关联cookie",
+)
+
+
+def is_bili_command(text: str) -> bool:
+    """是不是 /添加订阅、/查询订阅 这类 Bison 指令（必须带 /，整词命中，不分大小写）。"""
+    t = (text or "").strip()
+    if not t.startswith("/"):
+        return False
+    body = t[1:].strip().lower()
+    for word in BILI_COMMANDS:
+        if body == word or body.startswith(word) and body[len(word):len(word) + 1].isspace():
+            return True
+    return False
+
+
 def wants_help(text: str) -> bool:
     """这句是不是「正经求助」：查/看/找/翻译/出主意。
 

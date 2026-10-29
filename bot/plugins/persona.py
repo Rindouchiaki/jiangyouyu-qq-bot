@@ -81,6 +81,7 @@ from persona_rules import (
     is_coaxing,
     is_conversation_ending,
     is_offensive,
+    is_bili_command,
     is_game_command,
     is_question,
     judge_annoyance,
@@ -1067,6 +1068,9 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         return
     if is_game_command(text, GAME_CMD_PREFIXES) or gscore_guard.bare_core_command(seg_texts):
         # 游戏指令由早柚核心回，人设不接话，也不进上下文和日记
+        return
+    if is_bili_command(text):
+        # B 站订阅指令由 Bison 回，人设让开（否则会抢着用闲聊口气答）
         return
     media_only = not text
     if not text:
