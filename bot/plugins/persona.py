@@ -194,6 +194,8 @@ TYPING_MAX_SEC = float(os.getenv("TYPING_MAX_SEC", "8"))
 REPLY_LATE_PROB = float(os.getenv("REPLY_LATE_PROB", "0.1"))
 # 群里被 @ 要尽快回：不再停一下才「看到」，每条打字最多等这么久（模型想的时间也算在里面）
 AT_TYPING_MAX = float(os.getenv("REPLY_AT_TYPING_MAX", "1.5"))
+# 群里只喊名字：照常攒批、像正聊着那样很快「看到」，每条打字最多这么久
+CALLED_TYPING_MAX = float(os.getenv("REPLY_CALLED_TYPING_MAX", "4"))
 # 打字时对方又补了话：最多重想几次，之后照发
 RESTART_MAX = int(os.getenv("REPLY_RESTART_MAX", "2"))
 # 回话路数在一个会话里粘多久（秒）
@@ -1553,9 +1555,10 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         logger.info("persona: 会话已翻篇，这句不补了")
         return True
 
-    # 先「看到消息」、再「打字」：思考花掉的时间算在里面；群里被 @ 不磨蹭，免得找她的人干等
-    type_cap = AT_TYPING_MAX if fast else TYPING_MAX_SEC
-    active = now - _last_reply.get(key, 0) < 120
+    # 先「看到消息」、再「打字」：思考花掉的时间算在里面；群里被 @ 不磨蹭，喊名字照常攒批但也别让人等太久
+    name_call = is_group and mode == "被叫"
+    type_cap = AT_TYPING_MAX if fast else min(TYPING_MAX_SEC, CALLED_TYPING_MAX) if name_call else TYPING_MAX_SEC
+    active = name_call or now - _last_reply.get(key, 0) < 120
     first_text = next((t for kind, t in parts if kind == "text"), "")
     spent = time.time() - now
     await _sleep(
