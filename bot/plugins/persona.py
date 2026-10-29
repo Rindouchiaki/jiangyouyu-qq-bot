@@ -123,6 +123,8 @@ BASE_URL = os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
 API_KEY = os.getenv("LLM_API_KEY", "").strip()
 MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
 MOCK = os.getenv("LLM_MOCK", "0") == "1"
+# 一次对话请求最多等多久；超了当失败，免得整个会话被一条请求堵住
+LLM_DEADLINE = 60.0
 
 MAX_CHARS = int(os.getenv("REPLY_MAX_CHARS", "20"))
 # 正经求助（查/看/找/翻译）放宽到一两句话，不然「帮我看看这个」只能挤出十几个字
@@ -627,8 +629,9 @@ def _chat_sync(payload: dict) -> dict:
         method="POST",
     )
 
+    # 25 秒是两次收到数据之间的间隔；排队时服务端一直回空行，总时长另外掐
     with urllib.request.urlopen(req, timeout=25) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+        data = web_search.read_json(resp, LLM_DEADLINE)
 
     _record_usage(data.get("usage"))
 
@@ -694,7 +697,11 @@ async def ask_llm_tools(messages: list[dict], max_tokens: int, user_id: str, on_
             return msg.get("content") or ""
         if round_no == 0 and on_first_call is not None:
             await on_first_call()
-        msgs.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
+        turn = {"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls}
+        if msg.get("reasoning_content"):
+            # 思考模式下带工具的这一轮要把思考原样传回去，不然下一轮报 400
+            turn["reasoning_content"] = msg["reasoning_content"]
+        msgs.append(turn)
         for i, call in enumerate(calls):
             # 每个 tool_call 都要有回应；一轮最多真查 3 个
             result = await asyncio.to_thread(_run_tool, call, user_id) if i < 3 else "这次不查这么多了。"
@@ -1463,7 +1470,12 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
 
     try:
         if can_search:
-            raw = await ask_llm_tools(messages, limit, user_id, _prelude)
+            try:
+                raw = await ask_llm_tools(messages, limit, user_id, _prelude)
+            except Exception as exc:  # noqa: BLE001
+                # 联网那一轮出错：不查了直接答，别说了「我查查」就没下文
+                logger.warning(f"persona: 联网回话失败，改成不查直接答 {type(exc).__name__}: {exc}")
+                raw = await ask_llm(messages, limit, stop=None)
         else:
             raw = await ask_llm(messages, limit, stop=None)
     except urllib.error.HTTPError as exc:
