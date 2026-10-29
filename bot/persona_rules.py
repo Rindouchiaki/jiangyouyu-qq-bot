@@ -644,6 +644,7 @@ def build_system_prompt(
     proactive: bool = False,
     slang_play: bool = False,
     dev_aliases: dict[str, tuple[str, ...]] | None = None,
+    chime_free: bool = False,
 ) -> str:
     """在基础人设上补几条：我是谁、开发者是谁、记忆、什么气氛、什么情绪、对这个人什么态度。"""
     system = SYSTEM_PROMPT
@@ -734,7 +735,13 @@ def build_system_prompt(
     if atmosphere:
         system += f"\n\n当前群里气氛大概是「{atmosphere}」，接话别太正式。"
 
-    if chime:
+    if chime and chime_free:
+        # 自宅档：想说就说，不给「不回」的选项
+        system += (
+            "\n\n没人叫你，这是你自己在群里看到的：你就爱凑热闹，顺着大家在聊的接一句，要短、要犀利，"
+            "可以吐槽，但别伤人。"
+        )
+    elif chime:
         system += (
             "\n\n没人叫你，这是你自己在群里看到的：真有兴趣、接得上才插一句，要短、要犀利，"
             "可以吐槽，但别伤人，说完就撤，不解释、不追问、不等回复。"
@@ -859,6 +866,7 @@ def compose_messages(
     proactive: bool = False,
     slang_play: bool = False,
     dev_aliases: dict[str, tuple[str, ...]] | None = None,
+    chime_free: bool = False,
 ) -> list[dict[str, str]]:
     """组装成 OpenAI 兼容的 messages。history 为 (昵称, 内容) 列表。
 
@@ -878,7 +886,7 @@ def compose_messages(
                 help_mode=help_mode, hour=hour, attitude=attitude, bond=bond, dere=dere, cute=cute, shy=shy,
                 flavor=flavor, group_style=bool(group_style), question=question,
                 topics=topics, slang=slang, can_search=can_search, search_ready=search_ready, interests=interests,
-                proactive=proactive, slang_play=slang_play, dev_aliases=dev_aliases,
+                proactive=proactive, slang_play=slang_play, dev_aliases=dev_aliases, chime_free=chime_free,
             ),
         }
     ]
@@ -1083,7 +1091,7 @@ ATTITUDE_LINES = {
 # 接续时回话概率的倍数：熟的人更愿意搭理，讨厌的人爱答不理
 ATTITUDE_REPLY_FACTOR = {"讨厌": 0.6, "陌生": 0.8, "普通": 1.0, "有好感": 1.15, "亲近": 1.3}
 # 喊名字（没 @）时回不回看态度：好感低大概率不理，亲近的必回（这是默认档的值，别的档按被叫概率等比缩放）
-NAME_CALL_PROB = {"讨厌": 0.05, "陌生": 0.15, "普通": 0.5, "有好感": 0.75, "亲近": 1.0}
+NAME_CALL_PROB = {"讨厌": 0.05, "陌生": 0.15, "普通": 0.4, "有好感": 0.65, "亲近": 1.0}
 
 
 def name_call_prob(att: str | None, called: float, base: float = 0.5) -> float:

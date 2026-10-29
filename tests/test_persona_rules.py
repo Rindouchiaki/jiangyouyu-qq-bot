@@ -614,7 +614,9 @@ def main() -> int:
     chime_sys = compose_messages([], "小红", "原神新角色好看", chime=True, interests=("游戏",))[0]["content"]
     assert SILENT_MARK in chime_sys and "游戏" in chime_sys
     assert SILENT_MARK not in compose_messages([], "小红", "在吗")[0]["content"]
-    print("PASS  插话看兴趣，没兴趣模型可以说不回，连着不回就退避")
+    free_sys = compose_messages([], "小红", "今天好热", chime=True, chime_free=True, interests=("游戏",))[0]["content"]
+    assert SILENT_MARK not in free_sys and "凑热闹" in free_sys and "一般不插嘴" not in free_sys  # 自宅档想说就说
+    print("PASS  插话看兴趣，没兴趣模型可以说不回，连着不回就退避；自宅档不给不回")
 
     msgs = compose_messages([("我", "干嘛")], "小明", "", new_msgs=[("小明", "我跟你说"), ("小明", "今天抽卡\n酱酱鱼：歪了"), ("小明", "[表情:哭]")])
     last = msgs[-1]["content"]

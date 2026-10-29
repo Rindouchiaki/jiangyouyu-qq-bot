@@ -140,8 +140,8 @@ HELP_MAX_TOKENS = int(os.getenv("REPLY_HELP_MAX_TOKENS", "240"))
 HISTORY_SIZE = int(os.getenv("HISTORY_SIZE", "40"))
 COOLDOWN_SEC = float(os.getenv("REPLY_COOLDOWN", "5"))
 FOLLOW_COOLDOWN_SEC = float(os.getenv("REPLY_GROUP_COOLDOWN", "5"))
-CHIME_PROB = float(os.getenv("REPLY_CHIME_PROB", "0.06"))
-CHIME_COOLDOWN_SEC = float(os.getenv("REPLY_CHIME_COOLDOWN", "600"))
+CHIME_PROB = float(os.getenv("REPLY_CHIME_PROB", "0.1"))
+CHIME_COOLDOWN_SEC = float(os.getenv("REPLY_CHIME_COOLDOWN", "300"))
 CHIME_HISTORY_BUDGET = int(os.getenv("CHIME_HISTORY_BUDGET", "500"))
 # 私聊内容同时记进白守日记，慢慢养出固定人格
 PRIVATE_MIRROR = os.getenv("PRIVATE_MIRROR", "1").strip() not in ("0", "false", "False")
@@ -231,11 +231,17 @@ HISTORY_FILE = _DATA_DIR / "history.json"
 MODE_FILE = _DATA_DIR / "reply_modes.json"
 
 # 回复频率档位：/模式 切换；群聊与私聊各自独立保存，互不影响（私聊不看概率，除了冬眠每句都回）
-# gap = 两次没被 @ 的回话至少隔几秒，per_hour = 本群每小时额度（0 = 不限），chime_cd = 两次插话的间隔，turns = 一段最多来回几次
-_LIMITS = {"gap": CASUAL_GAP, "per_hour": GROUP_PER_HOUR, "chime_cd": CHIME_COOLDOWN_SEC, "turns": ENGAGE_MAX_TURNS}
+# gap = 两次没被 @ 的回话至少隔几秒，per_hour = 本群每小时额度（0 = 不限），chime_cd = 两次插话的间隔，turns = 一段最多来回几次；
+# free = 随便说：每分钟额度、冷却、插话前看气氛和退避都不管，插话也不给「不回」的选项
+_LIMITS = {
+    "gap": CASUAL_GAP, "per_hour": GROUP_PER_HOUR, "chime_cd": CHIME_COOLDOWN_SEC, "turns": ENGAGE_MAX_TURNS, "free": False,
+}
 MODES = {
-    # 自宅 = 能拉满的都拉满，群聊绕着她转；全局每分钟额度（REPLY_PER_MIN）照旧，防风控
-    "自宅": {"called": 1.0, "follow": 1.0, "cd": 2.0, "chime": 1.0, "gap": 0.0, "per_hour": 0, "chime_cd": 0.0, "turns": 99},
+    # 自宅 = 没有任何限制，随便发言，群聊绕着她转
+    "自宅": {
+        "called": 1.0, "follow": 1.0, "cd": 0.0, "chime": 1.0,
+        "gap": 0.0, "per_hour": 0, "chime_cd": 0.0, "turns": 99, "free": True,
+    },
     # 默认 = 小话痨：喊名字按态度回，接续、插话都比较常见
     "默认": {"called": PROB_CALLED, "follow": PROB_FOLLOW, "cd": FOLLOW_COOLDOWN_SEC, "chime": CHIME_PROB, **_LIMITS},
     # 冬眠 = 完全不主动说话（不接续、不插话、不主动配图），只剩命令能叫动它
@@ -851,9 +857,12 @@ def _quota_ok(kind: str, key: str | None = None) -> bool:
     now = time.time()
     while _recent_reply_times and now - _recent_reply_times[0] > 60:
         _recent_reply_times.popleft()
+    cfg = _mode_cfg("group", key) if key else None
+    if cfg and cfg["free"]:
+        return True
     if not quota_allows(len(_recent_reply_times), GLOBAL_PER_MIN, kind):
         return False
-    per_hour = _mode_cfg("group", key)["per_hour"] if key else 0
+    per_hour = cfg["per_hour"] if cfg else 0
     if per_hour <= 0:
         return True
     sent = _group_sent[key]
@@ -1312,11 +1321,12 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
                     return True
                 if now - _last_chime.get(key, 0) < mcfg["chime_cd"] or not _quota_ok("插话", key):
                     return True
-                if now - _last_chime_try[key] < chime_backoff(_chime_skips[key], CHIME_BACKOFF_BASE):
+                free = mcfg["free"]
+                if not free and now - _last_chime_try[key] < chime_backoff(_chime_skips[key], CHIME_BACKOFF_BASE):
                     logger.debug(f"persona: 不插话（最近连着 {_chime_skips[key]} 次没兴趣，退避中）")
                     return True
                 label, allowed, reason = judge_atmosphere(list(history), batch[0]["gap"])
-                if not allowed:
+                if not allowed and not free:
                     logger.debug(f"persona: 不插话（{label}：{reason}）")
                     return True
                 mode = f"插话·{label}"
@@ -1373,7 +1383,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     # 被 @ 或喊名字都算有人找她：不受本群每小时额度和间隔限制（喊名字回不回看态度）
     called = mode.startswith("被叫")
     # 冷却只管群里没叫她的接话/插话；有人叫、私聊靠前面的防抖就够了，不然连着叫两次第二次会被吞
-    if is_group and not called:
+    if is_group and not called and not mcfg["free"]:
         cd = mcfg["cd"] if addressed else COOLDOWN_SEC
         elapsed = now - _last_reply.get(key, 0)
         if elapsed < cd:
@@ -1517,6 +1527,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         can_search=can_search,
         search_ready=web_search.enabled(),
         interests=INTERESTS if chime else (),
+        chime_free=mcfg["free"],
     )
 
     limit = HELP_MAX_TOKENS if help_mode or can_search else 120 if question else 100
