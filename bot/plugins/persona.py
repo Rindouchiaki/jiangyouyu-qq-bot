@@ -138,24 +138,24 @@ MAX_CHARS_HELP = int(os.getenv("REPLY_MAX_CHARS_HELP", "80"))
 MAX_CHARS_QUESTION = int(os.getenv("REPLY_MAX_CHARS_QUESTION", "40"))
 HELP_MAX_TOKENS = int(os.getenv("REPLY_HELP_MAX_TOKENS", "240"))
 HISTORY_SIZE = int(os.getenv("HISTORY_SIZE", "40"))
-COOLDOWN_SEC = float(os.getenv("REPLY_COOLDOWN", "8"))
-FOLLOW_COOLDOWN_SEC = float(os.getenv("REPLY_GROUP_COOLDOWN", "10"))
-CHIME_PROB = float(os.getenv("REPLY_CHIME_PROB", "0.02"))
-CHIME_COOLDOWN_SEC = float(os.getenv("REPLY_CHIME_COOLDOWN", "2700"))
+COOLDOWN_SEC = float(os.getenv("REPLY_COOLDOWN", "5"))
+FOLLOW_COOLDOWN_SEC = float(os.getenv("REPLY_GROUP_COOLDOWN", "5"))
+CHIME_PROB = float(os.getenv("REPLY_CHIME_PROB", "0.1"))
+CHIME_COOLDOWN_SEC = float(os.getenv("REPLY_CHIME_COOLDOWN", "300"))
 CHIME_HISTORY_BUDGET = int(os.getenv("CHIME_HISTORY_BUDGET", "500"))
 # 私聊内容同时记进白守日记，慢慢养出固定人格
 PRIVATE_MIRROR = os.getenv("PRIVATE_MIRROR", "1").strip() not in ("0", "false", "False")
 # 群聊里「真的接上了」的对话也记（被叫/接续，不含随机插话），带群号和发言人
 GROUP_MIRROR = os.getenv("GROUP_MIRROR", "1").strip() not in ("0", "false", "False")
-GLOBAL_PER_MIN = int(os.getenv("REPLY_PER_MIN", "4"))
-# 没被 @ 时（接话、冒泡、只发表情）：每个群每小时最多几条，同群两条之间至少隔几秒，不像住在群里。
+GLOBAL_PER_MIN = int(os.getenv("REPLY_PER_MIN", "6"))
+# 没被 @ 时（接话、冒泡、只发表情）：每个群每小时最多几条，同群两条之间至少隔几秒（默认档的值，自宅档不限）。
 # 被 @ 不受这两条限制，有人找她就回
-GROUP_PER_HOUR = int(os.getenv("REPLY_GROUP_PER_HOUR", "6"))
-CASUAL_GAP = float(os.getenv("REPLY_CASUAL_GAP", "180"))
+GROUP_PER_HOUR = int(os.getenv("REPLY_GROUP_PER_HOUR", "15"))
+CASUAL_GAP = float(os.getenv("REPLY_CASUAL_GAP", "60"))
 
-ENGAGE_TTL = float(os.getenv("ENGAGE_TTL", "120"))
-ENGAGE_FOLLOW_WINDOW = float(os.getenv("ENGAGE_FOLLOW_WINDOW", "45"))
-ENGAGE_MAX_TURNS = int(os.getenv("ENGAGE_MAX_TURNS", "2"))
+ENGAGE_TTL = float(os.getenv("ENGAGE_TTL", "180"))
+ENGAGE_FOLLOW_WINDOW = float(os.getenv("ENGAGE_FOLLOW_WINDOW", "60"))
+ENGAGE_MAX_TURNS = int(os.getenv("ENGAGE_MAX_TURNS", "4"))
 STICKER_COOLDOWN = float(os.getenv("STICKER_COOLDOWN", "3"))
 AT_USER = os.getenv("REPLY_AT_USER", "1") == "1"
 # 早柚核心的指令前缀，默认值见 persona_rules.DEFAULT_GAME_PREFIXES
@@ -163,7 +163,7 @@ GAME_CMD_PREFIXES = tuple(
     p.strip() for p in os.getenv("GAME_CMD_PREFIXES", ",".join(DEFAULT_GAME_PREFIXES)).split(",") if p.strip()
 )
 PROB_CALLED = float(os.getenv("REPLY_PROB_CALLED", "0.5"))
-PROB_FOLLOW = float(os.getenv("REPLY_PROB_FOLLOW", "0.08"))
+PROB_FOLLOW = float(os.getenv("REPLY_PROB_FOLLOW", "0.3"))
 STICKER_AUTO_PROB = float(os.getenv("STICKER_AUTO_PROB", "0.08"))
 STICKER_AUTO_COOLDOWN = float(os.getenv("STICKER_AUTO_COOLDOWN", "600"))
 PESTER_WINDOW = float(os.getenv("PESTER_WINDOW", "45"))
@@ -230,23 +230,36 @@ _DATA_DIR = Path(_data_env) if _data_env else Path(__file__).resolve().parent.pa
 HISTORY_FILE = _DATA_DIR / "history.json"
 MODE_FILE = _DATA_DIR / "reply_modes.json"
 
-# 回复频率档位：/模式 切换；群聊与私聊各自独立保存，互不影响
+# 回复频率档位：/模式 切换；群聊与私聊各自独立保存，互不影响（私聊不看概率，除了冬眠每句都回）
+# gap = 两次没被 @ 的回话至少隔几秒，per_hour = 本群每小时额度（0 = 不限），chime_cd = 两次插话的间隔，turns = 一段最多来回几次；
+# free = 随便说：每分钟额度、冷却、插话前看气氛和退避都不管；插话时模型不想接还能说「不回」
+_LIMITS = {
+    "gap": CASUAL_GAP, "per_hour": GROUP_PER_HOUR, "chime_cd": CHIME_COOLDOWN_SEC, "turns": ENGAGE_MAX_TURNS, "free": False,
+}
 MODES = {
-    "省话": {"called": PROB_CALLED, "follow": PROB_FOLLOW, "cd": FOLLOW_COOLDOWN_SEC, "chime": CHIME_PROB},
-    "话痨": {"called": 1.0, "follow": 1.0, "cd": 3.0, "chime": min(1.0, CHIME_PROB * 2)},
-    # 静音 = 完全不主动说话（不接续、不插话、不主动配图），只剩命令能叫动它
-    "静音": {"called": 0.0, "follow": 0.0, "cd": 10.0, "chime": 0.0},
-    # 私聊默认档：每句都回，冷却很短
-    "必回": {"called": 1.0, "follow": 0.6, "cd": float(os.getenv("PRIVATE_COOLDOWN", "2")), "chime": 0.0},
-    # 抽卡模式：很低的被叫概率，接续为 0；真被触发时发固定长文，不调模型
+    # 自宅 = 没有任何限制，随便发言，群聊绕着她转
+    "自宅": {
+        "called": 1.0, "follow": 1.0, "cd": 0.0, "chime": 1.0,
+        "gap": 0.0, "per_hour": 0, "chime_cd": 0.0, "turns": 99, "free": True,
+    },
+    # 默认 = 小话痨：喊名字按态度回，接续、插话都比较常见
+    "默认": {"called": PROB_CALLED, "follow": PROB_FOLLOW, "cd": FOLLOW_COOLDOWN_SEC, "chime": CHIME_PROB, **_LIMITS},
+    # 冬眠 = 完全不主动说话（不接续、不插话、不主动配图），只剩命令能叫动它
+    "冬眠": {"called": 0.0, "follow": 0.0, "cd": 10.0, "chime": 0.0, **_LIMITS},
+    # 抽卡模式（/米游抽卡 切）：很低的被叫概率，接续为 0；真被触发时发固定长文，不调模型
     "米游抽卡": {
         "called": float(os.getenv("REPLY_PROB_GACHA", "0.018")),
         "follow": 0.0,
         "cd": float(os.getenv("GACHA_CD", "60")),
         "chime": CHIME_PROB,
+        **_LIMITS,
     },
 }
-_DEFAULT_MODE = {"group": "省话", "private": "必回"}
+# /模式 列出的三档；米游抽卡另用 /米游抽卡 切
+TIERS = ("自宅", "默认", "冬眠")
+# 旧档位名：读旧的 reply_modes.json、/模式 打旧名字时换成新的
+OLD_MODES = {"话痨": "自宅", "省话": "默认", "静音": "冬眠", "必回": "默认"}
+_DEFAULT_MODE = {"group": "默认", "private": "默认"}
 _mode_state = dict(_DEFAULT_MODE)
 # 按群覆盖：group_<群号> -> 模式名；没单独设过的群用 _mode_state['group']
 _group_modes: dict[str, str] = {}
@@ -273,10 +286,12 @@ def _mode_cfg(kind: str, key: str | None = None) -> dict:
 
 
 def _mode_desc(cfg: dict) -> str:
-    """把档位参数说清楚：被叫/接续是点名后的概率，插话是没人叫时的概率（静音档为 0）。"""
+    """把档位参数说清楚：被叫/接续是点名后的概率，插话是没人叫时的概率（冬眠档为 0）。"""
+    per_hour = f"{cfg['per_hour']} 条" if cfg["per_hour"] > 0 else "不限"
     return (
         f"被叫 {cfg['called']:.0%} / 接续 {cfg['follow']:.0%} / "
-        f"插话 {float(cfg.get('chime', 0)):.0%} / 冷却 {cfg['cd']:.0f}s"
+        f"插话 {float(cfg.get('chime', 0)):.0%} / 冷却 {cfg['cd']:.0f}s / "
+        f"没被 @ 间隔 {cfg['gap']:.0f}s / 每小时 {per_hour}"
     )
 
 
@@ -467,12 +482,13 @@ def _load_mode() -> None:
             data = json.loads(MODE_FILE.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 for kind in ("group", "private"):
-                    name = data.get(kind)
+                    name = OLD_MODES.get(data.get(kind), data.get(kind))
                     if name in MODES:
                         _mode_state[kind] = str(name)
                 groups = data.get("groups")
                 if isinstance(groups, dict):
                     for gkey, name in groups.items():
+                        name = OLD_MODES.get(name, name)
                         if isinstance(name, str) and name in MODES:
                             _group_modes[str(gkey)] = name
                 chime = data.get("chime")
@@ -486,6 +502,7 @@ def _load_mode() -> None:
         legacy = _DATA_DIR / "reply_mode.json"
         if legacy.is_file():
             name = json.loads(legacy.read_text(encoding="utf-8")).get("mode", "")
+            name = OLD_MODES.get(name, name)
             if name in MODES:
                 _mode_state["group"] = str(name)
                 _save_modes()
@@ -840,14 +857,18 @@ def _quota_ok(kind: str, key: str | None = None) -> bool:
     now = time.time()
     while _recent_reply_times and now - _recent_reply_times[0] > 60:
         _recent_reply_times.popleft()
+    cfg = _mode_cfg("group", key) if key else None
+    if cfg and cfg["free"]:
+        return True
     if not quota_allows(len(_recent_reply_times), GLOBAL_PER_MIN, kind):
         return False
-    if key is None or GROUP_PER_HOUR <= 0:
+    per_hour = cfg["per_hour"] if cfg else 0
+    if per_hour <= 0:
         return True
     sent = _group_sent[key]
     while sent and now - sent[0] > 3600:
         sent.popleft()
-    return quota_allows(len(sent), GROUP_PER_HOUR, kind)
+    return quota_allows(len(sent), per_hour, kind)
 
 
 def _mark_sent(key: str, now: float, at_reply: bool = False) -> None:
@@ -1127,9 +1148,9 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
             _background(_diary_group(str(event.group_id), list(history)))
             _background(_learn_slang(list(history), f"g{event.group_id}"))
 
-    # 静音 = 完全不出声（不接续、不插话、不主动配图）；/模式、/表情、查询等命令走别的 matcher，照常可用
-    if _mode_name("group" if is_group else "private", key) == "静音":
-        logger.debug("persona: 静音模式，不回话")
+    # 冬眠 = 完全不出声（不接续、不插话、不主动配图）；/模式、/表情、查询等命令走别的 matcher，照常可用
+    if _mode_name("group" if is_group else "private", key) == "冬眠":
+        logger.debug("persona: 冬眠模式，不回话")
         return
 
     # 被追问到烦的计数按条记，处理时再判断
@@ -1182,7 +1203,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     chat_kind = "group" if is_group else "private"
     mcfg = _mode_cfg(chat_kind, key)
     mname = _mode_name(chat_kind, key)
-    if mname == "静音":
+    if mname == "冬眠":
         return True
 
     # 这批里谁是「在跟我说话的人」：@ 我的 > 喊我名字的 > 正在聊的那位 > 最后说话的
@@ -1284,7 +1305,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             _engaged[key] = {"last": now, "turns": 0, "partner": user_id}
         else:
             ok, why = follow_decision(
-                _engaged.get(key), user_id, now, ENGAGE_TTL, ENGAGE_FOLLOW_WINDOW, ENGAGE_MAX_TURNS
+                _engaged.get(key), user_id, now, ENGAGE_TTL, ENGAGE_FOLLOW_WINDOW, mcfg["turns"]
             )
             if ok:
                 addressed = True
@@ -1298,13 +1319,14 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
                     chime_prob = min(1.0, chime_prob * INTEREST_BOOST)
                 if chime_prob <= 0 or random.random() >= chime_prob:
                     return True
-                if now - _last_chime.get(key, 0) < CHIME_COOLDOWN_SEC or not _quota_ok("插话", key):
+                if now - _last_chime.get(key, 0) < mcfg["chime_cd"] or not _quota_ok("插话", key):
                     return True
-                if now - _last_chime_try[key] < chime_backoff(_chime_skips[key], CHIME_BACKOFF_BASE):
+                free = mcfg["free"]
+                if not free and now - _last_chime_try[key] < chime_backoff(_chime_skips[key], CHIME_BACKOFF_BASE):
                     logger.debug(f"persona: 不插话（最近连着 {_chime_skips[key]} 次没兴趣，退避中）")
                     return True
                 label, allowed, reason = judge_atmosphere(list(history), batch[0]["gap"])
-                if not allowed:
+                if not allowed and not free:
                     logger.debug(f"persona: 不插话（{label}：{reason}）")
                     return True
                 mode = f"插话·{label}"
@@ -1361,14 +1383,14 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     # 被 @ 或喊名字都算有人找她：不受本群每小时额度和间隔限制（喊名字回不回看态度）
     called = mode.startswith("被叫")
     # 冷却只管群里没叫她的接话/插话；有人叫、私聊靠前面的防抖就够了，不然连着叫两次第二次会被吞
-    if is_group and not called:
+    if is_group and not called and not mcfg["free"]:
         cd = mcfg["cd"] if addressed else COOLDOWN_SEC
         elapsed = now - _last_reply.get(key, 0)
         if elapsed < cd:
             logger.info(f"persona: 跳过（冷却中 {elapsed:.1f}s < {cd:.0f}s，模式 {mode}）")
             return True
 
-    # 不是每次都接：私聊必回，被 @ 就回（静音档前面已经拦了）；喊名字回不回看态度；接续按态度微调
+    # 不是每次都接：私聊必回，被 @ 就回（冬眠档前面已经拦了）；喊名字回不回看态度；接续按态度微调
     if addressed and mode != "私聊" and not at_reply:
         if called:
             prob = name_call_prob(att, mcfg["called"], PROB_CALLED or 0.5)
@@ -1400,12 +1422,12 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         return True
 
     if is_group and not called:
-        if now - _last_casual[key] < CASUAL_GAP:
-            logger.info(f"persona: 跳过（离上次没被 @ 的回话不到 {CASUAL_GAP:.0f}s，{mode}）")
+        if now - _last_casual[key] < mcfg["gap"]:
+            logger.info(f"persona: 跳过（离上次没被 @ 的回话不到 {mcfg['gap']:.0f}s，{mode}）")
             return True
         tier = "接续" if mode.startswith("接续") else "插话"
         if not _quota_ok(tier, key):
-            logger.info(f"persona: 跳过（限流：每分钟 {GLOBAL_PER_MIN} 条 / 本群每小时 {GROUP_PER_HOUR} 条，{mode}）")
+            logger.info(f"persona: 跳过（限流：每分钟 {GLOBAL_PER_MIN} 条 / 本群每小时 {mcfg['per_hour']} 条，{mode}）")
             return True
 
     help_mode = wants_help(text)
@@ -1505,6 +1527,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         can_search=can_search,
         search_ready=web_search.enabled(),
         interests=INTERESTS if chime else (),
+        chime_free=mcfg["free"],
     )
 
     limit = HELP_MAX_TOKENS if help_mode or can_search else 120 if question else 100
@@ -1791,7 +1814,7 @@ async def _proactive_tick() -> None:
     now = time.time()
     if MOCK or not API_KEY:
         return
-    if _mode_name("private") == "静音":
+    if _mode_name("private") == "冬眠":
         return
     today = datetime.now().strftime("%Y-%m-%d")
     if _proactive_day["date"] != today:
@@ -1885,7 +1908,7 @@ async def _mode_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
     kind = _chat_kind(event)
     key = _session_key(event) if kind == "group" else None
     label = "群聊" if kind == "group" else "私聊"
-    options = "、".join(MODES)
+    options = "、".join(TIERS)
 
     tokens = arg.extract_plain_text().strip().split()
     scope = "local"
@@ -1893,6 +1916,7 @@ async def _mode_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         scope = "global"
         tokens = tokens[1:]
     name = tokens[0] if tokens else ""
+    name = OLD_MODES.get(name, name)
 
     cfg = _mode_cfg(kind, key)
 
@@ -1904,12 +1928,12 @@ async def _mode_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
                 f"本群当前「{cur}」{origin}\n"
                 f"全局群聊默认「{_mode_name(kind)}」；{_mode_desc(cfg)}\n"
                 f"可选：{options}\n"
-                f"「静音」= 完全不说话（不插话也不接续）；插话只在省话/话痨档按概率发生\n"
-                f"只改本群：/模式 话痨　统一所有群：/模式 全局 话痨（会清掉各群单独设置）"
+                f"「自宅」= 能拉满的都拉满；「默认」= 小话痨；「冬眠」= 完全不说话（不插话也不接续）\n"
+                f"只改本群：/模式 自宅　统一所有群：/模式 全局 自宅（会清掉各群单独设置）"
             )
         await mode_cmd.finish(
             f"{label}当前「{_mode_name(kind, key)}」：{_mode_desc(cfg)}\n"
-            f"可选：{options}（例：/模式 话痨）"
+            f"可选：{options}（例：/模式 自宅）"
         )
 
     if name not in MODES:
@@ -2016,7 +2040,7 @@ async def _usage_cmd(bot: Bot, event: MessageEvent) -> None:
     ))
 
 
-# 插话开关：单独控制「没人叫时插不插话」，与静音档解耦（管理员）
+# 插话开关：单独控制「没人叫时插不插话」，与冬眠档解耦（管理员）
 chime_cmd = on_command("插话", priority=16, block=True)
 
 
@@ -2029,7 +2053,7 @@ async def _chime_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
 
     kind = _chat_kind(event)
     if kind != "group":
-        await chime_cmd.finish("插话只对群聊有意义，私聊是必回的。")
+        await chime_cmd.finish("插话只对群聊有意义，私聊每句都回。")
         return
 
     key = _session_key(event)
@@ -2042,7 +2066,7 @@ async def _chime_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
         tail = "（本群单独设定）" if key in _chime_override else f"（跟随「{mname}」档）"
         await chime_cmd.finish(
             f"没人叫时插话概率 {cur:.0%}{tail}\n"
-            "插话 = 没被点名也凑一句；静音档固定 0，完全不出声。\n"
+            "插话 = 没被点名也凑一句；冬眠档固定 0，完全不出声。\n"
             "改：/插话 5% 或 /插话 0.05；关：/插话 关；恢复跟档位：/插话 默认"
         )
         return

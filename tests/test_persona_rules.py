@@ -481,8 +481,8 @@ def main() -> int:
     print("PASS  语气词和「…」：讨厌陌生不带，抽中才带，发出去不被吃掉")
 
     probs = [name_call_prob(a, 0.5) for a in ("讨厌", "陌生", "普通", "有好感", "亲近")]
-    assert probs == sorted(probs) and probs[0] <= 0.15 and probs[-1] < 1.0, probs  # 好感越高越愿意理，但都不是必回
-    assert name_call_prob("亲近", 1.0) == 1.0 and name_call_prob("亲近", 0.0) == 0.0  # 话痨档必回、静音档不回
+    assert probs == sorted(probs) and probs[0] <= 0.05 and probs[-1] == 1.0, probs  # 好感越高越愿意理，亲近的必回
+    assert name_call_prob("讨厌", 1.0) == 1.0 and name_call_prob("亲近", 0.0) == 0.0  # 自宅档必回、冬眠档不回
     print("PASS  喊名字回不回看态度")
 
     base = compose_messages([], "小红", "在吗", attitude="讨厌", chime=True)[0]["content"]
@@ -614,7 +614,9 @@ def main() -> int:
     chime_sys = compose_messages([], "小红", "原神新角色好看", chime=True, interests=("游戏",))[0]["content"]
     assert SILENT_MARK in chime_sys and "游戏" in chime_sys
     assert SILENT_MARK not in compose_messages([], "小红", "在吗")[0]["content"]
-    print("PASS  插话看兴趣，没兴趣模型可以说不回，连着不回就退避")
+    free_sys = compose_messages([], "小红", "今天好热", chime=True, chime_free=True, interests=("游戏",))[0]["content"]
+    assert SILENT_MARK in free_sys and "住在群里" in free_sys and "一般不插嘴" not in free_sys  # 自宅档大多都接，不想接也能不回
+    print("PASS  插话看兴趣，没兴趣模型可以说不回，连着不回就退避；自宅档大多都接")
 
     msgs = compose_messages([("我", "干嘛")], "小明", "", new_msgs=[("小明", "我跟你说"), ("小明", "今天抽卡\n酱酱鱼：歪了"), ("小明", "[表情:哭]")])
     last = msgs[-1]["content"]

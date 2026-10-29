@@ -644,6 +644,7 @@ def build_system_prompt(
     proactive: bool = False,
     slang_play: bool = False,
     dev_aliases: dict[str, tuple[str, ...]] | None = None,
+    chime_free: bool = False,
 ) -> str:
     """在基础人设上补几条：我是谁、开发者是谁、记忆、什么气氛、什么情绪、对这个人什么态度。"""
     system = SYSTEM_PROMPT
@@ -734,7 +735,14 @@ def build_system_prompt(
     if atmosphere:
         system += f"\n\n当前群里气氛大概是「{atmosphere}」，接话别太正式。"
 
-    if chime:
+    if chime and chime_free:
+        # 自宅档：像住在群里的活跃群友，大多都想接，不想接也可以不回（不退避）
+        system += (
+            "\n\n没人叫你，这是你自己在群里看到的：你就像住在群里、特别特别活跃的群友，爱凑热闹，"
+            "大部分话题都想顺着接一句，要短、要犀利，可以吐槽，但别伤人。"
+            f"真的接不上、没意思、或者人家在聊正事，就只输出 {SILENT_MARK}。"
+        )
+    elif chime:
         system += (
             "\n\n没人叫你，这是你自己在群里看到的：真有兴趣、接得上才插一句，要短、要犀利，"
             "可以吐槽，但别伤人，说完就撤，不解释、不追问、不等回复。"
@@ -859,6 +867,7 @@ def compose_messages(
     proactive: bool = False,
     slang_play: bool = False,
     dev_aliases: dict[str, tuple[str, ...]] | None = None,
+    chime_free: bool = False,
 ) -> list[dict[str, str]]:
     """组装成 OpenAI 兼容的 messages。history 为 (昵称, 内容) 列表。
 
@@ -878,7 +887,7 @@ def compose_messages(
                 help_mode=help_mode, hour=hour, attitude=attitude, bond=bond, dere=dere, cute=cute, shy=shy,
                 flavor=flavor, group_style=bool(group_style), question=question,
                 topics=topics, slang=slang, can_search=can_search, search_ready=search_ready, interests=interests,
-                proactive=proactive, slang_play=slang_play, dev_aliases=dev_aliases,
+                proactive=proactive, slang_play=slang_play, dev_aliases=dev_aliases, chime_free=chime_free,
             ),
         }
     ]
@@ -1082,15 +1091,15 @@ ATTITUDE_LINES = {
 }
 # 接续时回话概率的倍数：熟的人更愿意搭理，讨厌的人爱答不理
 ATTITUDE_REPLY_FACTOR = {"讨厌": 0.6, "陌生": 0.8, "普通": 1.0, "有好感": 1.15, "亲近": 1.3}
-# 喊名字（没 @）时回不回看态度：好感低大概率不理，好感高也不是必回（这是省话档的值，别的档按被叫概率等比缩放）
-NAME_CALL_PROB = {"讨厌": 0.1, "陌生": 0.25, "普通": 0.4, "有好感": 0.55, "亲近": 0.7}
+# 喊名字（没 @）时回不回看态度：好感低大概率不理，亲近的必回（这是默认档的值，别的档按被叫概率等比缩放）
+NAME_CALL_PROB = {"讨厌": 0.05, "陌生": 0.15, "普通": 0.4, "有好感": 0.65, "亲近": 1.0}
 
 
 def name_call_prob(att: str | None, called: float, base: float = 0.5) -> float:
-    """喊名字时的回话概率：called 是当前档位的被叫概率（省话 0.5、话痨 1、静音 0）。"""
+    """喊名字时的回话概率：called 是当前档位的被叫概率（默认 0.5、自宅 1、冬眠 0）。"""
     if called >= 1.0:
         return 1.0
-    return min(0.9, NAME_CALL_PROB.get(att or "普通", 0.4) * called / base)
+    return min(1.0, NAME_CALL_PROB.get(att or "普通", 0.5) * called / base)
 # 平时聊天里突然冒一句傲娇的概率：很少见，越亲近越常见；讨厌、陌生不冒
 DERE_CHANCE = {"讨厌": 0.0, "陌生": 0.0, "普通": 0.03, "有好感": 0.06, "亲近": 0.10}
 DERE_LINE = (
