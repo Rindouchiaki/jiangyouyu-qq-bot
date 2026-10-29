@@ -28,7 +28,7 @@
   "git": {
     "gsuid_core": {
       "repo": "https://github.com/Genshin-bots/gsuid_core.git",
-      "commit": "2573892196aa02671f9a797f0163c53a481accfa"
+      "commit": "042ab5a187544d0def582db2730faa8049f50544"
     },
     "GenshinUID": {
       "repo": "https://github.com/KimigaiiWuyi/GenshinUID.git",

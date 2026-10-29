@@ -126,7 +126,7 @@ idna==3.20
     #   anyio
     #   httpx
     #   yarl
-imageio-ffmpeg==0.7.0
+imageio-ffmpeg==0.6.0
     # via -r requirements.txt
 importlib-metadata==10.1.0
     # via
@@ -361,7 +361,7 @@ typing-inspection==0.4.4
     # via
     #   fastapi
     #   pydantic
-tzdata==2026.6
+tzdata==2026.5
     # via tzlocal
 tzlocal==5.4.5
     # via apscheduler
