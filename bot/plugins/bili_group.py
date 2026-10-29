@@ -124,7 +124,9 @@ async def _del_sub(bot: Bot, group_id: str, target_text: str) -> str:
         return "要删的话写 UID 或主页链接。"
     user = TargetQQGroup(group_id=int(group_id))
     subscribed = await bison_config.list_subscribe(user)
-    if not any(str(sub.target.target) == str(target) for sub in subscribed):
+    if not any(
+        sub.target.platform_name == "bilibili" and str(sub.target.target) == str(target) for sub in subscribed
+    ):
         return f"{await _group_label(bot, group_id)} 本来就没订 {target}，不用删。"
     try:
         await bison_config.del_subscribe(user, target, "bilibili")
@@ -150,10 +152,6 @@ async def _handle(bot: Bot, event: Event) -> None:
     action, group_id, target, cat_words = parse_group_sub(text, default_group=now_group)
     if action == "usage" or not group_id:
         await bili_group.finish(Message(_usage()))
-
-    # 群里只能配本群，免得群友看着你在群里点别的群；私聊随便
-    if in_group and str(getattr(event, "group_id", "")) != group_id:
-        await bili_group.finish("群里只能配这个群；要给别的群配，私聊我。")
 
     if action == "list":
         await bili_group.finish(Message(await _list_subs(bot, group_id)))

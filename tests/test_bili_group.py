@@ -42,6 +42,9 @@ def main() -> int:
         "1636034895",
         [],
     )
+    # 群里写上本群群号也照样认
+    assert pr.parse_group_sub("/群订阅 913506590", "913506590") == ("list", "913506590", "", [])
+    assert pr.parse_group_sub("/群订阅 913506590 加 946974", "913506590") == ("add", "913506590", "946974", [])
     # 「/订阅」不是 Bison 的指令，人设不该让它
     assert not pr.is_bili_command("/订阅 xxx")
 

@@ -208,7 +208,9 @@ nonebot-plugin-parser==2.7.1
 nonebot-plugin-prometheus==0.4.1
     # via nonebot-bison
 nonebot-plugin-send-anything-anywhere==0.7.1
-    # via nonebot-bison
+    # via
+    #   -r requirements.txt
+    #   nonebot-bison
 nonebot-plugin-uninfo==0.11.2
     # via nonebot-plugin-parser
 nonebot-plugin-waiter==0.8.1

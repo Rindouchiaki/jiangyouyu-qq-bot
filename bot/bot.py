@@ -21,16 +21,13 @@ load_dotenv(dotenv_path=Path(__file__).with_name("persona.local.env"), override=
 
 # 插件数据（Bison 的订阅库、B 站 cookie 都在 data.db 里）默认写在 %LOCALAPPDATA%\nonebot2，
 # 换机器或备份仓库时会漏掉。统一挪到仓库的 bot/data/localstore 下，跟着仓库走。
-_LOCALSTORE_DATA = Path(__file__).resolve().parent / "data" / "localstore"
-os.environ.setdefault("LOCALSTORE_DATA_DIR", str(_LOCALSTORE_DATA))
-# 第一次套用这个改动时，把旧位置的数据搬过来（只搬数据，缓存和浏览器不动）
-_OLD_LOCALSTORE_ROOT = Path(os.environ.get("LOCALAPPDATA", "")) / "nonebot2"
-_OLD_LOCALSTORE = _OLD_LOCALSTORE_ROOT
+os.environ.setdefault("LOCALSTORE_DATA_DIR", str(Path(__file__).resolve().parent / "data" / "localstore"))
+_LOCALSTORE_DATA = Path(os.environ["LOCALSTORE_DATA_DIR"])
+_OLD_LOCALSTORE = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "nonebot2"
 # htmlrender 的浏览器（一百多兆）继续放旧位置当缓存，不塞进仓库、也不用重下
-os.environ.setdefault(
-    "RENDER_STORAGE_PATH",
-    str(_OLD_LOCALSTORE_ROOT / "nonebot_plugin_htmlrender"),
-)
+os.environ.setdefault("RENDER_STORAGE_PATH", str(_OLD_LOCALSTORE / "nonebot_plugin_htmlrender"))
+# 第一次套用这个改动时，把旧位置的数据搬过来（只搬数据，缓存和浏览器不动）；出错等 nonebot 起来再记日志
+_MIGRATE_ERRORS: list[str] = []
 if _OLD_LOCALSTORE.is_dir() and not (_LOCALSTORE_DATA / "data.db").exists():
     import shutil
 
@@ -38,13 +35,17 @@ if _OLD_LOCALSTORE.is_dir() and not (_LOCALSTORE_DATA / "data.db").exists():
     for _item in _OLD_LOCALSTORE.iterdir():
         if _item.name in ("Cache", "nonebot_plugin_parser", "nonebot_plugin_htmlrender"):
             continue
+        _dst = _LOCALSTORE_DATA / _item.name
         try:
             if _item.is_dir():
-                shutil.copytree(_item, _LOCALSTORE_DATA / _item.name, dirs_exist_ok=True)
+                shutil.copytree(_item, _dst, dirs_exist_ok=True)
             else:
-                shutil.copy2(_item, _LOCALSTORE_DATA / _item.name)
-        except Exception:
-            pass
+                # 先拷成临时名再改名：拷到一半失败不会留下半截 data.db，下次启动还会重搬
+                _tmp = _dst.with_name(_dst.name + ".part")
+                shutil.copy2(_item, _tmp)
+                os.replace(_tmp, _dst)
+        except Exception as _exc:  # noqa: BLE001
+            _MIGRATE_ERRORS.append(f"{_item.name}（{type(_exc).__name__}: {_exc}）")
 # NoneBot 按当前工作目录找 .env 和 load_plugins 的目录：切到本文件所在目录，
 # 和 run-nonebot.ps1 的 Set-Location 一致，从仓库根目录直接启动也能加载插件
 os.chdir(Path(__file__).resolve().parent)
@@ -70,6 +71,9 @@ nonebot.init(
 
 driver = nonebot.get_driver()
 driver.register_adapter(Adapter)
+
+if _MIGRATE_ERRORS:
+    nonebot.logger.warning(f"旧插件数据没搬全，订阅库可能是空的，请手动从 {_OLD_LOCALSTORE} 拷到 {_LOCALSTORE_DATA}：" + "；".join(_MIGRATE_ERRORS))
 
 # 账号守卫：SnowLuma 可能同时登录多个 QQ 账号（实测 100000002 与 100000001 同时在线），
 # 只有 BOT_UIN 这个号的事件才往下走。用全局 event_preprocessor，在任何 matcher（含解析插件）之前拦截。
@@ -107,6 +111,7 @@ if _BOT_UIN:
     try:
         import nonebot_plugin_saa.auto_select_bot as _saa_auto
 
+        # 改的是 saa 的内部函数（requirements.txt 钉了 0.7.x）；升级后没了这个名字就大声报错，别悄悄失效
         _saa_refresh = _saa_auto._refresh_bot
 
         async def _only_bot_refresh(bot):
@@ -116,7 +121,7 @@ if _BOT_UIN:
 
         _saa_auto._refresh_bot = _only_bot_refresh
     except Exception as exc:  # noqa: BLE001
-        nonebot.logger.warning(f"固定推送账号失败 {type(exc).__name__}: {exc}")
+        nonebot.logger.error(f"固定推送账号失败，推送可能从别的号发出去 {type(exc).__name__}: {exc}")
 
 # 早柚核心连接插件：把消息转给另起的核心进程（游戏查询，插件列表见 external.lock.json），核心没开也不影响人设
 try:

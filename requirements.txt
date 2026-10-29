@@ -21,3 +21,5 @@ nonebot-plugin-htmlrender>=0.7,<0.8
 nonebot-bison>=0.9.14,<0.10
 # Bison 的 B 站平台 import 期就 from playwright.async_api import Cookie；卡片图渲染也走它
 playwright>=1.60
+# 推送只用机器人号发（bot/bot.py）改的是它的内部函数 auto_select_bot._refresh_bot，换大版本要复核
+nonebot-plugin-send-anything-anywhere>=0.7.1,<0.8

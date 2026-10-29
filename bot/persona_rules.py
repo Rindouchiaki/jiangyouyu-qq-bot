@@ -169,6 +169,10 @@ GROUP_SUB_USAGE = (
 )
 
 
+SUB_ADD_WORDS = ("加", "添加", "订", "订阅")
+SUB_DEL_WORDS = ("删", "删除", "取关", "取消")
+
+
 def parse_group_sub(text: str, default_group: str = "") -> tuple[str, str, str, list[str]]:
     """拆 `/群订阅` 的参数 → (动作, 群号, 目标, 类别名)。
 
@@ -181,43 +185,29 @@ def parse_group_sub(text: str, default_group: str = "") -> tuple[str, str, str, 
         t = t[1:].strip()
     if t.startswith("群订阅"):
         t = t[3:].strip()
-    if not t:
-        return ("list", default_group, "", []) if default_group else ("usage", "", "", [])
     parts = t.split()
-    group = ""
-    rest: list[str] = []
-    if not default_group and parts and parts[0] in ("加", "添加", "订", "订阅", "删", "删除", "取关", "取消"):
-        return "usage", "", "", []  # 私聊没写群号，光写「加 UID」说明还没说清是哪个群
-    # 群里没写群号、直接以「加/删」开头时，整句都算参数，别把 UP 的 UID 误当成群号
-    if default_group and parts and parts[0] in ("加", "添加", "订", "订阅", "删", "删除", "取关", "取消"):
-        group, rest = default_group, parts
     if default_group:
-        # 群里只配本群，参数里的数字一律当 UP 的 UID，不能拿来当群号
+        # 群里只配本群：写了本群群号就去掉，其余数字一律当 UP 的 UID，不能拿来当群号
+        if parts and parts[0] == default_group:
+            parts = parts[1:]
         group, rest = default_group, parts
     else:
-        for idx, part in enumerate(parts):
-            if part.isdigit() and len(part) >= 5:
-                group = part
-                rest = parts[idx + 1:]
-                break
-    if not group:
-        if not default_group:
+        # 私聊里群号必须写在最前面；光写「加 UID」说明还没说清是哪个群
+        if not parts or not (parts[0].isdigit() and len(parts[0]) >= 5):
             return "usage", "", "", []
-        group, rest = default_group, parts
+        group, rest = parts[0], parts[1:]
     if not rest:
         return "list", group, "", []
-    action_word = rest[0]
-    if action_word in ("加", "添加", "订", "订阅"):
+    if rest[0] in SUB_ADD_WORDS:
         action = "add"
-    elif action_word in ("删", "删除", "取关", "取消"):
+    elif rest[0] in SUB_DEL_WORDS:
         action = "del"
     else:
         return "usage", group, "", []
     body = rest[1:]
     if not body:
         return "usage", group, "", []
-    target = body[0]
-    return action, group, target, body[1:]
+    return action, group, body[0], body[1:]
 
 
 def is_bili_command(text: str) -> bool:
