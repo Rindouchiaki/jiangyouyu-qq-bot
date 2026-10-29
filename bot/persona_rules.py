@@ -154,60 +154,110 @@ def is_game_command(text: str, prefixes: tuple[str, ...]) -> bool:
 # 「动态」「直播」这类词日常聊天太常见，光看开头会误伤。
 BILI_COMMANDS = (
     "添加订阅", "查询订阅", "删除订阅", "修改订阅", "群管理",
-    "后台管理", "管理后台", "群订阅",
+    "后台管理", "管理后台", "群订阅", "私聊订阅",
     "添加cookie", "删除cookie", "关联cookie", "取消关联cookie",
 )
 
 GROUP_SUB_USAGE = (
-    "用法：\n"
+    "用法（群里可以省掉群号，私聊里要写）：\n"
     "/群订阅 群号 —— 看这个群订了谁\n"
-    "/群订阅 群号 加 946974 —— 给这个群订一个 UP（UID、UID:946974 或主页链接都行）\n"
-    "/群订阅 群号 加 946974 视频 专栏文章 —— 顺带指定类别，不写就是「一般动态」，写「全部」就是全类别\n"
-    "/群订阅 群号 删 946974 —— 取消这个 UP\n"
-    "在群里可以省掉群号：/群订阅、/群订阅 加 946974 都是本群。\n"
-    "私聊里可以给任意群配；群里只能配这个群。"
+    "/群订阅 群号 加 946974 —— 订 UP，UID、UID:946974、主页链接都行，一次能写好几个\n"
+    "/群订阅 群号 加 946974 视频 直播 —— 只推这几类（动态、专栏、视频、纯文字、转发、直播），不写就是全部；已经订过的照新写的改\n"
+    "/群订阅 群号 删 946974 —— 取消，写 UP 的名字也行\n"
+    "群里只能配这个群；要推到私聊用 /私聊订阅。"
 )
 
+PRIVATE_SUB_USAGE = (
+    "用法（不写 QQ 号就是推给你自己）：\n"
+    "/私聊订阅 —— 看推到你私聊的有哪些\n"
+    "/私聊订阅 加 946974 —— 推到你的私聊，后面同样可以跟「视频」「直播」这类词\n"
+    "/私聊订阅 QQ号 加 946974 —— 推给这个人（要先加我好友，不然发不过去）\n"
+    "/私聊订阅 QQ号 删 946974 —— 取消，写 UP 的名字也行"
+)
 
-SUB_ADD_WORDS = ("加", "添加", "订", "订阅")
+SUB_ADD_WORDS = ("加", "添加", "订", "订阅", "关注")
 SUB_DEL_WORDS = ("删", "删除", "取关", "取消")
+SUB_LIST_WORDS = ("看", "查", "查看", "列表")
+
+# Bison B 站动态的类别号。直播走 bilibili-live 平台的开播提醒（5 秒一查，带标题和封面），
+# 不用动态里的「直播推送」，免得一次开播推两条。
+BILI_DYN_CATS = {1: "一般动态", 2: "专栏文章", 3: "视频", 4: "纯文字", 5: "转发"}
+_BILI_CAT_WORDS = {
+    "动态": 1, "一般动态": 1, "专栏": 2, "专栏文章": 2, "文章": 2,
+    "视频": 3, "投稿": 3, "纯文字": 4, "文字": 4, "转发": 5,
+}
+_BILI_LIVE_WORDS = ("直播", "开播", "直播推送", "开播提醒")
+_BILI_ALL_WORDS = ("全部", "所有", "全选")
 
 
-def parse_group_sub(text: str, default_group: str = "") -> tuple[str, str, str, list[str]]:
-    """拆 `/群订阅` 的参数 → (动作, 群号, 目标, 类别名)。
-
-    动作是 usage / list / add / del；群号是数字串（可能为空）。
-    只做字符串解析，不碰 NoneBot 也不查库，方便离线测。
-    default_group 是「在群里没写群号时按本群算」用的，私聊留空。
-    """
+def bili_uid(text: str) -> str:
+    """纯数字 UID、UID:946974、space.bilibili.com/946974 → "946974"；认不出返回空串。"""
     t = (text or "").strip()
-    if t.startswith("/"):
-        t = t[1:].strip()
-    if t.startswith("群订阅"):
-        t = t[3:].strip()
+    if t.isdigit():
+        return t
+    m = re.fullmatch(r"(?i)uid[:：]?(\d+)", t) or re.search(r"space\.bilibili\.com/(\d+)", t)
+    return m.group(1) if m else ""
+
+
+def bili_sub_cats(words: list[str]) -> tuple[list[int], bool] | str:
+    """类别词 → (动态类别号, 要不要开播提醒)；不写就是全部。认不出的词返回一句提示。"""
+    if not words or any(w in _BILI_ALL_WORDS for w in words):
+        return sorted(BILI_DYN_CATS), True
+    cats: set[int] = set()
+    live = False
+    for word in words:
+        if word in _BILI_LIVE_WORDS:
+            live = True
+        elif word in _BILI_CAT_WORDS:
+            cats.add(_BILI_CAT_WORDS[word])
+        else:
+            return f"没听懂「{word}」是哪类；能写的是：动态、专栏、视频、纯文字、转发、直播、全部（不写就是全部）"
+    return sorted(cats), live
+
+
+def parse_sub_command(text: str, cmd: str = "群订阅", default_id: str = "") -> tuple[str, str, list[str], list[str]]:
+    """拆 `/群订阅`、`/私聊订阅` 的参数 → (动作, 群号或 QQ 号, UID 列表, 其它词)。
+
+    动作是 usage / list / add / del。「其它词」加订阅时是类别，删的时候是 UP 名字。
+    default_id 是没写号时用的（群里是本群、私聊里 /私聊订阅 是自己），留空就必须写。
+    号只认写在最前面的：后面跟着「加/删/看」或者只写了这一个号；群里写了本群群号也照样认。
+    只做字符串解析，不碰 NoneBot 也不查库，方便离线测。
+    """
+    t = (text or "").strip().lstrip("/").strip()
+    if t.startswith(cmd):
+        t = t[len(cmd):].strip()
     parts = t.split()
-    if default_group:
-        # 群里只配本群：写了本群群号就去掉，其余数字一律当 UP 的 UID，不能拿来当群号
-        if parts and parts[0] == default_group:
-            parts = parts[1:]
-        group, rest = default_group, parts
-    else:
-        # 私聊里群号必须写在最前面；光写「加 UID」说明还没说清是哪个群
-        if not parts or not (parts[0].isdigit() and len(parts[0]) >= 5):
-            return "usage", "", "", []
-        group, rest = parts[0], parts[1:]
-    if not rest:
-        return "list", group, "", []
-    if rest[0] in SUB_ADD_WORDS:
+    actions = SUB_ADD_WORDS + SUB_DEL_WORDS + SUB_LIST_WORDS
+    owner = default_id
+    if parts and parts[0].isdigit() and len(parts[0]) >= 5 and (len(parts) == 1 or parts[1] in actions):
+        owner, parts = parts[0], parts[1:]
+    if not owner:
+        return "usage", "", [], []
+    if not parts or parts[0] in SUB_LIST_WORDS:
+        return "list", owner, [], []
+    if parts[0] in SUB_ADD_WORDS:
         action = "add"
-    elif rest[0] in SUB_DEL_WORDS:
+    elif parts[0] in SUB_DEL_WORDS:
         action = "del"
     else:
-        return "usage", group, "", []
-    body = rest[1:]
-    if not body:
-        return "usage", group, "", []
-    return action, group, body[0], body[1:]
+        return "usage", owner, [], []
+    uids: list[str] = []
+    words: list[str] = []
+    for part in parts[1:]:
+        uid = bili_uid(part)
+        if uid and uid not in uids:
+            uids.append(uid)
+        elif not uid:
+            words.append(part)
+    if not uids and (action == "add" or not words):
+        return "usage", owner, [], []
+    return action, owner, uids, words
+
+
+def compact_desc(text: str, limit: int = 60) -> str:
+    """视频简介压成一小段：合并空白，超长截断加省略号。推送里标题和封面才是重点。"""
+    t = " ".join((text or "").split())
+    return t if len(t) <= limit else t[:limit].rstrip() + "…"
 
 
 def is_bili_command(text: str) -> bool:

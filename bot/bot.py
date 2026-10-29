@@ -63,6 +63,8 @@ nonebot.init(
     # Bison（B 站订阅）：卡片图要浏览器渲染；群里必须 @ 它才认指令，免得被闲聊词误触
     bison_use_browser=True,
     bison_to_me=True,
+    # 一条推送拆成好几条（文字 + 几张图）时合并转发成一条，群里和私聊都是；视频、直播本来就一条（bili_push.py）
+    bison_use_pic_merge=2,
     # htmlrender 0.7 起渲染后端要显式选，不配只警告、卡片图全出不来
     render_backend="playwright",
     # 开发者才能加/删 cookie、用 /群管理、/后台管理
