@@ -46,6 +46,17 @@ jobs:
           uv venv .venv --python 3.12 || exit /b 1
           uv pip install --python .venv\Scripts\python.exe -r requirements.lock
 
+      # 冒烟启动时，bison 要渲染卡片就得有 chromium；不预装会临时下载、来不及起来
+      - name: 缓存 Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\ms-playwright
+          key: playwright-chromium-${{ hashFiles('requirements.lock') }}
+
+      - name: 装 Chromium
+        shell: cmd
+        run: .venv\Scripts\python -m playwright install chromium
+
       - name: 单元测试
         shell: cmd
         run: |
@@ -56,7 +67,8 @@ jobs:
           .venv\Scripts\python tests\test_topics.py || exit /b 1
           .venv\Scripts\python tests\test_sticker_weights.py || exit /b 1
           .venv\Scripts\python tests\test_backstage.py || exit /b 1
-          .venv\Scripts\python tests\test_migrate_journal_tags.py
+          .venv\Scripts\python tests\test_migrate_journal_tags.py || exit /b 1
+          .venv\Scripts\python tests\test_bili_group.py || exit /b 1
 
       - name: NoneBot 冒烟
         shell: cmd

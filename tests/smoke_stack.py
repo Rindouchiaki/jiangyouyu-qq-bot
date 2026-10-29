@@ -290,10 +290,10 @@ def main() -> int:
                    GSUID_CORE_REPEAT="true")
         log = open(tmp / "nonebot.log", "wb")
         proc = subprocess.Popen([sys.executable, str(ROOT / "bot" / "bot.py")], env=env, stdout=log, stderr=subprocess.STDOUT)
-        if not wait_port(args.port, 90):
+        if not wait_port(args.port, 180):
             proc.kill()
             print((tmp / "nonebot.log").read_text(encoding="utf-8", errors="replace")[-3000:])
-            print("FAIL  NoneBot 90 秒内没起来")
+            print("FAIL  NoneBot 180 秒内没起来")
             return 1
     else:
         token = conf.get("ONEBOT_ACCESS_TOKEN", "")
