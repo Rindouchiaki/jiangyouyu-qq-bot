@@ -232,7 +232,7 @@ MODE_FILE = _DATA_DIR / "reply_modes.json"
 
 # 回复频率档位：/模式 切换；群聊与私聊各自独立保存，互不影响（私聊不看概率，除了冬眠每句都回）
 # gap = 两次没被 @ 的回话至少隔几秒，per_hour = 本群每小时额度（0 = 不限），chime_cd = 两次插话的间隔，turns = 一段最多来回几次；
-# free = 随便说：每分钟额度、冷却、插话前看气氛和退避都不管，插话也不给「不回」的选项
+# free = 随便说：每分钟额度、冷却、插话前看气氛和退避都不管；插话时模型不想接还能说「不回」
 _LIMITS = {
     "gap": CASUAL_GAP, "per_hour": GROUP_PER_HOUR, "chime_cd": CHIME_COOLDOWN_SEC, "turns": ENGAGE_MAX_TURNS, "free": False,
 }
