@@ -18,6 +18,33 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).with_name("persona.env"))
 # 自己长期要保留的调参写 persona.local.env：后读、盖过 persona.env（一键更新会按样例重写 persona.env，不碰它）
 load_dotenv(dotenv_path=Path(__file__).with_name("persona.local.env"), override=True)
+
+# 插件数据（Bison 的订阅库、B 站 cookie 都在 data.db 里）默认写在 %LOCALAPPDATA%\nonebot2，
+# 换机器或备份仓库时会漏掉。统一挪到仓库的 bot/data/localstore 下，跟着仓库走。
+_LOCALSTORE_DATA = Path(__file__).resolve().parent / "data" / "localstore"
+os.environ.setdefault("LOCALSTORE_DATA_DIR", str(_LOCALSTORE_DATA))
+# 第一次套用这个改动时，把旧位置的数据搬过来（只搬数据，缓存和浏览器不动）
+_OLD_LOCALSTORE_ROOT = Path(os.environ.get("LOCALAPPDATA", "")) / "nonebot2"
+_OLD_LOCALSTORE = _OLD_LOCALSTORE_ROOT
+# htmlrender 的浏览器（一百多兆）继续放旧位置当缓存，不塞进仓库、也不用重下
+os.environ.setdefault(
+    "RENDER_STORAGE_PATH",
+    str(_OLD_LOCALSTORE_ROOT / "nonebot_plugin_htmlrender"),
+)
+if _OLD_LOCALSTORE.is_dir() and not (_LOCALSTORE_DATA / "data.db").exists():
+    import shutil
+
+    _LOCALSTORE_DATA.mkdir(parents=True, exist_ok=True)
+    for _item in _OLD_LOCALSTORE.iterdir():
+        if _item.name in ("Cache", "nonebot_plugin_parser", "nonebot_plugin_htmlrender"):
+            continue
+        try:
+            if _item.is_dir():
+                shutil.copytree(_item, _LOCALSTORE_DATA / _item.name, dirs_exist_ok=True)
+            else:
+                shutil.copy2(_item, _LOCALSTORE_DATA / _item.name)
+        except Exception:
+            pass
 # NoneBot 按当前工作目录找 .env 和 load_plugins 的目录：切到本文件所在目录，
 # 和 run-nonebot.ps1 的 Set-Location 一致，从仓库根目录直接启动也能加载插件
 os.chdir(Path(__file__).resolve().parent)
