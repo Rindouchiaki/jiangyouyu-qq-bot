@@ -32,6 +32,8 @@ python tests\test_slang.py                 # 热梗词典；学到的梗按会�
 python tests\test_topics.py                # 话题词表和自学习
 python tests\test_sticker_weights.py       # 表情按权重抽、心情分类
 python tests\test_backstage.py             # 后台数据：内部对话判断、关系解析、关系图
+python tests\test_bili_group.py            # B 站订阅指令解析、推送通知文字
+python tests\test_push_marks.py            # 刚推过的链接名单（解析插件避让）
 powershell -File tests\test_env_sync.ps1  # 一键更新按样例重写 persona.env，临时目录里跑
 python tests\test_migrate_journal_tags.py  # 旧日记迁移脚本（临时目录里跑）
 python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（--core 连已启动的整套）

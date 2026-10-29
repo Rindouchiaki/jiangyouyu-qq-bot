@@ -13,7 +13,7 @@ import re
 import threading
 import time
 
-# 多久之内算「刚推过」。默认 15 分钟，够覆盖一轮轮询加转发延迟。
+# 多久之内算「刚推过」。默认 15 分钟，够覆盖一轮轮询加转发延迟；0 就是不记。
 TTL_SECONDS = float(os.getenv("PUSH_LINK_TTL", "900"))
 
 _URL_RE = re.compile(r"https?://[^\s\"'<>，。！？、）)】]+", re.IGNORECASE)
@@ -23,7 +23,7 @@ _marks: dict[str, float] = {}
 
 
 def _urls(text: str) -> list[str]:
-    """把文本里的链接抠出来，去掉结尾的标点和查询串里的跟踪参数。"""
+    """把文本里的链接抠出来，去掉结尾的标点。"""
     found = []
     for raw in _URL_RE.findall(text or ""):
         url = raw.rstrip(".,;:!?)]}，。！？、）】")
@@ -36,7 +36,7 @@ def mark_text(text: str, now: float | None = None) -> int:
     """记下这段文本里的链接，返回记了几条。"""
     ts = time.time() if now is None else now
     urls = _urls(text)
-    if not urls:
+    if not urls or TTL_SECONDS <= 0:
         return 0
     with _lock:
         for url in urls:

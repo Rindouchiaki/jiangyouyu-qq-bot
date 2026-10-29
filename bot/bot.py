@@ -80,7 +80,7 @@ if _MIGRATE_ERRORS:
 # 账号守卫：SnowLuma 可能同时登录多个 QQ 账号（实测 100000002 与 100000001 同时在线），
 # 只有 BOT_UIN 这个号的事件才往下走。用全局 event_preprocessor，在任何 matcher（含解析插件）之前拦截。
 from nonebot.exception import IgnoredException  # noqa: E402
-from nonebot.message import event_preprocessor  # noqa: E402
+from nonebot.message import event_preprocessor, run_preprocessor  # noqa: E402
 
 import push_marks  # noqa: E402
 
@@ -94,21 +94,24 @@ async def _only_bot_account(bot, event, state) -> None:
     if _BOT_UIN and str(getattr(event, "self_id", "")) != _BOT_UIN:
         raise IgnoredException(f"非机器人账号 {getattr(event, 'self_id', '?')} 的事件")
     # SnowLuma 会把自己发的消息也当事件推上来；不挡掉的话，B 站推送里带的链接会被
-    # 解析插件再抓一次，它转发的聊天记录又带链接，一层层套下去。
-    if str(getattr(event, "user_id", "")) == str(getattr(event, "self_id", "")):
+    # 解析插件再抓一次，它转发的聊天记录又带链接，一层层套下去。只看消息事件。
+    if getattr(event, "post_type", "") in ("message", "message_sent") and str(getattr(event, "user_id", "")) == str(
+        getattr(event, "self_id", "")
+    ):
         raise IgnoredException("机器人自己发的消息")
-    # 第二层：刚推送出去的那批链接，就算换了个发送通道再回来，也不再当「用户贴的链接」解析。
+
+
+# 第二层：刚推送出去的链接不交给解析插件。只拦解析插件，人设和别的插件照常看到这条消息。
+@run_preprocessor
+async def _skip_pushed_links(matcher, event) -> None:
+    if not (getattr(matcher, "plugin_name", "") or "").startswith("nonebot_plugin_parser"):
+        return
     try:
-        text = getattr(event, "raw_message", "") or ""
-        if not text:
-            msg = getattr(event, "message", None)
-            text = msg.extract_plain_text() if msg is not None else ""
-        if push_marks.contains_recent(text):
-            raise IgnoredException("刚推送过的链接，不再重复解析")
-    except IgnoredException:
-        raise
+        text = getattr(event, "raw_message", "") or event.get_plaintext()
     except Exception:  # noqa: BLE001
-        pass
+        return
+    if push_marks.contains_recent(text):
+        raise IgnoredException("刚推送过的链接，不再重复解析")
 
 
 # 第三方解析插件要先加载，后面的 plugins 里有针对它的行为调优（只发视频不发封面）

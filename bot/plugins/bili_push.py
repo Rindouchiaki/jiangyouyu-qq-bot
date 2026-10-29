@@ -78,7 +78,8 @@ _SHOT_CSS = """
 html, body { background: #fff !important; }
 """
 
-# 动态页（t.bilibili.com）的动态外框，和专栏页（www.bilibili.com/read/cv…）的正文区
+# opus 页（www.bilibili.com/opus/…）的正文区；转发类动态会跳回 t.bilibili.com，那边是 .bili-dyn-item；
+# 专栏页（/read/cv…）是 .article-holder
 _SHOT_SELECTOR = ".bili-dyn-item, .bili-opus-view, .opus-detail, .article-holder, #read-article-holder"
 # 专栏能长到两万像素，只截开头一段，不然一张图好几兆
 _MAX_SHOT_H = int(os.getenv("BILI_SHOT_MAX_HEIGHT", "1600"))
@@ -103,14 +104,11 @@ async def _shot_card(url: str) -> bytes | None:
                 return None
             await el.scroll_into_view_if_needed()
             await page.wait_for_timeout(200)
-            box = await el.bounding_box()
-            if not box:
-                return await el.screenshot(type="png")
-            height = min(_MAX_SHOT_H, box["height"])
-            return await page.screenshot(
-                clip={"x": box["x"], "y": box["y"], "width": box["width"], "height": height},
-                type="png",
+            # 直接限元素高度再截：page.screenshot 的 clip 超出视口（1200）的部分会被裁掉
+            await el.evaluate(
+                "(e, h) => { e.style.maxHeight = h + 'px'; e.style.overflow = 'hidden'; }", _MAX_SHOT_H
             )
+            return await el.screenshot(type="png")
 
 
 async def _card_image(post) -> bytes | None:
@@ -282,7 +280,7 @@ if Bilibili is not None:
         """
         card = _cards.pop(0) if _cards else None
         notice = _notice_of(msgs)
-        # 记下这次推出去的链接：万一这条消息又被当成用户消息推回来，事件入口能认出来并忽略
+        # 记下这次推出去的链接：万一这条消息又被当成用户消息推回来，解析插件认出来就不解析
         try:
             for msg in msgs:
                 for seg in msg:
@@ -296,8 +294,6 @@ if Bilibili is not None:
         if notice and len(msgs) > 1:
             first = MessageFactory([notice, SaaImage(card)]) if card else MessageFactory(notice)
             await _send_msgs_dispatch(send_target, first)
-            await _send_msgs(send_target, msgs)
-            return
         await _send_msgs(send_target, msgs)
 
     bison_send.send_msgs = _send_msgs_with_notice

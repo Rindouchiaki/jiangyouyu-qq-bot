@@ -45,3 +45,22 @@ def test_clear():
     push_marks.clear()
     assert push_marks.size() == 0
     assert not push_marks.contains_recent("https://www.bilibili.com/opus/2")
+
+
+def main() -> int:
+    tests = [test_mark_and_hit, test_mark_many_urls, test_no_url, test_expire, test_clear]
+    ok = True
+    for fn in tests:
+        try:
+            fn()
+            print("PASS ", fn.__name__)
+        except AssertionError as exc:
+            ok = False
+            print("FAIL ", fn.__name__, exc)
+    push_marks.clear()
+    print("结果:", "全部通过" if ok else "有失败")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
