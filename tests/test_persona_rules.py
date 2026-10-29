@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 from persona_rules import (  # noqa: E402
     ATTITUDE_LINES,
     CUTE_CHANCE,
+    CUTE_ENDINGS,
     SEARCH_PRELUDES,
     SEARCH_PRELUDES_COLD,
     SHY_COAXED,
@@ -469,6 +470,9 @@ def main() -> int:
     plain_tone = compose_messages([], "小红", "在吗", attitude="亲近")[0]["content"]
     cold = compose_messages([], "小红", "在吗", attitude="陌生")[0]["content"]
     assert "我也不知道喵" in cute and "别带「喵」" in plain_tone and "我也不知道喵" not in cold and "别带「喵」" not in cold
+    # 语气词表：有「呢」「呀」，不收网友腔的「捏」「哒」；抽中才进提示词
+    assert {"呢", "呀", "喵", "的说"} <= set(CUTE_ENDINGS) and not {"捏", "哒"} & set(CUTE_ENDINGS)
+    assert "「呢」「呀」" in cute and "「唔…」" in cute and "「呢」「呀」" not in plain_tone.split("对正在跟你说话的这个人")[-1]
     assert "不用「…」" in ATTITUDE_LINES["陌生"]
     assert humanize("才没有很喜欢你呢...") == "才没有很喜欢你呢…" and humanize("……才不是") == "…才不是"
     assert humanize("知道啦~") == "知道啦~"
