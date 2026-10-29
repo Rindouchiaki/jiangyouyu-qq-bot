@@ -477,6 +477,7 @@ def judge_annoyance(
     recent_texts: list[str],
     window_seconds: float = 45.0,
     threshold: int = 5,
+    min_n: int = 3,
 ) -> tuple[bool, str]:
     """区分「正常聊天」和「追着问」。
 
@@ -484,7 +485,7 @@ def judge_annoyance(
     - 话多但每句都不一样、还带接梗词 → 正常聊天，不烦
     """
     n = len(recent_texts)
-    if n < 3:
+    if n < min_n:
         return False, ""
 
     # 1) 几乎在重复同一句
@@ -503,6 +504,16 @@ def judge_annoyance(
         return True, f"{window_seconds:.0f} 秒内连发 {n} 条且内容雷同"
 
     return False, ""
+
+
+# 好感越低越容易烦：几条追问就不耐烦（讨厌的人一句就够）；刷屏条数 PESTER_COUNT 跟着少同样的数
+ANNOY_MIN = {"讨厌": 1, "陌生": 2, "普通": 2, "有好感": 3, "亲近": 3}
+
+
+def annoy_limits(att: str | None, base: int) -> tuple[int, int]:
+    """这个态度档下 judge_annoyance 的（刷屏条数, 最少看几条）。"""
+    min_n = ANNOY_MIN.get(att or "普通", 3)
+    return max(min_n, base - (3 - min_n)), min_n
 
 
 # 群聊每分钟总额度用到这个比例就停掉对应回复：插话/自动配图最先停，被叫最后停
@@ -686,10 +697,15 @@ def build_system_prompt(
         )
 
     warm = attitude in ("有好感", "亲近")
-    if mood == "炸毛" and warm:
+    hate = attitude == "讨厌"
+    if mood == "炸毛" and hate:
+        system += "\n\n你被这个讨厌的人惹到了：不慌、不虚张声势，冷冷地直接怼回去（「你谁啊」「管好你自己」「啧，有完没完」），句子短、语气冲。"
+    elif mood == "炸毛" and warm:
         system += "\n\n你被他惹到了：委屈、有点慌，不回嘴，憋出一句「笨、笨蛋…」「干嘛欺负我啦」就好，句子短。"
     elif mood == "炸毛":
         system += "\n\n你现在被惹急了：二次元傲娇式炸毛，「你、你说什么呢！」「笨蛋！」那种，又急又有点慌，句子短；只是虚张声势，不骂人、不带脏字。"
+    elif mood == "不耐烦" and hate:
+        system += "\n\n你烦透这个人了：「啧」一声打发掉（「啧，烦死了」「别烦我」），不解释、不道歉，之后不想再理他。"
     elif mood == "不耐烦" and warm:
         system += "\n\n你有点招架不住了，想换个话题：别别扭扭地岔开（「哼…不说这个了啦」），语气还是软的。"
     elif mood == "不耐烦":
@@ -703,14 +719,16 @@ def build_system_prompt(
         if bond:
             nums = f"（好感 {int(bond[0])}/100，熟悉度 {int(bond[1])}/100）"
         system += f"\n\n对正在跟你说话的这个人{nums}：{ATTITUDE_LINES[attitude]}"
+    if hate:
+        system += f"\n\n{HATE_LINE}"
     if shy:
         system += f"\n\n{shy}"
     elif dere:
         system += f"\n\n{DERE_LINE}"
-    elif attitude in ("讨厌", "陌生"):
-        # 没好感/讨厌的人不用主动示好，但也不用故意找茬
+    elif attitude == "陌生":
+        # 没好感的人不用主动示好，但也不用故意找茬
         system += "\n\n这一句不用主动示好，保持距离、正常说话就行。"
-    else:
+    elif not hate:
         system += "\n\n这一句正常聊就好，不用特意傲娇、不用嘴硬。"
     if cute:
         system += f"\n\n{CUTE_LINE}"
@@ -926,6 +944,7 @@ def compose_messages(
 # ---------------------------------------------------------------- 好感度 / 熟悉度
 # 好感 -100~100、熟悉 0~100，按 QQ 号存，群聊私聊共用。难涨，但正常来往守得住：
 # - 好感不按单句关键词算，由模型隔几轮看整段聊天打分（-2~+2，见 diary_user_prompt），另外只有被追着烦会扣；
+# - 扣过以后 12 小时内再扣就加码（grudge_loss），12 小时没再扣才从头算；
 # - 每天涨的上限按当天起点 3 / 2 / 1（<30 / <60 / 其它），一天最多掉 15；
 # - 熟悉度是私聊过的天数：那天私聊过 +1，群里聊得再多也不加；只有「亲近」看它，所以没私聊过的人最多到「有好感」；
 # - 只要还在来往好感就不自己掉；48 小时没来往起每天掉 1、2、3（之后每天 3），掉到初始值为止；记仇（负的）每 7 天回 1。
@@ -951,12 +970,26 @@ def new_bond() -> dict:
 
 # 只用来判断情绪（生气），不再按它扣好感：骂别的事、骂游戏也会命中
 _AFF_RUDE = ("傻逼", "sb", "闭嘴", "恶心", "有病", "滚", "废物", "垃圾", "去死", "拉黑", "爬", "丑")
-# 被追着烦：她表现出不高兴算第 1 次，之后同一个人隔不到 10 分钟还不停手（@ 她、喊她、抓着那个话题不放），
-# 第 3 次起每次都扣，越扣越多：-1、-2、-3，之后每次 -3（一天最多掉 DAY_AFF_LOSS）
-PESTER_LOSSES = (-1, -2, -3)
-PESTER_AT_COUNT = 3
+# 被追着烦：她表现出不高兴算第 1 次，之后同一个人隔不到 10 分钟还不停手（@ 她、喊她、抓着那个话题不放）就扣；
+# 好感越低越早扣：讨厌 / 陌生 / 普通第 2 次，有好感 / 亲近第 3 次。每次扣 PESTER_LOSS，再按 grudge_loss 加码
+PESTER_AT_COUNT = {"讨厌": 2, "陌生": 2, "普通": 2, "有好感": 3, "亲近": 3}
 PESTER_AT_WINDOW = 600
 PESTER_TOPIC_SIM = 0.3
+PESTER_LOSS = -1
+# 扣过好感后 12 小时内再扣，扣过几次就多扣几（-1、-2、-3…，一次最多 -5）；12 小时没再扣才从头算，不跟着话题清零
+GRUDGE_SEC = 12 * 3600
+GRUDGE_MAX_LOSS = -5
+
+
+def pester_need(att: str | None) -> int:
+    """算上不高兴那次，第几次纠缠开始扣好感。"""
+    return PESTER_AT_COUNT.get(att or "普通", 3)
+
+
+def grudge_loss(delta: int, sour: list | None, now: float) -> tuple[int, list]:
+    """要扣 delta（负数）：12 小时内扣过几次就多扣几。返回（实际扣多少, 新的 [上次扣的时间, 连着扣了几次]）。"""
+    times = int(sour[1]) if sour and now - float(sour[0]) <= GRUDGE_SEC else 0
+    return max(GRUDGE_MAX_LOSS, delta - times), [now, times + 1]
 
 
 def keeps_pestering(text: str, at: bool, called: bool, pressed: list[str] | tuple[str, ...] = ()) -> bool:
@@ -966,19 +999,22 @@ def keeps_pestering(text: str, at: bool, called: bool, pressed: list[str] | tupl
     return any(_similarity(text, p) >= PESTER_TOPIC_SIM for p in pressed if p)
 
 
-def pester_step(state: list | None, now: float) -> tuple[list | None, int]:
-    """又纠缠了一次。state 是 [上次时间, 第几次, 让她烦的那几句]（不高兴那次记第 1 次）；返回（新 state, 这次扣多少，0 = 不扣）。"""
+def pester_step(state: list | None, now: float, need: int = 3) -> tuple[list | None, bool]:
+    """又纠缠了一次。state 是 [上次时间, 第几次, 让她烦的那几句]（不高兴那次记第 1 次）；返回（新 state, 这次扣不扣）。"""
     if not state or now - state[0] > PESTER_AT_WINDOW:
-        return None, 0
+        return None, False
     count = int(state[1]) + 1
-    if count < PESTER_AT_COUNT:
-        return [now, count, *state[2:]], 0
-    return [now, count, *state[2:]], PESTER_LOSSES[min(count - PESTER_AT_COUNT, len(PESTER_LOSSES) - 1)]
+    return [now, count, *state[2:]], count >= need
 
 
 # 回复里出现这些就不发：人设再傲也不能骂人（模型偶尔会被带偏）
 # 只留真脏话和人身攻击；「滚」「垃圾」「废物」「白痴」在傲娇斗嘴里太常见，命中就整句丢掉会表现成「不回话」
 _OFFENSIVE = ("傻逼", "sb", "煞笔", "脑残", "智障", "去死", "贱人", "妈的", "他妈", "操你", "cnm", "nmsl", "滚蛋", "滚你", "滚开", "死全家")
+
+
+def is_silent(text: str) -> bool:
+    """模型整段只说了 [不回]。"""
+    return bool(_SILENT.match(text or ""))
 
 
 def is_offensive(text: str) -> bool:
@@ -1051,10 +1087,13 @@ def update_bond(
     now = time.time() if now is None else now
     if dev:
         bond = dev_floor(bond or {})
-        delta = delta * 2 if delta > 0 else int(delta / 2)
     b = {"aff": INITIAL_AFF, "fam": INITIAL_FAM, "last": 0.0, "day": -1, "day_aff": 0, **(bond or {})}
     b["aff"], b["fam"] = int(b["aff"]), int(b["fam"])
     b.pop("day_fam", None)
+    if delta < 0:
+        delta, b["sour"] = grudge_loss(delta, b.get("sour"), now)
+    if dev:
+        delta = delta * 2 if delta > 0 else int(delta / 2)
     if met:
         b = _fade(b, now)
     day = _local_day(now)
@@ -1078,8 +1117,8 @@ def update_bond(
 # 平时对人的态度主要体现在热不热情、积不积极，不是句句傲娇
 ATTITUDE_LINES = {
     "讨厌": (
-        "你讨厌这个人：冷冰冰的，话少、爱答不理（「…哦。」「不想理你」「跟你没关系吧」），能不接就不接；"
-        "不害羞、不撒娇，不带语气词和「…」；但不辱骂、不人身攻击。"
+        "你是真的讨厌这个人：没有一点好态度，冷、话少、爱答不理（「哦。」「啧」「不想理你」「跟你没关系吧」），能不接就不接；"
+        "不害羞、不撒娇、不傲娇，不带语气词和「…」。"
     ),
     "陌生": (
         "你对这个人没什么好感：没那么关心，正常回但不热络、不主动搭话，多数时候淡淡的，偶尔犟一句嘴（「要你管」）；"
@@ -1089,6 +1128,14 @@ ATTITUDE_LINES = {
     "有好感": "你挺喜欢这个人：比平时积极，愿意多聊、会接话题、会反问他、会关心他，语气软一点。",
     "亲近": "这是你很亲近的人：很积极、很热情，话多、会主动找话题、会护着他、会关心他，跟他聊天明显开心。",
 }
+# 讨厌的人：人设里心软、认软、斗嘴没恶意那些都不算，就是单纯讨厌；只守住不说脏话、不人身攻击
+HATE_LINE = (
+    "对这个讨厌的人，前面说的心软、弱气、怕羞、认软服软、斗嘴没恶意、对方不高兴就收着，统统不算：你就是单纯讨厌他。"
+    "不给好脸色，不傲娇、不害羞、不慌、不委屈；他抱怨你态度差也不道歉、不哄他。"
+    "他惹你、找茬、阴阳你，就直接怼回去，语气可以冲、可以嘴毒，别让自己受委屈；"
+    "不想搭理就敷衍、咂个嘴（「啧」「哦」「关我啥事」「烦不烦」），完全不想理就只输出 " + SILENT_MARK + "。"
+    "底线只有一条：不说脏话、不人身攻击，不拿外貌、身材、家人、成绩之类开刀。"
+)
 # 接续时回话概率的倍数：熟的人更愿意搭理，讨厌的人爱答不理
 ATTITUDE_REPLY_FACTOR = {"讨厌": 0.6, "陌生": 0.8, "普通": 1.0, "有好感": 1.15, "亲近": 1.3}
 # 喊名字（没 @）时回不回看态度：好感低大概率不理，亲近的必回（这是默认档的值，别的档按被叫概率等比缩放）
@@ -1181,7 +1228,7 @@ def is_coaxing(text: str) -> bool:
 
 
 SHY_LINES = {
-    "讨厌": "他在说让人害羞的话，你只觉得烦：冷冷一句带过（「不喜欢」「少来」），不害羞、不傲娇。",
+    "讨厌": "他在说让人害羞的话，你只觉得烦：冷冷一句带过（「不喜欢」「少来」「啧，想多了」），不害羞、不傲娇。",
     "陌生": "你对他没什么好感，他突然说这种话有点莫名其妙：淡淡带过（「…干嘛突然说这个」「问这干嘛」），有点不高兴，不害羞、不傲娇。",
     "大声": "被戳到了：傲娇式大声否认（「哈？才不会喜欢你这种人呢」「谁、谁要你夸啊」），又急又有点慌；嘴上否认，其实没生气。",
     "小声": "被戳中了：小声、别别扭扭地否认，其实等于承认（「才没有非常喜欢你呢…」「…笨蛋，谁要你关心」），可以带「…」。",

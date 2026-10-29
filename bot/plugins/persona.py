@@ -66,9 +66,11 @@ from persona_rules import (
     DEFAULT_GAME_PREFIXES,
     DIARY_GROUP_PROMPT,
     HATE_AFF,
+    PESTER_LOSS,
     SHY_COAXED,
     SHY_HIDE_SEC,
     SHY_WINDOW,
+    annoy_limits,
     attitude,
     chime_backoff,
     compose_messages,
@@ -81,6 +83,7 @@ from persona_rules import (
     is_coaxing,
     is_conversation_ending,
     is_offensive,
+    is_silent,
     is_bili_command,
     is_game_command,
     is_question,
@@ -106,6 +109,7 @@ from persona_rules import (
     shy_topic,
     split_at_batch,
     at_history,
+    pester_need,
     pester_step,
     keeps_pestering,
     split_reply,
@@ -735,7 +739,7 @@ def _bond_touch(user_id: str, name: str, delta: int, private: bool = False) -> d
 
 
 def _count_pester_at(key: str, batch: list[dict], now: float) -> None:
-    """她不高兴算第 1 次，之后同一个人还不停手（@、喊她、抓着话题不放），第 3 次起每次扣好感；重想时同一条不重复算。"""
+    """她不高兴算第 1 次，之后同一个人还不停手（@、喊她、抓着话题不放），好感越低越早开始扣；重想时同一条不重复算。"""
     for it in batch:
         mark = (key, it["uid"])
         if it.get("pester_seen") or mark not in _upset:
@@ -744,14 +748,15 @@ def _count_pester_at(key: str, batch: list[dict], now: float) -> None:
         pressed = _upset[mark][2] if len(_upset[mark]) > 2 else ()
         if not keeps_pestering(it["text"], it["at"], it["called"], pressed):
             continue
-        state, loss = pester_step(_upset.get(mark), now)
+        pre = bonds.user(it["uid"])
+        state, hit = pester_step(_upset.get(mark), now, pester_need(attitude(int(pre.get("aff", 0)), int(pre.get("fam", 0)))))
         if state is None:
             _upset.pop(mark, None)
             continue
         _upset[mark] = state
-        if loss:
-            _bond_touch(it["uid"], it["name"], loss)
-            logger.info(f"persona: {it['name']} 她不高兴了还纠缠（第 {state[1]} 次），好感 {loss}")
+        if hit:
+            rec = _bond_touch(it["uid"], it["name"], PESTER_LOSS)
+            logger.info(f"persona: {it['name']} 她不高兴了还纠缠（第 {state[1]} 次），好感 {pre.get('aff')} → {rec.get('aff')}")
 
 
 async def _diary_user(user_id: str, name: str, lines: list[tuple[str, str]], src: str) -> None:
@@ -1235,16 +1240,22 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
 
     # --- 被追问到烦：先冷淡答题，再主动收尾 ---
     same_user = [t for (uid, t, ts) in _recent_user_msgs[key] if uid == user_id]
-    annoyed, why = judge_annoyance(same_user, PESTER_WINDOW, PESTER_COUNT)
+    pre = bonds.user(user_id)
+    # 好感越低越容易烦
+    annoyed, why = judge_annoyance(
+        same_user, PESTER_WINDOW, *annoy_limits(attitude(int(pre.get("aff", 0)), int(pre.get("fam", 0))), PESTER_COUNT)
+    )
     if is_group and annoyed:
-        # 这次只表现出不高兴、不扣好感；之后他还追着 @ 才扣（见 _count_pester_at）
+        # 这次只表现出不高兴、不扣好感；之后他还纠缠才扣（见 _count_pester_at）
         pester = _bond_touch(user_id, name, 0)
+        pester_att = attitude(int(pester.get("aff", 0)), int(pester.get("fam", 0)))
         # 已经在不高兴的那段里就不从头数（那几条前面按纠缠算过了）
         if pester_step(_upset.get((key, user_id)), now)[0] is None:
             _upset[(key, user_id)] = [now, 1, same_user[-5:]]
-        # 喜欢的人追着烦：别别扭扭地岔开；好感不高的：二次元式地打发掉
-        pester_att = attitude(int(pester.get("aff", 0)), int(pester.get("fam", 0)))
-        snub_line = "…不想说这个了啦" if pester_att in ("有好感", "亲近") else "哼，不想聊了"
+        # 喜欢的人追着烦：别别扭扭地岔开；讨厌的：啧一声；其它：二次元式地打发掉
+        snub_line = (
+            "…不想说这个了啦" if pester_att in ("有好感", "亲近") else "啧，烦死了" if pester_att == "讨厌" else "哼，不想聊了"
+        )
         _snub_until[key] = now + SNUB_SECONDS
         _engaged.pop(key, None)
         messages = compose_messages(
@@ -1258,6 +1269,9 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             raw = await ask_llm(messages)
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"persona: 收尾回复失败 {type(exc).__name__}: {exc}")
+            return True
+        if is_silent(raw):
+            logger.info(f"persona: 嫌烦收尾，懒得理 {name}（{why}）")
             return True
         reply = humanize(raw, MAX_CHARS, fallback=snub_line)
         if is_offensive(reply):

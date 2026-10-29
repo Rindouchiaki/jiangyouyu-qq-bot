@@ -22,9 +22,14 @@ from persona_rules import (  # noqa: E402
     CLOSE_FAM,
     INITIAL_AFF,
     INITIAL_FAM,
-    PESTER_AT_COUNT,
     PESTER_AT_WINDOW,
+    GRUDGE_SEC,
+    HATE_LINE,
+    annoy_limits,
     at_history,
+    grudge_loss,
+    is_silent,
+    pester_need,
     pester_step,
     keeps_pestering,
     MAX_CHARS_DEFAULT,
@@ -184,6 +189,14 @@ def main() -> int:
         ok = got == want
         print(f"{'PASS' if ok else 'FAIL'}  烦={got}（{why or '还好'}）")
         failed += 0 if ok else 1
+    # 好感越低越容易烦：讨厌 1 句、陌生 / 普通 2 句、有好感 / 亲近 3 句
+    assert [annoy_limits(a, 5)[1] for a in ("讨厌", "陌生", "普通", "有好感", "亲近")] == [1, 2, 2, 3, 3]
+    assert annoy_limits("讨厌", 5) == (3, 1) and annoy_limits("普通", 5) == (4, 2) and annoy_limits("亲近", 5) == (5, 3)
+    assert judge_annoyance(["在吗？"], 45, *annoy_limits("讨厌", 5))[0]
+    assert not judge_annoyance(["哈哈哈笑死"], 45, *annoy_limits("讨厌", 5))[0]  # 一句闲聊不算
+    assert judge_annoyance(["在吗", "在吗"], 45, *annoy_limits("普通", 5))[0]
+    assert not judge_annoyance(["在吗", "在吗"], 45, *annoy_limits("亲近", 5))[0]
+    print("PASS  annoy_limits：好感越低越容易烦")
 
     print()
     for text, want in [
@@ -342,30 +355,42 @@ def main() -> int:
     assert parse_user_diary("喜欢原神") == (0, ["喜欢原神"]) and parse_user_diary("") == (0, [])
     assert "不算对我" in diary_user_prompt("普通") and "要好感" in diary_user_prompt("亲近")
     assert "没什么好感" in diary_user_prompt("普通") and "没什么好感" not in diary_user_prompt("有好感")
-    assert PESTER_AT_COUNT == 3
-    # 不高兴那次算第 1 次：再纠缠一次不扣，第 3 次起越扣越多 -1、-2、-3，之后每次 -3；隔太久就清掉
+    # 好感越低越早扣（算上不高兴那次）：讨厌 / 陌生 / 普通第 2 次，有好感 / 亲近第 3 次
+    assert [pester_need(a) for a in ("讨厌", "陌生", "普通", "有好感", "亲近")] == [2, 2, 2, 3, 3]
     pressed = ["你到底喜不喜欢我", "说啊喜不喜欢我"]
-    st, loss = pester_step([t0, 1, pressed], t0 + 10)
-    assert st == [t0 + 10, 2, pressed] and loss == 0
-    losses = []
-    for i in range(5):
-        st, loss = pester_step(st, t0 + 20 + i * 10)
+    st, hit = pester_step([t0, 1, pressed], t0 + 10)
+    assert st == [t0 + 10, 2, pressed] and not hit
+    assert pester_step([t0, 1, pressed], t0 + 10, pester_need("普通"))[1]
+    st, hit = pester_step(st, t0 + 20)
+    assert hit and st[1] == 3 and st[2] == pressed, st
+    # 扣过以后 12 小时内再扣就加码：-1、-2、-3、-4、-5，之后每次 -5；换了话题也不从头算，12 小时没扣才清
+    sour, losses = None, []
+    for i in range(7):
+        loss, sour = grudge_loss(-1, sour, t0 + i * 3 * 3600)
         losses.append(loss)
-    assert losses == [-1, -2, -3, -3, -3] and st[1] == 7 and st[2] == pressed, (losses, st)
+    assert losses == [-1, -2, -3, -4, -5, -5, -5], losses
+    assert grudge_loss(-1, sour, sour[0] + GRUDGE_SEC + 1) == (-1, [sour[0] + GRUDGE_SEC + 1, 1])
+    assert grudge_loss(-2, [t0, 2], t0 + 60)[0] == -4  # 日记打的负分也一样加码
+    sore = update_bond({"aff": 20, "fam": 0}, -1, t0, met=False)
+    sore = update_bond(sore, -1, t0 + 6 * 3600, met=False)
+    assert sore["aff"] == 17 and sore["sour"] == [t0 + 6 * 3600, 2], sore  # 几小时后又惹她，还在 12 小时内就接着加码
+    calm_down = update_bond(sore, -1, t0 + 6 * 3600 + GRUDGE_SEC + 1, met=False)
+    assert calm_down["aff"] == 16, calm_down  # 12 小时没扣过就从 -1 重来
+    assert update_bond(sore, 1, t0 + 7 * 3600, met=False)["sour"] == sore["sour"]  # 涨好感不清记仇
     st = [t0 + 40, 5, pressed]
     # 纠缠不一定要 @：喊她、抓着那件事不放都算；和别人聊别的不算
     assert keeps_pestering("哈哈", True, False) and keeps_pestering("酱油鱼你说嘛", False, True)
     assert keeps_pestering("所以到底喜不喜欢我嘛", False, False, pressed)
     assert not keeps_pestering("今晚吃什么", False, False, pressed)
-    assert pester_step(st, t0 + 40 + PESTER_AT_WINDOW + 1) == (None, 0)
-    assert pester_step(None, t0) == (None, 0)
+    assert pester_step(st, t0 + 40 + PESTER_AT_WINDOW + 1) == (None, False)
+    assert pester_step(None, t0) == (None, False)
     # 一路纠缠下去：一天最多掉 15
     worn = {"aff": 50, "fam": 0}
     st = [t0, 1, pressed]
     for i in range(12):
-        st, loss = pester_step(st, t0 + 10 * (i + 1))
-        if loss:
-            worn = update_bond(worn, loss, t0 + 10 * (i + 1), met=False)
+        st, hit = pester_step(st, t0 + 10 * (i + 1))
+        if hit:
+            worn = update_bond(worn, -1, t0 + 10 * (i + 1), met=False)
     assert worn["aff"] == 50 - 15, worn
     print("PASS  parse_user_diary / diary_user_prompt：好感看整段打分")
 
@@ -410,6 +435,14 @@ def main() -> int:
     assert "有点欠" not in sys_of(hour=3) and "底子还是你自己" in sys_of(group_style=["爱玩谐音梗"])
     assert all("啧" not in p for p in SEARCH_PRELUDES) and all(p.startswith("啧") for p in SEARCH_PRELUDES_COLD)
     assert "不想理你" in ATTITUDE_LINES["讨厌"] and "所以呢" not in ATTITUDE_LINES["讨厌"]
+    # 讨厌的人：单纯讨厌，不傲娇不委屈，被惹直接怼回去，可以不理；底线是不脏话不人身攻击
+    hate = sys_of(attitude="讨厌")
+    assert HATE_LINE in hate and SILENT_MARK in hate and "人身攻击" in HATE_LINE and "不傲娇" in HATE_LINE
+    assert "正常聊就好" not in hate and "保持距离" not in hate and HATE_LINE not in sys_of(attitude="陌生")
+    hate_mad = sys_of(mood="炸毛", attitude="讨厌")
+    assert "怼回去" in hate_mad and "傲娇式炸毛" not in hate_mad and "干嘛欺负我" not in hate_mad
+    assert "啧" in sys_of(mood="不耐烦", attitude="讨厌") and "哼，不想聊了" not in sys_of(mood="不耐烦", attitude="讨厌")
+    assert is_silent("[不回]") and is_silent(" 【不回】 ") and not is_silent("不回你")
     print("PASS  弱气是内在：好感不高的装凶回嘴，喜欢的委屈不回嘴；讨厌的人求助可以啧一声不帮")
 
     # 害羞话题：认得出、按好感反应，追问会躲（不直接改好感）
