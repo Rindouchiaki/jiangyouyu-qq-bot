@@ -32,6 +32,14 @@ $vlWatch = $cfg.VlEnabled -and ((Test-Path (Join-Path $cfg.Tools 'llama.cpp\bin\
 # 没启动过、或者用户刚用「一键停止」停过：什么都不做
 if (-not (Test-Path $flag)) { return }
 
+# 一键启动刚跑过（标记刚写）：这轮让给它，别和它同时拉开同一个服务
+$flagAge = (Get-Date) - (Get-Item -LiteralPath $flag).LastWriteTime
+if ($flagAge.TotalMinutes -lt 4) { return }
+# 另一个 start-all 还在跑：也让它
+$starting = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -and $_.CommandLine -like '*start-all-here.ps1*' })
+if ($starting.Count -gt 0) { return }
+
 function Test-Listening([int]$port) {
     return [bool](Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1)
 }
