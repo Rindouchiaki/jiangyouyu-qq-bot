@@ -14,13 +14,13 @@ import time
 import httpx
 from nonebot.log import logger
 
-from persona_rules import compact_desc
+from persona_rules import bili_notice, bili_shot_url, compact_desc
 
 try:
     import nonebot_bison.send as bison_send
     from nonebot_bison.platform.bilibili.platforms import Bilibili, Bilibililive
     from nonebot_bison.post.abstract_post import AbstractPost
-    from nonebot_plugin_htmlrender import html_to_pic
+    from nonebot_plugin_htmlrender import get_render_context, html_to_pic
     from nonebot_plugin_saa import Image as SaaImage
     from nonebot_plugin_saa import MessageFactory
     from nonebot_plugin_saa.auto_select_bot import refresh_bots
@@ -72,51 +72,51 @@ _SHOT_CSS = """
 html, body { background: #fff !important; }
 """
 
-_shot_browser = None
+# 动态页（t.bilibili.com）和跳转过去的 opus 页，那条动态的外框各叫这几个名字
+_SHOT_SELECTOR = ".bili-dyn-item, .bili-opus-view, .opus-detail"
 _shot_lock = asyncio.Lock()
+# 同一条动态订了几个群就会生成几次消息，截过的按链接留 10 分钟
+_CARD_TTL = 600
+_card_cache: dict[str, tuple[float, bytes | None]] = {}
 
 
-async def _shot_card(post) -> bytes | None:
-    """直接截 B 站动态页里那条动态，省得本地拼版。"""
-    global _shot_browser
-    url = getattr(post, "url", None)
-    if not isinstance(url, str) or not url.startswith("http"):
-        return None
-    from playwright.async_api import async_playwright
-
+async def _shot_card(url: str) -> bytes | None:
+    """直接截 B 站动态页里那条动态，省得本地拼版；浏览器用 htmlrender 共享的那个（断了它会重开）。"""
     async with _shot_lock:
-        if _shot_browser is None:
-            pw = await async_playwright().start()
-            _shot_browser = await pw.chromium.launch(headless=True)
-        ctx = await _shot_browser.new_context(
+        async with get_render_context(
             viewport={"width": 900, "height": 1200}, device_scale_factor=1.5, user_agent=_UA
-        )
-        try:
-            page = await ctx.new_page()
+        ) as page:
             await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-            await page.wait_for_selector(".bili-dyn-item", timeout=15000)
+            await page.wait_for_selector(_SHOT_SELECTOR, timeout=15000)
             await page.add_style_tag(content=_SHOT_CSS)
             await page.wait_for_timeout(400)
-            el = await page.query_selector(".bili-dyn-item")
+            el = await page.query_selector(_SHOT_SELECTOR)
             if el is None:
                 return None
             await el.scroll_into_view_if_needed()
             await page.wait_for_timeout(200)
             return await el.screenshot(type="png")
-        finally:
-            await ctx.close()
 
 
 async def _card_image(post) -> bytes | None:
-    """优先截 B 站上的原动态；截不到再退回本地画一张。"""
+    """优先截 B 站上的原动态；截不到再退回本地画一张。只有要发通知条的动态才有 _card_url。"""
+    url = getattr(post, "_card_url", "")
+    if not url:
+        return None
+    now = time.time()
+    for key in [k for k, (ts, _) in _card_cache.items() if now - ts > _CARD_TTL]:
+        _card_cache.pop(key, None)
+    if url in _card_cache:
+        return _card_cache[url][1]
     try:
-        shot = await asyncio.wait_for(_shot_card(post), timeout=35)
+        card = await asyncio.wait_for(_shot_card(url), timeout=35)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"bili_push: 原页截图没成，改用本地画卡（{type(exc).__name__}: {exc}）")
-        shot = None
-    if shot:
-        return shot
-    return await _drawn_card(post)
+        card = None
+    if not card:
+        card = await _drawn_card(post)
+    _card_cache[url] = (now, card)
+    return card
 
 
 async def _drawn_card(post) -> bytes | None:
@@ -203,6 +203,8 @@ if Bilibili is not None:
                 _compact(post, "新视频")
             elif cat == LIVE_DYN_CAT:
                 _compact(post, "直播")
+            else:
+                post._card_url = bili_shot_url(getattr(raw_post, "id_str", None)) or (post.url or "")
         except Exception as exc:  # noqa: BLE001
             logger.debug(f"bili_push: 动态样式没改成（{type(exc).__name__}: {exc}）")
         return post
@@ -235,22 +237,9 @@ if Bilibili is not None:
     _send_msgs = bison_send.send_msgs
 
     def _notice_of(msgs) -> str:
-        """从 Bison 拼好的消息里抠出「来源」「详情」，拼一条通知（只有图文这种多条消息才发）。"""
-        name = url = ""
-        for msg in msgs:
-            for seg in msg:
-                text = getattr(seg, "data", {}).get("text")
-                if not text:
-                    continue
-                for line in text.splitlines():
-                    line = line.strip()
-                    if line.startswith("来源: "):
-                        name = line[len("来源: "):].replace("B站 ", "").strip()
-                    elif line.startswith("详情: "):
-                        url = line[len("详情: "):].strip()
-        if not url:
-            return ""
-        return f"【{name or 'B站'}】更新了新动态！\n传送门：{url}"
+        """从 Bison 拼好的消息里抠出文字段，交给 bili_notice 拼通知（只有图文这种多条消息才发）。"""
+        texts = [getattr(seg, "data", {}).get("text") or "" for msg in msgs for seg in msg]
+        return bili_notice(texts)
 
     _cards: list[bytes | None] = []
 
@@ -261,8 +250,7 @@ if Bilibili is not None:
         msgs = await _gen_messages(self)
         card = None
         try:
-            if getattr(getattr(self, "platform", None), "platform_name", "") == "bilibili":
-                card = await _card_image(self)
+            card = await _card_image(self)
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"bili_push: 卡片没画出来（{type(exc).__name__}: {exc}）")
         _cards.append(card)

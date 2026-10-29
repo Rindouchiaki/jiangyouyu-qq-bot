@@ -14,9 +14,9 @@ from bot_guard import is_our_bot
 from persona_rules import (
     BILI_DYN_CATS,
     BILI_LIVE_DYN_CAT,
-    BILI_LIVE_DYN_LABEL,
     GROUP_SUB_USAGE,
     PRIVATE_SUB_USAGE,
+    bili_cat_name,
     bili_sub_cats,
     parse_sub_command,
 )
@@ -117,13 +117,6 @@ async def _ups(user) -> dict[str, dict]:
     return ups
 
 
-def _cat_name(c: int) -> str:
-    """类别号 → 中文；Bison 的 6 是动态里的「直播推送」，我们平时不订它（开播走 bilibili-live）。"""
-    if c in BILI_DYN_CATS:
-        return BILI_DYN_CATS[c]
-    return BILI_LIVE_DYN_LABEL if c == BILI_LIVE_DYN_CAT else str(c)
-
-
 def _kinds(up: dict) -> str:
     raw = up["dyn"] or []
     # 6（直播推送）跟开播提醒重复，列出来的时候不提它，免得看着像订了两份
@@ -131,7 +124,7 @@ def _kinds(up: dict) -> str:
     if dyn == sorted(BILI_DYN_CATS) and up["live"]:
         kinds = ["全部"]
     else:
-        kinds = [_cat_name(c) for c in dyn] + (["直播"] if up["live"] else [])
+        kinds = [bili_cat_name(c) for c in dyn] + (["直播"] if up["live"] else [])
     kinds += up["other"]
     tags = f"｜标签 {'、'.join(up['tags'])}" if up["tags"] else ""
     return ("、".join(kinds) or "（没选类别）") + tags

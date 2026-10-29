@@ -62,6 +62,18 @@ def main() -> int:
     assert pr.bili_sub_cats(["直播"]) == ([], True)
     assert isinstance(pr.bili_sub_cats(["番剧"]), str)
 
+    assert pr.bili_cat_name(3) == "视频"
+    assert pr.bili_cat_name(6) == "直播推送"
+    assert pr.bili_cat_name(9) == "9"
+
+    texts = ["今天发了个图\n来源: B站 绝区零 的转发\n\n详情: https://t.bilibili.com/123", ""]
+    assert pr.bili_notice(texts) == "【绝区零】更新了新动态！\n传送门：https://t.bilibili.com/123"
+    assert pr.bili_notice(["来源: B站 绝区零"]) == ""  # 没有详情链接不发通知
+    assert pr.bili_notice(["详情: https://t.bilibili.com/1"]).startswith("【B站】")
+
+    assert pr.bili_shot_url("1066") == "https://t.bilibili.com/1066"
+    assert pr.bili_shot_url(None) == "" and pr.bili_shot_url("") == ""
+
     assert pr.compact_desc("一行\n\n两行  三行") == "一行 两行 三行"
     assert pr.compact_desc("啊" * 80, 10) == "啊" * 10 + "…"
 
