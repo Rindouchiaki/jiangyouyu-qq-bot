@@ -263,8 +263,6 @@ _DEFAULT_MODE = {"group": "默认", "private": "默认"}
 _mode_state = dict(_DEFAULT_MODE)
 # 按群覆盖：group_<群号> -> 模式名；没单独设过的群用 _mode_state['group']
 _group_modes: dict[str, str] = {}
-# 按群覆盖插话概率：group_<群号> -> 0~1；没设过就用当前档位的 chime
-_chime_override: dict[str, float] = {}
 
 
 def _chat_kind(event) -> str:
@@ -293,13 +291,6 @@ def _mode_desc(cfg: dict) -> str:
         f"插话 {float(cfg.get('chime', 0)):.0%} / 冷却 {cfg['cd']:.0f}s / "
         f"没被 @ 间隔 {cfg['gap']:.0f}s / 每小时 {per_hour}"
     )
-
-
-def _chime_prob(key: str, cfg: dict) -> float:
-    """当前群实际用的插话概率：群单独设过就用群的，否则跟随档位。"""
-    if key in _chime_override:
-        return _chime_override[key]
-    return float(cfg.get("chime", CHIME_PROB))
 
 # 「二次元圣经」定型文（抽卡版），随机抽一篇。
 # 想换文案：GACHA_TEXT_FILE 指向一个 .txt 文件或一个装多份 .txt 的目录。
@@ -438,7 +429,6 @@ def _save_modes() -> None:
         MODE_FILE.parent.mkdir(parents=True, exist_ok=True)
         payload = dict(_mode_state)
         payload["groups"] = dict(_group_modes)
-        payload["chime"] = dict(_chime_override)
         MODE_FILE.write_text(
             json.dumps(payload, ensure_ascii=False), encoding="utf-8"
         )
@@ -491,13 +481,6 @@ def _load_mode() -> None:
                         name = OLD_MODES.get(name, name)
                         if isinstance(name, str) and name in MODES:
                             _group_modes[str(gkey)] = name
-                chime = data.get("chime")
-                if isinstance(chime, dict):
-                    for gkey, prob in chime.items():
-                        try:
-                            _chime_override[str(gkey)] = max(0.0, min(1.0, float(prob)))
-                        except (TypeError, ValueError):
-                            continue
             return
         legacy = _DATA_DIR / "reply_mode.json"
         if legacy.is_file():
@@ -1314,7 +1297,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
                 _engaged.pop(key, None)
                 # 插话看兴趣：聊到她感兴趣的话题，冒泡的概率翻几倍；模型最后还能说「不回」
                 interest = interest_hits(topics.detect(batch_text), INTERESTS)
-                chime_prob = _chime_prob(key, mcfg)
+                chime_prob = mcfg["chime"]
                 if interest and chime_prob > 0:
                     chime_prob = min(1.0, chime_prob * INTEREST_BOOST)
                 if chime_prob <= 0 or random.random() >= chime_prob:
@@ -2038,60 +2021,3 @@ async def _usage_cmd(bot: Bot, event: MessageEvent) -> None:
         f"今日模型调用 {calls} 次：输入 {prompt} / 输出 {comp} token，"
         f"缓存命中 {rate:.0%}，平均每次输入 {prompt // calls}；{searched}。"
     ))
-
-
-# 插话开关：单独控制「没人叫时插不插话」，与冬眠档解耦（管理员）
-chime_cmd = on_command("插话", priority=16, block=True)
-
-
-@chime_cmd.handle()
-async def _chime_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
-    if not is_our_bot(event):
-        return
-    if not devs.is_dev(event.get_user_id()):
-        return
-
-    kind = _chat_kind(event)
-    if kind != "group":
-        await chime_cmd.finish("插话只对群聊有意义，私聊每句都回。")
-        return
-
-    key = _session_key(event)
-    mname = _mode_name(kind, key)
-    mcfg = _mode_cfg(kind, key)
-    cur = _chime_prob(key, mcfg)
-    raw = arg.extract_plain_text().strip()
-
-    if not raw:
-        tail = "（本群单独设定）" if key in _chime_override else f"（跟随「{mname}」档）"
-        await chime_cmd.finish(
-            f"没人叫时插话概率 {cur:.0%}{tail}\n"
-            "插话 = 没被点名也凑一句；冬眠档固定 0，完全不出声。\n"
-            "改：/插话 5% 或 /插话 0.05；关：/插话 关；恢复跟档位：/插话 默认"
-        )
-        return
-
-    if raw in ("关", "关闭", "关掉"):
-        _chime_override[key] = 0.0
-        _save_modes()
-        await chime_cmd.finish(f"本群插话已关（0%）；/插话 默认 可恢复跟「{mname}」档")
-        return
-
-    if raw in ("默认", "恢复", "开", "打开"):
-        _chime_override.pop(key, None)
-        _save_modes()
-        default = float(mcfg.get("chime", CHIME_PROB))
-        await chime_cmd.finish(f"已恢复跟「{mname}」档的插话概率（{default:.0%}）")
-        return
-
-    try:
-        val = float(raw.rstrip("%％"))
-    except ValueError:
-        await chime_cmd.finish("看不懂，用 0.05 / 5% / 关 / 默认")
-        return
-    if val > 1:
-        val /= 100.0
-    val = max(0.0, min(1.0, val))
-    _chime_override[key] = val
-    _save_modes()
-    await chime_cmd.finish(f"本群插话概率改成 {val:.0%}（/插话 默认 恢复跟档位）")
