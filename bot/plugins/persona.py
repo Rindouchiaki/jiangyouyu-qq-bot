@@ -103,6 +103,7 @@ from persona_rules import (
     safe_name,
     shy_reaction,
     shy_topic,
+    split_at_batch,
     split_reply,
     sticker_category,
     sticker_like,
@@ -960,6 +961,9 @@ async def _worker(key: str) -> None:
             await asyncio.sleep(wait)
             continue
         batch = list(st.pending)
+        if key.startswith("group_"):
+            # 被 @ 时只拿 @ 她的人说的话来回，别人的留在队列里下一轮另算，免得答非所问
+            batch, _ = split_at_batch(batch)
         st.fresh = True
         try:
             done = await _respond(st.bot, key, batch, st.gen, force=st.restarts >= RESTART_MAX)
@@ -1155,8 +1159,12 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     text = " ".join(it["text"] for it in mine)
     batch_text = " ".join(it["text"] for it in batch)
     history = _history[key]
-    first = next((i for i, h in enumerate(history) if h is batch[0]["entry"]), None)
-    past = list(history)[:first] if first is not None else [h for h in history if h not in [it["entry"] for it in batch]]
+    # 还在队列里的（这批、留到下一轮的、刚来的）都不算前文；上一轮刚回完的 @ 和回话要算
+    chat = _chats.get(key)
+    waiting = {id(it["entry"]) for it in (*batch, *(chat.pending if chat else ()))}
+    past = [h for h in history if id(h) not in waiting]
+    # 留到下一轮的别人的话不算「生成时又来了新消息」
+    held = {id(it) for it in _newer(key, batch)}
     new_msgs = [(it["name"], it["text"]) for it in batch]
     if is_group and len(batch) > 8:
         # 群里刷屏时只看最后几条，免得把一屏不相干的话都塞进去
@@ -1515,8 +1523,11 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         _chime_skips[key] = 0
 
     # 生成期间又有人说话了：在跟她说话的人补了话 → 带上重想；只是别人插话 → 被叫的照发（引用原消息），可有可无的不补
+    def _arrived() -> list[dict]:
+        return [it for it in _newer(key, batch) if id(it) not in held]
+
     def _stale() -> bool | None:
-        newer = _newer(key, batch)
+        newer = _arrived()
         if not newer or force:
             return None
         if not is_group or any(it["uid"] == user_id or it["at"] or it["called"] for it in newer):
@@ -1545,11 +1556,12 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         logger.info("persona: 会话已翻篇，这句不补了")
         return True
 
-    # 群里在她回之前别人已经说了别的：引用原消息，免得看着像在接别人的话
+    # 被 @ 就用 QQ 的回复引用那条；群里在她回之前别人已经说了别的也引用，免得看着像在接别人的话
     others_after = any(it["uid"] != user_id for it in batch[batch.index(focus) + 1:]) or any(
         it["uid"] != user_id for it in _newer(key, batch)
     )
-    quote = is_group and focus.get("mid") is not None and others_after
+    quote = is_group and focus.get("mid") is not None and (focus["at"] or others_after)
+    marked = False
 
     _last_reply[key] = time.time()
     if chime:
@@ -1560,7 +1572,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         if i > 0:
             # 后面几条按字数打字；对方又开口了就先停下，剩下的不硬发
             await _sleep(typing_delay(content, TYPING_SEC_PER_CHAR, TYPING_MAX_SEC) if kind == "text" else random.uniform(0.8, 2.0))
-            newer = _newer(key, batch)
+            newer = _arrived()
             if any(it["uid"] == user_id or it["at"] or it["called"] for it in newer):
                 logger.info(f"persona: 对方又说话了，剩下 {len(parts) - i} 条先不发")
                 break
@@ -1571,10 +1583,12 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
                 history.append(("我", f"[表情:{sticker_lib.label(got)}]"))
             continue
         msg = content
-        if i == 0 and quote:
+        # 引用 / @ 挂在第一句话上（先甩的表情挂不了）
+        if not marked and quote:
             msg = MessageSegment.reply(focus["mid"]) + content
-        elif i == 0 and is_group and AT_USER and mode.startswith("被叫@"):
+        elif not marked and is_group and AT_USER and mode.startswith("被叫@"):
             msg = MessageSegment.at(user_id) + " " + content
+        marked = True
         await bot.send(event, msg)
         history.append(("我", content))
         sent.append(content)
