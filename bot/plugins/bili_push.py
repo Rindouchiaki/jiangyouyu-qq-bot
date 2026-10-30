@@ -71,16 +71,24 @@ def _ago(ts) -> str:
 
 _SHOT_CSS = """
 .bili-header, .bili-header__bar, .header-channel, .bili-header__banner,
-.bili-dyn-detail__header, .right-container, .bili-dyn-detail__bottom,
-.article-comment, .comment-container, .article-action,
+.bili-dyn-detail__header, .right-container, .right-sidebar-wrap, .bili-dyn-detail__bottom,
+.article-comment, .comment-container, .article-action, .opus-tabs, .bili-tabs, .bili-comments, .comment-list,
 .bili-login-card, .login-tip, .bili-occlusion-modal, .bili-occlusion-screen,
 .fixed-open-app { display: none !important; }
 html, body { background: #fff !important; }
 """
 
-# opus 页（www.bilibili.com/opus/…）的正文区；转发类动态会跳回 t.bilibili.com，那边是 .bili-dyn-item；
-# 专栏页（/read/cv…）是 .article-holder
-_SHOT_SELECTOR = ".bili-dyn-item, .bili-opus-view, .opus-detail, .article-holder, #read-article-holder"
+# opus 页（www.bilibili.com/opus/…）的正文区是 .bili-opus-view（注释区在 .opus-tabs 里，不要）；
+# 转发类动态会跳回 t.bilibili.com，那边是 .bili-dyn-item；专栏页（/read/cv…）是 .article-holder。
+# 按优先级从上往下取第一个存在的——用 "," 拼成一个选择器会先命中外层的 .opus-detail，
+# 把评论区一起截进来（评论区里有「请先登录后发表评论」和登录按钮）。
+_SHOT_SELECTORS = (
+    ".bili-opus-view",
+    ".opus-detail",
+    ".bili-dyn-item",
+    ".article-holder",
+    "#read-article-holder",
+)
 # 专栏能长到两万像素，只截开头一段，不然一张图好几兆
 _MAX_SHOT_H = int(os.getenv("BILI_SHOT_MAX_HEIGHT", "1600"))
 _shot_lock = asyncio.Lock()
@@ -89,17 +97,69 @@ _CARD_TTL = 600
 _card_cache: dict[str, tuple[float, bytes | None]] = {}
 
 
+async def _bili_cookies() -> list[dict]:
+    """取 Bison 里存的那条实名 cookie，塞进截图浏览器。
+
+    不塞的话截图浏览器是「未登录游客」，B 站会在页面里塞「登录哔哩哔哩，高清视频免费看」
+    和登录按钮，卡片截图就带着这些玩意儿；订阅抓取本身用的是 Bison 的 cookie，跟截图无关。
+    """
+    try:
+        from nonebot_bison.config import config as bison_config
+
+        cookies = await bison_config.get_cookie(site_name="bilibili.com", is_anonymous=False)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"bili_push: 取 Bison cookie 失败（{type(exc).__name__}: {exc}），按未登录截")
+        return []
+    for cookie in cookies:
+        try:
+            data = json.loads(cookie.content)
+        except (TypeError, ValueError):
+            continue
+        if not data.get("SESSDATA"):
+            continue
+        return [
+            {"name": str(k), "value": str(v), "domain": ".bilibili.com", "path": "/"}
+            for k, v in data.items()
+            if k and v
+        ]
+    return []
+
+
+async def _hide_login(page) -> None:
+    """兜底：cookie 没取到或被 B 站判成未登录时，把登录弹层/按钮藏掉再截。"""
+    try:
+        await page.evaluate(
+            """() => {
+                document.querySelectorAll('[class*="login"],[class*="Login"],[class*="occlusion"],[class*="Occlusion"]')
+                    .forEach((el) => { if (el !== document.body && el !== document.documentElement) el.style.display = 'none'; });
+            }"""
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"bili_push: 藏登录层失败 {type(exc).__name__}: {exc}")
+
+
 async def _shot_card(url: str) -> bytes | None:
     """直接截 B 站动态页里那条动态，省得本地拼版；浏览器用 htmlrender 共享的那个（断了它会重开）。"""
     async with _shot_lock:
         async with get_render_context(
             viewport={"width": 900, "height": 1200}, device_scale_factor=1.5, user_agent=_UA
         ) as page:
+            cookies = await _bili_cookies()
+            if cookies:
+                try:
+                    await page.context.add_cookies(cookies)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(f"bili_push: 截图浏览器塞 cookie 失败 {type(exc).__name__}: {exc}")
             await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-            await page.wait_for_selector(_SHOT_SELECTOR, timeout=15000)
+            await page.wait_for_selector(", ".join(_SHOT_SELECTORS), timeout=15000)
             await page.add_style_tag(content=_SHOT_CSS)
             await page.wait_for_timeout(400)
-            el = await page.query_selector(_SHOT_SELECTOR)
+            await _hide_login(page)
+            el = None
+            for _sel in _SHOT_SELECTORS:
+                el = await page.query_selector(_sel)
+                if el is not None:
+                    break
             if el is None:
                 return None
             await el.scroll_into_view_if_needed()
