@@ -139,6 +139,19 @@ try:
 except Exception as exc:  # noqa: BLE001
     nonebot.logger.warning(f"Bison 开播轮询间隔没改成 {type(exc).__name__}: {exc}")
 
+# Bison 动态是「每个 tick 只查一个 UP」的加权轮转，不是一轮把所有 UP 都查一遍。
+# 订阅的 UP 一多，每个 UP 要等「UP 数 × 间隔」才轮到一次（9 个 UP、60 秒间隔就是 9 分钟），
+# 刚发的动态要等它轮到才推。这里把间隔压到 30 秒，平均等待减半；
+# 想更快就改 BISON_DYN_INTERVAL_SECONDS（秒），代价是请求次数成正比上涨。
+try:
+    from nonebot_bison.platform.bilibili.scheduler import BilibiliSite
+
+    _dyn_interval = int(os.getenv("BISON_DYN_INTERVAL_SECONDS", "30"))
+    BilibiliSite.schedule_setting = {"seconds": _dyn_interval}
+    nonebot.logger.info(f"Bison 动态轮询间隔改成 {_dyn_interval} 秒（每个 UP 轮流查，不是一轮全查）")
+except Exception as exc:  # noqa: BLE001
+    nonebot.logger.warning(f"Bison 动态轮询间隔没改成 {type(exc).__name__}: {exc}")
+
 # Bison 的推送走 send-anything-anywhere 的「自动挑一个 bot」：SnowLuma 同时挂着两个号时，
 # 它可能挑到开发者自己的号发出去。这里把非 BOT_UIN 的号从它的候选缓存里挡掉，
 # 保证推送只用机器人本号发。
