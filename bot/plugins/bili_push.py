@@ -9,6 +9,7 @@
 import asyncio
 import base64
 import html
+import json
 import os
 import time
 
@@ -78,10 +79,8 @@ _SHOT_CSS = """
 html, body { background: #fff !important; }
 """
 
-# opus 页（www.bilibili.com/opus/…）的正文区是 .bili-opus-view（注释区在 .opus-tabs 里，不要）；
-# 转发类动态会跳回 t.bilibili.com，那边是 .bili-dyn-item；专栏页（/read/cv…）是 .article-holder。
-# 按优先级从上往下取第一个存在的——用 "," 拼成一个选择器会先命中外层的 .opus-detail，
-# 把评论区一起截进来（评论区里有「请先登录后发表评论」和登录按钮）。
+# 正文区：opus 页 .bili-opus-view、转发动态 .bili-dyn-item、专栏 .article-holder。
+# 按顺序取第一个有的；拼成一个选择器会先命中外层 .opus-detail，连评论区一起截。
 _SHOT_SELECTORS = (
     ".bili-opus-view",
     ".opus-detail",
@@ -98,11 +97,7 @@ _card_cache: dict[str, tuple[float, bytes | None]] = {}
 
 
 async def _bili_cookies() -> list[dict]:
-    """取 Bison 里存的那条实名 cookie，塞进截图浏览器。
-
-    不塞的话截图浏览器是「未登录游客」，B 站会在页面里塞「登录哔哩哔哩，高清视频免费看」
-    和登录按钮，卡片截图就带着这些玩意儿；订阅抓取本身用的是 Bison 的 cookie，跟截图无关。
-    """
+    """Bison 里的实名 cookie，给截图浏览器用；不带的话页面是游客样子，会截到登录浮层。"""
     try:
         from nonebot_bison.config import config as bison_config
 
@@ -125,13 +120,13 @@ async def _bili_cookies() -> list[dict]:
     return []
 
 
-async def _hide_login(page) -> None:
-    """兜底：cookie 没取到或被 B 站判成未登录时，把登录弹层/按钮藏掉再截。"""
+async def _hide_login(el) -> None:
+    """兜底：cookie 失效时藏掉登录浮层/按钮；包着正文的外层不藏，免得正文跟着看不见。"""
     try:
-        await page.evaluate(
-            """() => {
+        await el.evaluate(
+            """(target) => {
                 document.querySelectorAll('[class*="login"],[class*="Login"],[class*="occlusion"],[class*="Occlusion"]')
-                    .forEach((el) => { if (el !== document.body && el !== document.documentElement) el.style.display = 'none'; });
+                    .forEach((e) => { if (!e.contains(target)) e.style.display = 'none'; });
             }"""
         )
     except Exception as exc:  # noqa: BLE001
@@ -154,7 +149,6 @@ async def _shot_card(url: str) -> bytes | None:
             await page.wait_for_selector(", ".join(_SHOT_SELECTORS), timeout=15000)
             await page.add_style_tag(content=_SHOT_CSS)
             await page.wait_for_timeout(400)
-            await _hide_login(page)
             el = None
             for _sel in _SHOT_SELECTORS:
                 el = await page.query_selector(_sel)
@@ -162,6 +156,7 @@ async def _shot_card(url: str) -> bytes | None:
                     break
             if el is None:
                 return None
+            await _hide_login(el)
             await el.scroll_into_view_if_needed()
             await page.wait_for_timeout(200)
             # 直接限元素高度再截：page.screenshot 的 clip 超出视口（1200）的部分会被裁掉
