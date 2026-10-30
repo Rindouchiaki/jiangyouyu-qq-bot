@@ -9,6 +9,7 @@
 import asyncio
 import base64
 import html
+import json
 import os
 import time
 
@@ -71,16 +72,22 @@ def _ago(ts) -> str:
 
 _SHOT_CSS = """
 .bili-header, .bili-header__bar, .header-channel, .bili-header__banner,
-.bili-dyn-detail__header, .right-container, .bili-dyn-detail__bottom,
-.article-comment, .comment-container, .article-action,
+.bili-dyn-detail__header, .right-container, .right-sidebar-wrap, .bili-dyn-detail__bottom,
+.article-comment, .comment-container, .article-action, .opus-tabs, .bili-tabs, .bili-comments, .comment-list,
 .bili-login-card, .login-tip, .bili-occlusion-modal, .bili-occlusion-screen,
 .fixed-open-app { display: none !important; }
 html, body { background: #fff !important; }
 """
 
-# opus 页（www.bilibili.com/opus/…）的正文区；转发类动态会跳回 t.bilibili.com，那边是 .bili-dyn-item；
-# 专栏页（/read/cv…）是 .article-holder
-_SHOT_SELECTOR = ".bili-dyn-item, .bili-opus-view, .opus-detail, .article-holder, #read-article-holder"
+# 正文区：opus 页 .bili-opus-view、转发动态 .bili-dyn-item、专栏 .article-holder。
+# 按顺序取第一个有的；拼成一个选择器会先命中外层 .opus-detail，连评论区一起截。
+_SHOT_SELECTORS = (
+    ".bili-opus-view",
+    ".opus-detail",
+    ".bili-dyn-item",
+    ".article-holder",
+    "#read-article-holder",
+)
 # 专栏能长到两万像素，只截开头一段，不然一张图好几兆
 _MAX_SHOT_H = int(os.getenv("BILI_SHOT_MAX_HEIGHT", "1600"))
 _shot_lock = asyncio.Lock()
@@ -89,19 +96,67 @@ _CARD_TTL = 600
 _card_cache: dict[str, tuple[float, bytes | None]] = {}
 
 
+async def _bili_cookies() -> list[dict]:
+    """Bison 里的实名 cookie，给截图浏览器用；不带的话页面是游客样子，会截到登录浮层。"""
+    try:
+        from nonebot_bison.config import config as bison_config
+
+        cookies = await bison_config.get_cookie(site_name="bilibili.com", is_anonymous=False)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"bili_push: 取 Bison cookie 失败（{type(exc).__name__}: {exc}），按未登录截")
+        return []
+    for cookie in cookies:
+        try:
+            data = json.loads(cookie.content)
+        except (TypeError, ValueError):
+            continue
+        if not data.get("SESSDATA"):
+            continue
+        return [
+            {"name": str(k), "value": str(v), "domain": ".bilibili.com", "path": "/"}
+            for k, v in data.items()
+            if k and v
+        ]
+    return []
+
+
+async def _hide_login(el) -> None:
+    """兜底：cookie 失效时藏掉登录浮层/按钮；包着正文的外层不藏，免得正文跟着看不见。"""
+    try:
+        await el.evaluate(
+            """(target) => {
+                document.querySelectorAll('[class*="login"],[class*="Login"],[class*="occlusion"],[class*="Occlusion"]')
+                    .forEach((e) => { if (!e.contains(target)) e.style.display = 'none'; });
+            }"""
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"bili_push: 藏登录层失败 {type(exc).__name__}: {exc}")
+
+
 async def _shot_card(url: str) -> bytes | None:
     """直接截 B 站动态页里那条动态，省得本地拼版；浏览器用 htmlrender 共享的那个（断了它会重开）。"""
     async with _shot_lock:
         async with get_render_context(
             viewport={"width": 900, "height": 1200}, device_scale_factor=1.5, user_agent=_UA
         ) as page:
+            cookies = await _bili_cookies()
+            if cookies:
+                try:
+                    await page.context.add_cookies(cookies)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(f"bili_push: 截图浏览器塞 cookie 失败 {type(exc).__name__}: {exc}")
             await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-            await page.wait_for_selector(_SHOT_SELECTOR, timeout=15000)
+            await page.wait_for_selector(", ".join(_SHOT_SELECTORS), timeout=15000)
             await page.add_style_tag(content=_SHOT_CSS)
             await page.wait_for_timeout(400)
-            el = await page.query_selector(_SHOT_SELECTOR)
+            el = None
+            for _sel in _SHOT_SELECTORS:
+                el = await page.query_selector(_sel)
+                if el is not None:
+                    break
             if el is None:
                 return None
+            await _hide_login(el)
             await el.scroll_into_view_if_needed()
             await page.wait_for_timeout(200)
             # 直接限元素高度再截：page.screenshot 的 clip 超出视口（1200）的部分会被裁掉
