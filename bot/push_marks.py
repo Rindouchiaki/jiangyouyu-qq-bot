@@ -14,7 +14,7 @@ import threading
 import time
 
 # 多久之内算「刚推过」。默认 15 分钟，够覆盖一轮轮询加转发延迟；0 就是不记。
-TTL_SECONDS = float(os.getenv("PUSH_LINK_TTL", "900"))
+TTL_SECONDS = float(os.getenv("PUSH_LINK_TTL", "15"))
 
 _URL_RE = re.compile(r"https?://[^\s\"'<>，。！？、）)】]+", re.IGNORECASE)
 
