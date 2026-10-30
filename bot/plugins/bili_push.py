@@ -2,7 +2,7 @@
 
 - 视频、直播：一条消息发完，标题 + 封面 + 链接，简介只留一小段；
 - 其它动态拆成几条的（文字 + 好几张图），由 `bison_use_pic_merge=2`（bot/bot.py）合并转发成一条；
-- 每条动态先发一条通知（【UP】更新了新动态！+ 传送门 + 直接截 B 站原动态的截图），再发那条合并转发，一共两条；
+- 每条动态先发一条通知（【UP】更新了新动态！+ 传送门 + 解析插件渲染的卡片图，跟群里贴链接看到的是同一张），再发那条合并转发，一共两条；
 - 发的时候 saa 说「没有号能发到这」（新进的群、刚加的好友不在它的缓存里）就刷新一次再发，不然这条就丢了。
 """
 
@@ -24,13 +24,17 @@ try:
     import nonebot_bison.send as bison_send
     from nonebot_bison.platform.bilibili.platforms import Bilibili, Bilibililive
     from nonebot_bison.post.abstract_post import AbstractPost
-    from nonebot_plugin_htmlrender import get_render_context, html_to_pic
+    from nonebot_plugin_htmlrender import html_to_pic
+    from nonebot_plugin_parser.config import pconfig as parser_config
+    from nonebot_plugin_parser.parsers import BilibiliParser
+    from nonebot_plugin_parser.renders import get_renderer
     from nonebot_plugin_saa import Image as SaaImage
     from nonebot_plugin_saa import MessageFactory
     from nonebot_plugin_saa.auto_select_bot import refresh_bots
     from nonebot_plugin_saa.utils import NoBotFound
 except Exception as exc:  # noqa: BLE001
     Bilibili = Bilibililive = None
+    BilibiliParser = get_renderer = parser_config = None
     logger.warning(f"bili_push: Bison 不可用，推送样式不改（{type(exc).__name__}: {exc}）")
 
 VIDEO_CAT, LIVE_DYN_CAT = 3, 6  # Bison B 站动态类别：视频、直播动态
@@ -70,104 +74,84 @@ def _ago(ts) -> str:
     return f"{int(minutes // 1440)} 天前"
 
 
-_SHOT_CSS = """
-.bili-header, .bili-header__bar, .header-channel, .bili-header__banner,
-.bili-dyn-detail__header, .right-container, .right-sidebar-wrap, .bili-dyn-detail__bottom,
-.article-comment, .comment-container, .article-action, .opus-tabs, .bili-tabs, .bili-comments, .comment-list,
-.bili-login-card, .login-tip, .bili-occlusion-modal, .bili-occlusion-screen,
-.fixed-open-app { display: none !important; }
-html, body { background: #fff !important; }
-"""
-
-# 正文区：opus 页 .bili-opus-view、转发动态 .bili-dyn-item、专栏 .article-holder。
-# 按顺序取第一个有的；拼成一个选择器会先命中外层 .opus-detail，连评论区一起截。
-_SHOT_SELECTORS = (
-    ".bili-opus-view",
-    ".opus-detail",
-    ".bili-dyn-item",
-    ".article-holder",
-    "#read-article-holder",
-)
-# 专栏能长到两万像素，只截开头一段，不然一张图好几兆
-_MAX_SHOT_H = int(os.getenv("BILI_SHOT_MAX_HEIGHT", "1600"))
-_shot_lock = asyncio.Lock()
-# 同一条动态订了几个群就会生成几次消息，截过的按链接留 10 分钟
+# 通知条的卡片图直接问解析插件要：跟群里有人贴链接时生成的是同一张。
+# 以前是截 B 站页面，会撞上登录浮层、[图片] 占位、评论区，还慢；现在走 API + 本地渲染，稳得多。
+_MAX_CARD_H = int(os.getenv("BILI_CARD_MAX_HEIGHT", "1500"))
+_CARD_WIDTH = 800
+# 同一条动态订了几个群就会生成几次消息，画过的按链接留 10 分钟
 _CARD_TTL = 600
 _card_cache: dict[str, tuple[float, bytes | None]] = {}
 
 
-async def _bili_cookies() -> list[dict]:
-    """Bison 里的实名 cookie，给截图浏览器用；不带的话页面是游客样子，会截到登录浮层。"""
+async def _bili_cookie_header() -> str:
+    """从 Bison 那条实名 cookie 拼出 cookie 头，给解析插件用（不带就是 -352 / 412）。"""
     try:
         from nonebot_bison.config import config as bison_config
 
         cookies = await bison_config.get_cookie(site_name="bilibili.com", is_anonymous=False)
     except Exception as exc:  # noqa: BLE001
-        logger.debug(f"bili_push: 取 Bison cookie 失败（{type(exc).__name__}: {exc}），按未登录截")
-        return []
+        logger.debug(f"bili_push: 取 Bison cookie 失败（{type(exc).__name__}: {exc}）")
+        return ""
     for cookie in cookies:
         try:
             data = json.loads(cookie.content)
         except (TypeError, ValueError):
             continue
-        if not data.get("SESSDATA"):
-            continue
-        return [
-            {"name": str(k), "value": str(v), "domain": ".bilibili.com", "path": "/"}
-            for k, v in data.items()
-            if k and v
-        ]
-    return []
+        if data.get("SESSDATA"):
+            return "; ".join(f"{k}={v}" for k, v in data.items() if k and v)
+    return ""
 
 
-async def _hide_login(el) -> None:
-    """兜底：cookie 失效时藏掉登录浮层/按钮；包着正文的外层不藏，免得正文跟着看不见。"""
+async def _ensure_parser_cookie() -> None:
+    """解析插件没配 B 站 cookie 时，用 Bison 里那条实名 cookie 顶上，免得订阅能抓、解析抓不到。"""
+    if parser_config is None or parser_config.parser_bili_ck:
+        return
+    header = await _bili_cookie_header()
+    if header:
+        parser_config.parser_bili_ck = header
+        logger.info("bili_push: 解析插件用上 Bison 的 B 站 cookie")
+
+
+def _crop_card(raw: bytes) -> bytes | None:
+    """裁掉卡片下半截（长文、图集会拉到上万像素），再转 JPEG 压小。"""
     try:
-        await el.evaluate(
-            """(target) => {
-                document.querySelectorAll('[class*="login"],[class*="Login"],[class*="occlusion"],[class*="Occlusion"]')
-                    .forEach((e) => { if (!e.contains(target)) e.style.display = 'none'; });
-            }"""
-        )
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(BytesIO(raw)) as im:
+            if im.width > _CARD_WIDTH:
+                ratio = _CARD_WIDTH / im.width
+                im = im.resize((_CARD_WIDTH, int(im.height * ratio)), Image.LANCZOS)
+            if im.height > _MAX_CARD_H:
+                im = im.crop((0, 0, im.width, _MAX_CARD_H))
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            buf = BytesIO()
+            im.save(buf, format="JPEG", quality=88, optimize=True)
+            return buf.getvalue()
     except Exception as exc:  # noqa: BLE001
-        logger.debug(f"bili_push: 藏登录层失败 {type(exc).__name__}: {exc}")
+        logger.warning(f"bili_push: 卡片裁剪没成（{type(exc).__name__}: {exc}）")
+        return None
 
 
-async def _shot_card(url: str) -> bytes | None:
-    """直接截 B 站动态页里那条动态，省得本地拼版；浏览器用 htmlrender 共享的那个（断了它会重开）。"""
-    async with _shot_lock:
-        async with get_render_context(
-            viewport={"width": 900, "height": 1200}, device_scale_factor=1.5, user_agent=_UA
-        ) as page:
-            cookies = await _bili_cookies()
-            if cookies:
-                try:
-                    await page.context.add_cookies(cookies)
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug(f"bili_push: 截图浏览器塞 cookie 失败 {type(exc).__name__}: {exc}")
-            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-            await page.wait_for_selector(", ".join(_SHOT_SELECTORS), timeout=15000)
-            await page.add_style_tag(content=_SHOT_CSS)
-            await page.wait_for_timeout(400)
-            el = None
-            for _sel in _SHOT_SELECTORS:
-                el = await page.query_selector(_sel)
-                if el is not None:
-                    break
-            if el is None:
-                return None
-            await _hide_login(el)
-            await el.scroll_into_view_if_needed()
-            await page.wait_for_timeout(200)
-            # 直接限元素高度再截：page.screenshot 的 clip 超出视口（1200）的部分会被裁掉
-            await el.evaluate(
-                "(e, h) => { e.style.maxHeight = h + 'px'; e.style.overflow = 'hidden'; }", _MAX_SHOT_H
-            )
-            return await el.screenshot(type="png")
+async def _parser_card(url: str) -> bytes | None:
+    """用解析插件把这条动态渲染成卡片图，再裁成预览大小。"""
+    if BilibiliParser is None:
+        return None
+    await _ensure_parser_cookie()
+    parser = BilibiliParser()
+    keyword, searched = BilibiliParser.search_url(url)
+    result = await parser.parse(keyword, searched)
+    renderer = get_renderer(result.platform.name)(result)
+    raw = await renderer.render_image()
+    if not raw:
+        return None
+    return await asyncio.to_thread(_crop_card, raw)
 
 
 async def _card_image(post) -> bytes | None:
-    """优先截 B 站上的原动态；截不到再退回本地画一张。只有要发通知条的动态才有 _card_url。"""
+    """优先用解析插件画卡片；画不出来再退回本地画一张。只有要发通知条的动态才有 _card_url。"""
     url = getattr(post, "_card_url", "")
     if not url:
         return None
@@ -177,9 +161,9 @@ async def _card_image(post) -> bytes | None:
     if url in _card_cache:
         return _card_cache[url][1]
     try:
-        card = await asyncio.wait_for(_shot_card(url), timeout=35)
+        card = await asyncio.wait_for(_parser_card(url), timeout=40)
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"bili_push: 原页截图没成，改用本地画卡（{type(exc).__name__}: {exc}）")
+        logger.warning(f"bili_push: 卡片渲染没成，改用本地画卡（{type(exc).__name__}: {exc}）")
         card = None
     if not card:
         card = await _drawn_card(post)

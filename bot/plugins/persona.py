@@ -43,12 +43,14 @@ from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment
 from nonebot.log import logger
 from nonebot.params import CommandArg
 
+import assoc
 import backstage
 import bonds
 import devs
 import gscore_guard
 import memory
 import slang
+import sv_data
 import sticker_lib
 import topics
 import vision
@@ -1493,9 +1495,26 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     # 本群风格插话时也带，冒泡才像这个群的人
     group_style = visible_notes(group_rec.get("style"), True, limit=3) if is_group else None
 
-    # 被 @ 只看那一条（和它引用的那条），群里前面的话不带，免得回成别的话题
+    # 被 @ 时不带群里的杂话（会接错话题），但自己刚说过的话要带上，免得前后打脸
     if mode == "被叫@":
-        past = at_history(_quoted(event))
+        own = [(who, said) for who, said in list(_history[key]) if who == "我"][-3:]
+        past = own + at_history(_quoted(event))
+    # 关联记忆：这条里提到的人/事，翻一下本会话记着的（群和私聊各管各的）
+    assoc_scope = f"群{group_id}" if is_group else f"私聊{user_id}"
+    if text and not chime:
+        learned = assoc.remember(text, who=name, scope=assoc_scope)
+        if learned:
+            logger.debug(f"persona: 记下 {learned}")
+    facts_note = ""
+    if addressed:
+        facts = assoc.recall(text, assoc_scope)
+        facts_note = assoc.for_prompt(facts)
+        if facts_note:
+            logger.debug(f"persona: 想起 {[f.get('s') for f in facts]}")
+    sv_hits = sv_data.mention(text)
+    sv_note = sv_data.for_prompt(sv_hits) if sv_hits else ""
+    if sv_note:
+        logger.debug(f"persona: 影之诗资料 {[c['name'] for c in sv_hits]}")
     messages = compose_messages(
         past,
         name,
@@ -1528,6 +1547,8 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         search_ready=web_search.enabled(),
         interests=INTERESTS if chime else (),
         chime_free=mcfg["free"] and att != "讨厌",
+        sv_note=sv_note,
+        facts_note=facts_note,
     )
 
     limit = HELP_MAX_TOKENS if help_mode or can_search else 120 if question else 100
