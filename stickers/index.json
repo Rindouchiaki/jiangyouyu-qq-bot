@@ -1,6 +1,6 @@
 {
   "source": "C:\\Users\\<you>\\AppData\\Roaming\\Tencent\\TF\\Tencent Files\\100000002\\nt_qq\\nt_data\\Emoji\\personal_emoji\\Ori",
-  "count": 524,
+  "count": 492,
   "items": [
     {
       "id": "4d45539c9fb3168c",
@@ -144,24 +144,6 @@
       "category": "无文字"
     },
     {
-      "id": "214773534237272e",
-      "file": "ori/214773534237272e.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 720,
-      "height": 405,
-      "bytes": 39131,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "横图",
-        "静图"
-      ],
-      "text": "葡·@姆姆琅版“蕾姆富、面",
-      "category": "其他"
-    },
-    {
       "id": "437bd0bb1f9db221",
       "file": "ori/437bd0bb1f9db221.jpeg",
       "format": "jpeg",
@@ -211,24 +193,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "4127995f16992bb8",
-      "file": "ori/4127995f16992bb8.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 600,
-      "height": 600,
-      "bytes": 95129,
-      "tags": [
-        "中性",
-        "其他",
-        "方图",
-        "有文字",
-        "静图"
-      ],
-      "text": "生活苦涩",
-      "category": "其他"
     },
     {
       "id": "7dba4016b7125bd2",
@@ -1070,23 +1034,6 @@
       "category": "其他"
     },
     {
-      "id": "c03ecef67af71db2",
-      "file": "ori/c03ecef67af71db2.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 470,
-      "height": 470,
-      "bytes": 23454,
-      "tags": [
-        "冷色",
-        "方图",
-        "无文字",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
       "id": "0e65aeb96d820bba",
       "file": "ori/0e65aeb96d820bba.jpeg",
       "format": "jpeg",
@@ -1879,24 +1826,6 @@
       "category": "其他"
     },
     {
-      "id": "44e3db4428921c4a",
-      "file": "ori/44e3db4428921c4a.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 1440,
-      "height": 1435,
-      "bytes": 96799,
-      "tags": [
-        "其他",
-        "暖色",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "6恶龙咆哮！",
-      "category": "其他"
-    },
-    {
       "id": "b76fdf4d3d926a23",
       "file": "ori/b76fdf4d3d926a23.jpeg",
       "format": "jpeg",
@@ -2205,23 +2134,6 @@
         "方图",
         "无文字",
         "暖色"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
-      "id": "d4bf5720b24a300b",
-      "file": "ori/d4bf5720b24a300b.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 181,
-      "height": 150,
-      "bytes": 4895,
-      "tags": [
-        "中性",
-        "无文字",
-        "近方图",
-        "静图"
       ],
       "text": "",
       "category": "无文字"
@@ -3810,26 +3722,6 @@
       "category": "无文字"
     },
     {
-      "id": "b586be0f1b62fa64",
-      "file": "ori/b586be0f1b62fa64.gif",
-      "format": "gif",
-      "animated": true,
-      "width": 460,
-      "height": 200,
-      "bytes": 87408,
-      "tags": [
-        "中性",
-        "动图",
-        "可以",
-        "回应",
-        "有文字",
-        "横图",
-        "透明"
-      ],
-      "text": "我的超能力是可以暂停时间",
-      "category": "回应"
-    },
-    {
       "id": "90cdf3aac09ed5f3",
       "file": "ori/90cdf3aac09ed5f3.jpeg",
       "format": "jpeg",
@@ -4629,23 +4521,6 @@
       "category": "无文字"
     },
     {
-      "id": "8846d5601f51fdcc",
-      "file": "ori/8846d5601f51fdcc.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 120,
-      "height": 70,
-      "bytes": 8761,
-      "tags": [
-        "中性",
-        "无文字",
-        "横图",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
       "id": "b9004c60afe0eea7",
       "file": "ori/b9004c60afe0eea7.jpeg",
       "format": "jpeg",
@@ -4661,41 +4536,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "c9d1e471c948dcae",
-      "file": "ori/c9d1e471c948dcae.gif",
-      "format": "gif",
-      "animated": true,
-      "width": 512,
-      "height": 256,
-      "bytes": 1748380,
-      "tags": [
-        "中性",
-        "动图",
-        "无文字",
-        "横图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
-      "id": "6940e54077ad3686",
-      "file": "ori/6940e54077ad3686.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 180,
-      "bytes": 3219,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "我也想跟你们一起玩",
-      "category": "其他"
     },
     {
       "id": "7c83354ba88c0bb0",
@@ -4818,24 +4658,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "b350b7fd7f05f98e",
-      "file": "ori/b350b7fd7f05f98e.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 530,
-      "height": 503,
-      "bytes": 28444,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "联邦插菊现在要尔。！EEX_O以0胚T10寸",
-      "category": "其他"
     },
     {
       "id": "68b1f4da9804720b",
@@ -4978,23 +4800,6 @@
       "category": "无文字"
     },
     {
-      "id": "b58adcb658dc8e4a",
-      "file": "ori/b58adcb658dc8e4a.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 53,
-      "height": 56,
-      "bytes": 939,
-      "tags": [
-        "中性",
-        "无文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
       "id": "6d8d09d42bd0864e",
       "file": "ori/6d8d09d42bd0864e.jpeg",
       "format": "jpeg",
@@ -5057,23 +4862,6 @@
         "中性",
         "方图",
         "无文字",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
-      "id": "d82ebda0c5e38632",
-      "file": "ori/d82ebda0c5e38632.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 120,
-      "height": 90,
-      "bytes": 2601,
-      "tags": [
-        "无文字",
-        "暖色",
-        "近方图",
         "静图"
       ],
       "text": "",
@@ -5152,43 +4940,6 @@
       "category": "生气"
     },
     {
-      "id": "fdd58446ac684c66",
-      "file": "ori/fdd58446ac684c66.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 318,
-      "height": 189,
-      "bytes": 16784,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "横图",
-        "静图"
-      ],
-      "text": "你这样做小心怀孕啊！",
-      "category": "其他"
-    },
-    {
-      "id": "e84812f1f688f0c4",
-      "file": "ori/e84812f1f688f0c4.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 581,
-      "height": 441,
-      "bytes": 22802,
-      "tags": [
-        "中性",
-        "吗",
-        "有文字",
-        "疑问",
-        "近方图",
-        "静图"
-      ],
-      "text": "我就纳闷了这大半夜的你们都不打游戏吗",
-      "category": "疑问"
-    },
-    {
       "id": "28184997a2a881d4",
       "file": "ori/28184997a2a881d4.gif",
       "format": "gif",
@@ -5204,24 +4955,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "8234affec7e8dce1",
-      "file": "ori/8234affec7e8dce1.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 1148,
-      "height": 567,
-      "bytes": 85831,
-      "tags": [
-        "其他",
-        "暖色",
-        "有文字",
-        "横图",
-        "静图"
-      ],
-      "text": "ZHONGGUORENMINYINHANG2015年《",
-      "category": "其他"
     },
     {
       "id": "6f1ec5d6d1bfa26a",
@@ -5290,25 +5023,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "74feb4f1b2dcfdf2",
-      "file": "ori/74feb4f1b2dcfdf2.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 184,
-      "height": 198,
-      "bytes": 5636,
-      "tags": [
-        "其他",
-        "无文字",
-        "暖色",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "却想肛我！1，",
-      "category": "其他"
     },
     {
       "id": "cbc15dc475700550",
@@ -5750,23 +5464,6 @@
       "category": "其他"
     },
     {
-      "id": "46ad90313dfe2091",
-      "file": "ori/46ad90313dfe2091.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 500,
-      "height": 519,
-      "bytes": 39812,
-      "tags": [
-        "冷色",
-        "无文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
       "id": "1f38186d20e1b6b8",
       "file": "ori/1f38186d20e1b6b8.jpeg",
       "format": "jpeg",
@@ -5816,25 +5513,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "c4d074dfcdd6165d",
-      "file": "ori/c4d074dfcdd6165d.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 181,
-      "bytes": 4570,
-      "tags": [
-        "中性",
-        "可以",
-        "回应",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "小朋友，屎可以乱吃，话不可以乱说哦！0",
-      "category": "回应"
     },
     {
       "id": "beff90ef65b93ed7",
@@ -6585,24 +6263,6 @@
       "category": "无文字"
     },
     {
-      "id": "547ae657eb736fa1",
-      "file": "ori/547ae657eb736fa1.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 186,
-      "bytes": 15608,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "话不同不相为课，我日你妈先告辞了",
-      "category": "其他"
-    },
-    {
       "id": "f66c4d0c1af7bb53",
       "file": "ori/f66c4d0c1af7bb53.jpeg",
       "format": "jpeg",
@@ -6701,23 +6361,6 @@
         "方图",
         "无文字",
         "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
-      "id": "f0e42567b3363760",
-      "file": "ori/f0e42567b3363760.gif",
-      "format": "gif",
-      "animated": true,
-      "width": 426,
-      "height": 240,
-      "bytes": 4788833,
-      "tags": [
-        "冷色",
-        "动图",
-        "无文字",
-        "横图"
       ],
       "text": "",
       "category": "无文字"
@@ -6879,25 +6522,6 @@
       "category": "无文字"
     },
     {
-      "id": "8297f4cbef19e277",
-      "file": "ori/8297f4cbef19e277.png",
-      "format": "png",
-      "animated": false,
-      "width": 198,
-      "height": 192,
-      "bytes": 35204,
-      "tags": [
-        "中性",
-        "可以",
-        "回应",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "0你这是什么表情，不高兴可以去吃屎",
-      "category": "回应"
-    },
-    {
       "id": "6ce59502a66bc66c",
       "file": "ori/6ce59502a66bc66c.jpeg",
       "format": "jpeg",
@@ -7056,25 +6680,6 @@
       "category": "其他"
     },
     {
-      "id": "98959e5c099e12c7",
-      "file": "ori/98959e5c099e12c7.gif",
-      "format": "gif",
-      "animated": true,
-      "width": 460,
-      "height": 200,
-      "bytes": 49679,
-      "tags": [
-        "中性",
-        "其他",
-        "动图",
-        "有文字",
-        "横图",
-        "透明"
-      ],
-      "text": "需要支付100，元",
-      "category": "其他"
-    },
-    {
       "id": "5fd156260430f4aa",
       "file": "ori/5fd156260430f4aa.gif",
       "format": "gif",
@@ -7217,23 +6822,6 @@
       "category": "无文字"
     },
     {
-      "id": "6ded41472ba03164",
-      "file": "ori/6ded41472ba03164.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 55,
-      "height": 53,
-      "bytes": 2045,
-      "tags": [
-        "中性",
-        "无文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
       "id": "ad7a63763f88befa",
       "file": "ori/ad7a63763f88befa.jpeg",
       "format": "jpeg",
@@ -7245,41 +6833,6 @@
         "无文字",
         "暖色",
         "近方图",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
-      "id": "563e54a6b687fd0c",
-      "file": "ori/563e54a6b687fd0c.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 198,
-      "bytes": 4446,
-      "tags": [
-        "中性",
-        "其他",
-        "方图",
-        "有文字",
-        "静图"
-      ],
-      "text": "来，把头伸过来，我给你看个宝贝",
-      "category": "其他"
-    },
-    {
-      "id": "c1e0f5de07756a8c",
-      "file": "ori/c1e0f5de07756a8c.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 120,
-      "height": 120,
-      "bytes": 2865,
-      "tags": [
-        "中性",
-        "方图",
-        "无文字",
         "静图"
       ],
       "text": "",
@@ -7372,25 +6925,6 @@
         "静图"
       ],
       "text": "把爷逗的乐开花",
-      "category": "其他"
-    },
-    {
-      "id": "fe07365d6847220d",
-      "file": "ori/fe07365d6847220d.gif",
-      "format": "gif",
-      "animated": true,
-      "width": 96,
-      "height": 91,
-      "bytes": 11004,
-      "tags": [
-        "中性",
-        "其他",
-        "动图",
-        "有文字",
-        "近方图",
-        "透明"
-      ],
-      "text": "欧气吮吸Siphon0i",
       "category": "其他"
     },
     {
@@ -7861,24 +7395,6 @@
       "category": "无文字"
     },
     {
-      "id": "6979c7b313d6b25d",
-      "file": "ori/6979c7b313d6b25d.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 120,
-      "height": 104,
-      "bytes": 3359,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "杀不尽的欧洲",
-      "category": "其他"
-    },
-    {
       "id": "939f78f9a272438e",
       "file": "ori/939f78f9a272438e.jpeg",
       "format": "jpeg",
@@ -8003,24 +7519,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "79e46e00bc5d9e21",
-      "file": "ori/79e46e00bc5d9e21.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 197,
-      "height": 198,
-      "bytes": 3213,
-      "tags": [
-        "其他",
-        "暖色",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "我能插嘴么",
-      "category": "其他"
     },
     {
       "id": "f5dcf8f3870b4c73",
@@ -8160,23 +7658,6 @@
       ],
       "text": "手机里有大傻逼",
       "category": "生气"
-    },
-    {
-      "id": "45ed2d955c64ec38",
-      "file": "ori/45ed2d955c64ec38.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 156,
-      "height": 149,
-      "bytes": 4201,
-      "tags": [
-        "中性",
-        "无文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
     },
     {
       "id": "a5c81815e8b99d93",
@@ -8370,23 +7851,6 @@
       "category": "无文字"
     },
     {
-      "id": "b57b84748fa543aa",
-      "file": "ori/b57b84748fa543aa.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 122,
-      "height": 102,
-      "bytes": 3131,
-      "tags": [
-        "中性",
-        "无文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
       "id": "8ca19d939ae5a872",
       "file": "ori/8ca19d939ae5a872.jpeg",
       "format": "jpeg",
@@ -8456,24 +7920,6 @@
         "透明"
       ],
       "text": "、0《D",
-      "category": "其他"
-    },
-    {
-      "id": "ba44410903980684",
-      "file": "ori/ba44410903980684.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 120,
-      "height": 99,
-      "bytes": 12175,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "正常人会这样、",
       "category": "其他"
     },
     {
@@ -8751,24 +8197,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "b55f01bf4b94c898",
-      "file": "ori/b55f01bf4b94c898.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 960,
-      "height": 888,
-      "bytes": 114315,
-      "tags": [
-        "其他",
-        "冷色",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "谢车（少女限定）一警備小隊長TAP協力、感謝寸。",
-      "category": "其他"
     },
     {
       "id": "4531da6ba583655e",
