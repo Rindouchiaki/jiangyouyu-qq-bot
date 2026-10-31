@@ -120,6 +120,17 @@ try:
 except Exception as exc:  # noqa: BLE001
     nonebot.logger.warning(f"B站解析插件加载失败 {type(exc).__name__}: {exc}")
 
+# 解析插件拼合并转发时用的节点名默认是 "nonebot-plugin-parser"，群里看着像报错；
+# 换成 PARSER_NICKNAME（默认「动态转发的消息记录」）
+try:
+    import nonebot_plugin_parser.config as _parser_config
+
+    _parser_nickname = os.getenv("PARSER_NICKNAME", "动态转发的消息记录").strip()
+    _parser_config._nickname = _parser_nickname or "动态转发的消息记录"
+    nonebot.logger.info(f"解析转发节点名：{_parser_config._nickname}")
+except Exception as exc:  # noqa: BLE001
+    nonebot.logger.warning(f"解析转发节点名没改成 {type(exc).__name__}: {exc}")
+
 # B 站动态/直播/番剧订阅推送（Bison）：自带 /添加订阅、/查询订阅、/群管理 等指令和卡片主题；
 # 它 import 期就依赖 playwright，没装会抛 ModuleNotFoundError，这里降级成只记一条警告
 try:

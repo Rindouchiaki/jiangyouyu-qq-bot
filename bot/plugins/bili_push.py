@@ -16,6 +16,7 @@ import asyncio
 import json
 import os
 import re
+import time
 
 from nonebot.log import logger
 
@@ -105,17 +106,19 @@ def _pick_bot():
 
 
 async def _send_uni(send_target, uni) -> None:
-    """把解析插件渲染好的一条 UniMessage 发到 Bison 的目标（群/私聊）。"""
+    """把解析插件渲染好的一条 UniMessage 发出去——和群里贴链接时 `message.send()` 同一套。"""
+    from nonebot_plugin_alconna.uniseg import Target
+
     bot = _pick_bot()
     if bot is None:
         raise RuntimeError("没有可用的 bot")
-    msg = uni.export(bot=bot)
     if isinstance(send_target, TargetQQGroup):
-        await bot.send_group_msg(group_id=send_target.group_id, message=msg)
+        target = Target(id=str(send_target.group_id), private=False, self_id=str(bot.self_id))
     elif isinstance(send_target, TargetQQPrivate):
-        await bot.send_private_msg(user_id=send_target.user_id, message=msg)
+        target = Target(id=str(send_target.user_id), private=True, self_id=str(bot.self_id))
     else:
         raise RuntimeError(f"不认识的目标 {send_target!r}")
+    await uni.send(target=target, bot=bot)
 
 
 async def _send_parsed(send_target, url: str) -> bool:
@@ -199,17 +202,23 @@ if Bilibili is not None:
 
     _send_msgs = bison_send.send_msgs
 
+    _PARSE_TIMEOUT = float(os.getenv("BILI_PUSH_TIMEOUT", "240"))
+
     async def _send_msgs_with_parser(send_target, msgs):
         """能解析就发解析出来的内容；解析不了（直播间、下播通知）才发 Bison 原消息。"""
         for text in _texts_of(msgs):
             if text.strip():
                 push_marks.mark_text(text)
         for url in _urls_of(msgs):
+            t0 = time.monotonic()
             try:
-                ok = await asyncio.wait_for(_send_parsed(send_target, url), timeout=90)
+                ok = await asyncio.wait_for(_send_parsed(send_target, url), timeout=_PARSE_TIMEOUT)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"bili_push: 解析推送没成（{type(exc).__name__}: {exc}），退回 Bison 原消息")
                 ok = False
+            else:
+                cost = time.monotonic() - t0
+                logger.info(f"bili_push: 解析推送 {url} 用时 {cost:.1f}s")
             if ok:
                 return
         await _send_msgs(send_target, msgs)
