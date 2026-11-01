@@ -20,6 +20,7 @@ import time
 
 from nonebot.log import logger
 
+import bili_card_text as card_text
 import push_marks
 
 try:
@@ -121,6 +122,13 @@ async def _send_uni(send_target, uni) -> None:
     await uni.send(target=target, bot=bot)
 
 
+def _with_card_text(uni, result, bot, url: str = ""):
+    """正文画进卡片了，合并转发里补一条正文和一条可跳转的链接。"""
+    text = getattr(result, "text", "") or ""
+    name = getattr(parser_config, "nickname", "动态转发的消息记录") if parser_config else "动态转发的消息记录"
+    return card_text.decorate(uni, text, url, bot.self_id, name)
+
+
 async def _send_parsed(send_target, url: str) -> bool:
     """走解析插件：search_url → parse → render_messages，跟群里贴链接一模一样。"""
     if BilibiliParser is None:
@@ -141,7 +149,7 @@ async def _send_parsed(send_target, url: str) -> bool:
     sent = 0
     try:
         async for uni in renderer.render_messages():
-            await _send_uni(send_target, uni)
+            await _send_uni(send_target, _with_card_text(uni, result, bot, url))
             sent += 1
     finally:
         current_bot.reset(token)
@@ -205,11 +213,14 @@ if Bilibili is not None:
     _PARSE_TIMEOUT = float(os.getenv("BILI_PUSH_TIMEOUT", "240"))
 
     async def _send_msgs_with_parser(send_target, msgs):
-        """能解析就发解析出来的内容；解析不了（直播间、下播通知）才发 Bison 原消息。"""
+        """图文动态走解析；视频/直播用 Bison 的「标题 + 封面 + 链接」；解析失败也退回 Bison 原消息。"""
         for text in _texts_of(msgs):
             if text.strip():
                 push_marks.mark_text(text)
         for url in _urls_of(msgs):
+            if card_text.is_media_url(url):
+                logger.debug(f"bili_push: {url} 是视频/直播，走标题封面链接")
+                break
             t0 = time.monotonic()
             try:
                 ok = await asyncio.wait_for(_send_parsed(send_target, url), timeout=_PARSE_TIMEOUT)
