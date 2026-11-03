@@ -72,6 +72,7 @@ jobs:
           .venv\Scripts\python tests\test_sticker_weights.py || exit /b 1
           .venv\Scripts\python tests\test_backstage.py || exit /b 1
           .venv\Scripts\python tests\test_episodes.py || exit /b 1
+          .venv\Scripts\python tests\test_knowledge.py || exit /b 1
           .venv\Scripts\python tests\test_bili_group.py || exit /b 1
           .venv\Scripts\python tests\test_push_marks.py || exit /b 1
 
