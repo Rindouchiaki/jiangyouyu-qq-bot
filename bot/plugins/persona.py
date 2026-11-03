@@ -43,13 +43,11 @@ from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment
 from nonebot.log import logger
 from nonebot.params import CommandArg
 
-import assoc
 import backstage
 import bonds
 import devs
 import episodes
 import gscore_guard
-import memory
 import slang
 import sv_data
 import szb_decks
@@ -99,6 +97,7 @@ from persona_rules import (
     judge_mood,
     leaks_persona,
     looks_addressed,
+    looks_like_injection,
     looks_self_disclosure,
     name_call_prob,
     follow_prob,
@@ -159,10 +158,6 @@ FOLLOW_COOLDOWN_SEC = float(os.getenv("REPLY_GROUP_COOLDOWN", "5"))
 CHIME_PROB = float(os.getenv("REPLY_CHIME_PROB", "0.1"))
 CHIME_COOLDOWN_SEC = float(os.getenv("REPLY_CHIME_COOLDOWN", "300"))
 CHIME_HISTORY_BUDGET = int(os.getenv("CHIME_HISTORY_BUDGET", "500"))
-# 私聊内容同时记进白守日记，慢慢养出固定人格
-PRIVATE_MIRROR = os.getenv("PRIVATE_MIRROR", "1").strip() not in ("0", "false", "False")
-# 群聊里「真的接上了」的对话也记（被叫/接续，不含随机插话），带群号和发言人
-GROUP_MIRROR = os.getenv("GROUP_MIRROR", "1").strip() not in ("0", "false", "False")
 GLOBAL_PER_MIN = int(os.getenv("REPLY_PER_MIN", "6"))
 # 没被 @ 时（接话、冒泡、只发表情）：每个群每小时最多几条，同群两条之间至少隔几秒（默认档的值，自宅档不限）。
 # 被 @ 不受这两条限制，有人找她就回
@@ -512,7 +507,7 @@ def _load_mode() -> None:
         pass
 
 
-RECALL_HINTS = ("记得", "上次", "之前", "以前", "那次", "回忆", "白守", "记忆")
+RECALL_HINTS = ("记得", "上次", "之前", "以前", "那次", "回忆", "记忆")
 
 _last_sticker: dict[str, float] = defaultdict(float)
 _last_auto_sticker: dict[str, float] = defaultdict(float)
@@ -823,7 +818,7 @@ async def _diary_group(group_id: str, lines: list[tuple[str, str]]) -> None:
 async def _keep_episode(item: dict, uid: str, gid: str, src: str) -> str:
     """记一件事：先和同范围里像的比，重复就刷新、像就问模型是更新还是变了，不像才新记。返回做了什么（打日志用）。"""
     text, kind = item["text"], item["kind"]
-    if assoc.looks_like_injection(text):
+    if looks_like_injection(text):
         return ""
     if kind == "promise":
         kind = "self"
@@ -1199,13 +1194,6 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
     else:
         name = safe_name(name, user_id, (*devs.RESERVED_NAMES, *NICKNAMES))
 
-    # 私聊内容同时记进白守日记（形成长期人格的素材）
-    if not is_group and PRIVATE_MIRROR:
-        try:
-            await asyncio.to_thread(memory.remember, f"对方：{text}", f"私聊{user_id}")
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(f"persona: 私聊记录失败 {type(exc).__name__}: {exc}")
-
     history = _history[key]
     gap = now - _last_message_at.get(key, 0.0)
     history.append((name, text))
@@ -1552,15 +1540,6 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             logger.info(f"persona: 只回了张表情 {item['file']}（{mode}，场景 {scene[0] if scene else '无厘头'}）")
             return True
 
-    # 问到「记得/上次」这类，翻一下白守里的记忆
-    notes = None
-    if memory.available() and any(hint in text for hint in RECALL_HINTS):
-        # 只带本会话的记录和开发者 /记 的笔记
-        scope = f"群{group_id}" if is_group else f"私聊{user_id}"
-        notes = await asyncio.to_thread(memory.recall, text, (scope,), 3)
-        if notes:
-            logger.info(f"persona: 带上 {len(notes)} 条记忆")
-
     chime = mode.startswith("插话")
     # 联网：只在有人跟她说话、而且像是要查东西时才把工具交给模型，插话不查
     can_search = (
@@ -1581,18 +1560,6 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     if mode == "被叫@":
         own = [(who, said) for who, said in list(_history[key]) if who == "我"][-3:]
         past = own + at_history(_quoted(event))
-    # 关联记忆：这条里提到的人/事，翻一下本会话记着的（群和私聊各管各的）
-    assoc_scope = f"群{group_id}" if is_group else f"私聊{user_id}"
-    if text and not chime:
-        learned = assoc.remember(text, who=name, scope=assoc_scope)
-        if learned:
-            logger.debug(f"persona: 记下 {learned}")
-    facts_note = ""
-    if addressed:
-        facts = assoc.recall(text, assoc_scope)
-        facts_note = assoc.for_prompt(facts)
-        if facts_note:
-            logger.debug(f"persona: 想起 {[f.get('s') for f in facts]}")
     # 事件记忆：被话题勾起就想起来，不用等「记得」；插话只想本群的事，「忘了吧」就不再主动提
     recall_note = ""
     if EPISODES_ENABLE and (addressed or (chime and is_group)):
@@ -1628,8 +1595,6 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         mood=mood,
         dev_name=devs.DEV_NAMES,
         dev_aliases=devs.DEV_ALIASES,
-        memory_notes=notes,
-        has_memory=memory.available(),
         chime=chime,
         # 插话只带一半历史，省一半输入 token
         budget=CHIME_HISTORY_BUDGET if chime else None,
@@ -1653,7 +1618,6 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         chime_free=mcfg["free"] and att != "讨厌",
         sv_note=sv_note,
         deck_note=deck_note,
-        facts_note=facts_note,
         recall_note=recall_note,
     )
 
@@ -1855,20 +1819,6 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             if not is_group:
                 _background(_learn_slang(list(history), f"p{user_id}"))
 
-    if sent and not is_group and PRIVATE_MIRROR:
-        try:
-            await asyncio.to_thread(memory.remember, f"我：{reply}", f"私聊{user_id}")
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(f"persona: 私聊记录失败 {type(exc).__name__}: {exc}")
-    elif sent and is_group and GROUP_MIRROR and mode.startswith(("被叫", "接续")):
-        # 群聊里只有真被叫/接续的对话才进记忆，随机插话不记，免得日记变成闲聊流水账
-        tag = f"群{group_id}"
-        try:
-            await asyncio.to_thread(memory.remember, f"{name}：{text}", tag)
-            await asyncio.to_thread(memory.remember, f"我：{reply}", tag)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(f"persona: 群聊记录失败 {type(exc).__name__}: {exc}")
-
     # 模型没自己甩表情时，偶尔顺手配一张（这一轮已经被要求发过图就不重复）
     if not sent_sticker and not wants_sticker(text):
         chance = min(0.9, STICKER_AUTO_PROB * (1.5 if att == "亲近" else 1))
@@ -2030,6 +1980,33 @@ async def _start_proactive() -> None:
             f"persona: 主动找人已开（只找亲近的人，平时常聊的钟点里没说话满 {PROACTIVE_SILENCE_MIN:.0f} 分钟，"
             f"每天最多 {PROACTIVE_DAILY_MAX} 次）"
         )
+
+
+_episodes_task: list[asyncio.Task] = []
+
+
+async def _episodes_loop() -> None:
+    """Ollama 不在时记下的事没有向量，隔一阵补上。"""
+    while True:
+        await asyncio.sleep(600)
+        try:
+            filled = await asyncio.to_thread(episodes.backfill)
+            if filled:
+                logger.info(f"persona: 给 {filled} 条记忆补上了向量")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"persona: 补记忆向量出错 {type(exc).__name__}: {exc}")
+
+
+@nonebot.get_driver().on_startup
+async def _start_episodes() -> None:
+    if not EPISODES_ENABLE or _episodes_task:
+        return
+    # 旧的关联记忆（assoc.json）搬进事件记忆，只搬一次（搬完文件改名）
+    old = episodes.DATA_FILE.parent / "assoc.json"
+    if old.is_file():
+        moved = await asyncio.to_thread(episodes.import_assoc, old)
+        logger.info(f"persona: 旧的关联记忆搬进事件记忆 {moved} 条")
+    _episodes_task.append(asyncio.create_task(_episodes_loop()))
 
 
 mode_cmd = on_command("模式", priority=16, block=True)
