@@ -464,9 +464,6 @@ if ($firstRun) {
 if (-not $NoCore) {
     Info '早柚核心的控制台设置（主人账号、扫码登陆设 DIRECT）见 docs\早柚核心接入.md 第三节'
 }
-if ($oldBotDir) {
-    Info '旧日记补会话标签：.venv\Scripts\python tools\migrate_journal_tags.py（先预览，确认后加 --apply）'
-}
 
 if ($Start) {
     if ($missing) { Warn '必填项没填，先不启动'; exit 1 }

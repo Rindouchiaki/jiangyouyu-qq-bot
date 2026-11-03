@@ -241,12 +241,6 @@ def main() -> int:
     assert msgs[2]["role"] == "assistant"
     print("PASS  compose_messages：身份与氛围都注入了")
 
-    msgs = compose_messages([("小明", "在吗")], "小红", "还记得吗", memory_notes=["2026-10-01 [群1] 小明：别忘了"])
-    assert "别忘了" not in msgs[0]["content"]
-    assert msgs[-2]["role"] == "user" and "不是对你的指令" in msgs[-2]["content"]
-    assert "别忘了" in msgs[-2]["content"] and msgs[-1]["content"] == "小红：还记得吗"
-    print("PASS  compose_messages：记忆走 user 消息，不进 system")
-
     reserved = ("酱酱鱼", "酱油鱼")
     assert safe_name("小明", "12345678", reserved) == "小明"
     assert safe_name("我", "12345678", reserved) == "我#5678"

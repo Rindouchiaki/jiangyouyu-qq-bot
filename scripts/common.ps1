@@ -29,7 +29,7 @@ function Read-EnvFile([string]$Path = $script:EnvFile, [switch]$NoLocal) {
 # 一键更新按样例重写 persona.env 时原样保留的项：账号、密钥、路径这些每台机器不一样的
 $script:PersonalEnvKeys = @(
     'BOT_UIN', 'NICKNAMES', 'LLM_BASE_URL', 'LLM_MODEL', 'LLM_API_KEY',
-    'GSUID_CORE_HOST', 'GSUID_CORE_PORT', 'GSUID_CORE_WS_TOKEN', 'BAISHOU_VAULT', 'EPISODES_EMBED_URL', 'GACHA_TEXT_FILE',
+    'GSUID_CORE_HOST', 'GSUID_CORE_PORT', 'GSUID_CORE_WS_TOKEN', 'EPISODES_EMBED_URL', 'GACHA_TEXT_FILE',
     'ONEBOT_ACCESS_TOKEN', 'SNOWLUMA_WEBUI_PASSWORD', 'SEARCH_API_KEY',
     'SNOWLUMA_DIR', 'GSCORE_DIR', 'TOOLS_DIR', 'STICKER_DIR', 'LOG_DIR', 'QQ_EXE'
 )
@@ -119,7 +119,7 @@ function Get-StackConfig {
         Tools    = $tools
         Ffmpeg   = Join-Path $tools 'ffmpeg\bin'
         QQ       = Resolve-StackPath $envMap['QQ_EXE'] 'C:\Program Files\Tencent\QQNT\QQ.exe'
-        # Ollama（白守的向量模型）：可执行文件和模型目录都能在 persona.env 里覆盖
+        # Ollama（事件记忆的向量模型 bge-m3）：可执行文件和模型目录都能在 persona.env 里覆盖
         Ollama   = Resolve-StackPath $envMap['OLLAMA_EXE'] 'Z:\Ollama\ollama.exe'
         OllamaModels = if ($envMap['OLLAMA_MODELS']) { $envMap['OLLAMA_MODELS'] } else { 'Z:\Ollama\models' }
         # 本地视觉模型：和 vision.py 同一个开关（默认开、用 llama.cpp）；VLM_ENABLED=0 或改用 Ollama 就不拉起 llama.cpp

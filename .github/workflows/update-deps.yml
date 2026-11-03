@@ -59,7 +59,6 @@ jobs:
           Set-EnvValue LLM_MOCK 1
           Set-EnvValue REPLY_PROB_CALLED 1
           Set-EnvValue QQ_EXE 'C:\no-qq-on-ci\QQ.exe'
-          Set-EnvValue BAISHOU_VAULT "$env:RUNNER_TEMP\vault"
 
       - name: 启动整套
         if: steps.check.outputs.changed == 'true' || inputs.validate_only
@@ -83,7 +82,7 @@ jobs:
           .venv\Scripts\python tests\test_persona_rules.py || exit /b 1
           .venv\Scripts\python tests\test_gscore_guard.py || exit /b 1
           .venv\Scripts\python tests\test_bonds.py || exit /b 1
-          .venv\Scripts\python tests\test_migrate_journal_tags.py
+          .venv\Scripts\python tests\test_episodes.py
 
       - name: 停止
         if: always() && (steps.check.outputs.changed == 'true' || inputs.validate_only)

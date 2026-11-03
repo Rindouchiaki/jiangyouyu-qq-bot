@@ -62,12 +62,13 @@ create table if not exists mem (
     last real not null default 0,
     hits integer not null default 0,
     state text not null default 'now',
-    vec blob
+    vec blob,
+    who text not null default ''
 );
 create index if not exists mem_uid on mem(uid);
 create index if not exists mem_gid on mem(gid);
 """
-_COLS = ("id", "kind", "uid", "gid", "src", "text", "imp", "mood", "t", "last", "hits", "state", "vec")
+_COLS = ("id", "kind", "uid", "gid", "src", "text", "imp", "mood", "t", "last", "hits", "state", "vec", "who")
 
 
 def _db() -> sqlite3.Connection:
@@ -75,6 +76,10 @@ def _db() -> sqlite3.Connection:
         DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(DATA_FILE), check_same_thread=False)
         conn.executescript(_SCHEMA)
+        # #61 建的库没有 who 列（开发者 /记 的署名），补上
+        if "who" not in {r[1] for r in conn.execute("pragma table_info(mem)")}:
+            conn.execute("alter table mem add column who text not null default ''")
+            conn.commit()
         _conn.append(conn)
     return _conn[0]
 
@@ -129,10 +134,12 @@ def _sim(query: str, qvec, rec: dict) -> tuple[float, bool]:
 
 
 def _same_scope(kind: str, uid: str, gid: str) -> tuple[str, tuple]:
-    """合并时只和同一个范围的比：群里的事比本群，别的比同一个人（她自己的日常比她自己的）。"""
+    """合并时只和同一个范围的比：群里的事比本群，开发者笔记比笔记，别的比同一个人（她自己的日常比她自己的）。"""
     if kind == "group":
         return "kind = 'group' and gid = ?", (gid,)
-    return "kind != 'group' and uid = ?", (uid,)
+    if kind == "note":
+        return "kind = 'note'", ()
+    return "kind not in ('group', 'note') and uid = ?", (uid,)
 
 
 def similar(text: str, vec, kind: str, uid: str = "", gid: str = "", limit: int = 3) -> list[tuple[float, bool, dict]]:
@@ -158,13 +165,13 @@ def plan(text: str, vec, kind: str, uid: str = "", gid: str = "") -> tuple[str, 
 
 
 def add(kind: str, text: str, uid: str = "", gid: str = "", src: str = "g", imp: int = 3, mood: str = "",
-        vec=None, now: float | None = None) -> int:
+        vec=None, now: float | None = None, who: str = "") -> int:
     now = time.time() if now is None else now
     with _lock:
         db = _db()
         cur = db.execute(
-            "insert into mem (kind, uid, gid, src, text, imp, mood, t, vec) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (kind, uid, gid, src, text, max(1, min(5, int(imp))), mood, now, _pack(vec)),
+            "insert into mem (kind, uid, gid, src, text, imp, mood, t, vec, who) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (kind, uid, gid, src, text, max(1, min(5, int(imp))), mood, now, _pack(vec), who),
         )
         _prune(kind, uid, gid, now)
         db.commit()
@@ -221,7 +228,7 @@ def recall(query: str, uid: str, gid: str = "", chat: str = "", chime: bool = Fa
     with _lock:
         rows = _db().execute(
             "select * from mem where (uid = ? and uid != '') or (kind = 'group' and gid = ? and gid != '') "
-            "or (kind = 'self' and uid = '')",
+            "or (kind = 'self' and uid = '') or kind = 'note'",
             (uid, gid),
         ).fetchall()
     recs = [r for r in map(_row, rows) if episode_visible(r, uid, gid, chime, upset, asked) and now - r["t"] >= FRESH_SEC]
@@ -275,6 +282,73 @@ def forget_user(uid: str) -> int:
         cur = db.execute("delete from mem where uid = ?", (uid,))
         db.commit()
         return cur.rowcount
+
+
+def search(keyword: str, uid: str = "", gid: str = "", limit: int = 5) -> list[dict]:
+    """/回忆：只搜本会话（群里是本群的事，私聊是关于这个人的）和开发者笔记，按字面找，最新的在前。"""
+    kw = keyword.strip()
+    if not kw:
+        return []
+    if gid:
+        where, args = "(kind = 'group' and gid = ?) or kind = 'note'", (gid,)
+    else:
+        where, args = "(uid = ? and uid != '' and kind != 'note') or kind = 'note'", (uid,)
+    with _lock:
+        rows = _db().execute(f"select * from mem where ({where}) and text like ? order by t desc limit ?",
+                             (*args, f"%{kw}%", limit)).fetchall()
+    return [{k: v for k, v in _row(r).items() if k != "vec"} for r in rows]
+
+
+def own(limit: int = 20) -> list[dict]:
+    """她自己的（日常、态度、答应别人的）：开发者 /记忆 能看的只有这些，群友的事不给看。"""
+    with _lock:
+        rows = _db().execute("select * from mem where kind = 'self' order by t desc limit ?", (limit,)).fetchall()
+    return [{k: v for k, v in _row(r).items() if k != "vec"} for r in rows]
+
+
+def backfill(limit: int = 64) -> int:
+    """Ollama 不在时记下的没有向量，补上；返回补了几条。"""
+    with _lock:
+        rows = _db().execute("select id, text from mem where vec is null limit ?", (limit,)).fetchall()
+    if not rows:
+        return 0
+    vecs = embed([t for _, t in rows])
+    done = [(_pack(v), i) for (i, _), v in zip(rows, vecs) if v]
+    if done:
+        with _lock:
+            db = _db()
+            db.executemany("update mem set vec = ? where id = ?", done)
+            db.commit()
+    return len(done)
+
+
+def import_assoc(path: Path) -> int:
+    """一次性：旧的关联记忆（assoc.json，按「群号」「私聊QQ」存）搬进来，搬完把文件改名，不再读。
+
+    群里的记成本群的事（带上是谁说的），私聊的记成关于那个人的（只在私聊里想起）；说法打架的按不太重要算。
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0
+    count = 0
+    for scope, rec in (raw.get("scopes") or {}).items():
+        for f in rec.get("facts") or []:
+            fact = f"{f.get('s', '')}{f.get('p', '')}{f.get('o', '')}"
+            if len(fact) < 4:
+                continue
+            imp = 2 if f.get("c", 1) else 1
+            t = float(f.get("t") or time.time())
+            if scope.startswith("群") and scope[1:].isdigit():
+                who = str(f.get("who") or "")
+                add("group", (f"{who}说{fact}" if who else fact)[:40], "", scope[1:], "g", imp, now=t)
+            elif scope.startswith("私聊") and scope[2:].isdigit():
+                add("person", f"他说{fact}"[:40], scope[2:], "", "p", imp, now=t)
+            else:
+                continue
+            count += 1
+    path.rename(path.with_name(path.name + ".imported"))
+    return count
 
 
 def stats() -> dict:
