@@ -197,6 +197,12 @@ async def run(args, token: str, self_id: int) -> None:
             await c.send("/小本本 10007", user=dev)
             got = await c.collect(6)
             check(len(got) == 1 and "不给翻" in str(got), "内部群里 /小本本 也不给翻日记，只提示删除 / 清空", str(got))
+            await c.send("/知识库", user=dev)
+            got = await c.collect(15, lambda g: any("还没学过" in str(a) for a in g))
+            check(any("还没学过" in str(a) for a in got) and len(got) >= 2, "内部群里 /知识库：人设说话 + 话题列表", str(got)[:300])
+            await c.send("/记忆", user=dev)
+            got = await c.collect(15, lambda g: any("各类记了多少" in str(a) for a in g))
+            check(any("各类记了多少" in str(a) for a in got), "内部群里 /记忆：人设说话 + 统计", str(got)[:300])
             c.members = [c.self_id, 10002, 10003]
             await c.send("/用量", user=10002, private=True)
             got = await c.collect(5)

@@ -48,6 +48,7 @@ import bonds
 import devs
 import episodes
 import gscore_guard
+import knowledge
 import slang
 import sv_data
 import szb_decks
@@ -94,6 +95,7 @@ from persona_rules import (
     is_bili_command,
     is_game_command,
     is_question,
+    knowledge_block,
     judge_annoyance,
     judge_atmosphere,
     judge_mood,
@@ -686,6 +688,8 @@ async def ask_llm(
 
 # 后台数据（/小本本、/好感、/关系图…）在开发者内部对话里当成请求问她，用同一个模型
 backstage.setup(ask_llm, NICKNAMES)
+# 知识库录入时整理网页也用同一个模型
+knowledge.setup(ask_llm)
 
 
 def _run_tool(call: dict, user_id: str) -> str:
@@ -700,6 +704,8 @@ def _run_tool(call: dict, user_id: str) -> str:
     if name == "web_search":
         query = str(args.get("query") or "")[:128]
         logger.info(f"persona: 联网搜「{query}」")
+        # 常查的词进知识库待审区，开发者决定要不要收进来
+        knowledge.note_query(query)
         return format_search_results(web_search.search(query, user_id))
     if name == "web_fetch":
         url = str(args.get("url") or "")
@@ -1584,6 +1590,10 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         recall_note = episodes_block(recalled, name, now)
         if recalled:
             logger.info(f"persona: 想起 {len(recalled)} 件事：{'；'.join(r['text'] for r in recalled)}")
+    # 知识库：她懂的东西当成本来就知道的，插话也能用（只带 1 条）
+    known = await asyncio.to_thread(knowledge.recall, batch_text if chime else text, 1 if chime else knowledge.RECALL_MAX)
+    if known:
+        logger.info(f"persona: 懂的东西 {len(known)} 条：{'；'.join(k['title'] for k in known)}")
     deck = None
     deck_note = ""
     if addressed and not chime and szb_decks.wants_deck(text):
@@ -1628,6 +1638,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         sv_note=sv_note,
         deck_note=deck_note,
         recall_note=recall_note,
+        knowledge_note=knowledge_block(known),
     )
 
     limit = HELP_MAX_TOKENS if help_mode or can_search else 120 if question else 100
