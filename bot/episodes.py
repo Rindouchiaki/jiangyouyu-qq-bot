@@ -262,6 +262,41 @@ def recall(query: str, uid: str, gid: str = "", chat: str = "", chime: bool = Fa
     return picked
 
 
+# 待跟进的事、她答应别人的事：他再出现时提一句，隔几天再提，提过两次就算了
+DUE_MIN_AGE = 86400
+DUE_GAP = 3 * 86400
+DUE_TIMES = 2
+
+
+def due(uid: str, gid: str = "", limit: int = 1, now: float | None = None) -> list[dict]:
+    """他来了，有什么没下文的事可以问、答应他的事可以提（不看话题，只看隔了多久）。不在这里记「提过」，发出去了再 mark_due。"""
+    now = time.time() if now is None else now
+    with _lock:
+        rows = [_row(r) for r in _db().execute(
+            "select * from mem where uid = ? and state = 'now' and (kind = 'followup' or kind = 'self') "
+            "and t <= ? and last <= ?",
+            (uid, now - DUE_MIN_AGE, now - DUE_GAP),
+        ).fetchall()]
+    rows = [r for r in rows if episode_visible(r, uid, gid)]
+    rows.sort(key=lambda r: (-r["imp"], r["t"]))
+    for r in rows:
+        r.pop("vec", None)
+        r["due"] = True
+    return rows[:limit]
+
+
+def mark_due(ids: list[int], now: float | None = None) -> None:
+    """真提了：记下时间，提够 DUE_TIMES 次就不再提（标 done，事还记得）。"""
+    now = time.time() if now is None else now
+    if not ids:
+        return
+    with _lock:
+        db = _db()
+        db.executemany("update mem set hits = hits + 1, last = ? where id = ?", [(now, i) for i in ids])
+        db.executemany("update mem set state = 'done' where id = ? and hits >= ?", [(i, DUE_TIMES) for i in ids])
+        db.commit()
+
+
 def quiet_recent(uid: str, window: float = 3600, now: float | None = None) -> int:
     """「忘了吧」：这个人最近记下的事降权、不再主动提（不真删，他明着问还能想起）。"""
     now = time.time() if now is None else now

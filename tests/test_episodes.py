@@ -252,12 +252,33 @@ def night() -> None:
     print("PASS  印象替换小本本日记：群里用不带私聊的那份，私聊用全的")
 
 
+def follow() -> None:
+    fu = episodes.add("followup", "他下周三面试", "50001", "", "g", 4, now=NOW - 2 * DAY)
+    promise = episodes.add("self", "下次陪他打鸣潮", "50001", "", "p", 3, now=NOW - 2 * DAY)
+    episodes.add("followup", "他刚说明天考试", "50001", "", "g", 3, now=NOW - 3600)  # 才说的不急着问
+    got = episodes.due("50001", "7", 2, NOW)
+    assert [d["id"] for d in got] == [fu] and got[0]["due"], got  # 群里：私聊里答应的不提
+    got = episodes.due("50001", "", 2, NOW)
+    assert [d["id"] for d in got] == [fu, promise], got  # 私聊：重要的先
+    assert "还没兑现，找机会提一句" in episodes_block(got, "小林", NOW)
+    assert not episodes.due("50002", "", 2, NOW)  # 别人的不提
+    assert episodes.due("50001", "", 2, NOW)  # 没发出去不算提过
+    episodes.mark_due([fu], NOW)
+    later = [d["id"] for d in episodes.due("50001", "", 3, NOW + DAY)]
+    assert fu not in later and promise in later, later  # 提过隔几天再提；「明天考试」过了一天也该问了
+    episodes.mark_due([fu], NOW + 4 * DAY)
+    state = episodes._db().execute("select state from mem where id = ?", (fu,)).fetchone()[0]
+    assert state == "done" and fu not in [d["id"] for d in episodes.due("50001", "", 2, NOW + 9 * DAY)]
+    print("PASS  没下文的事、答应他的事：他来了就提，私聊里答应的不在群里提，隔几天再提，提够两次就算了")
+
+
 def main() -> int:
     rules()
     store()
     vectors()
     takeover()
     night()
+    follow()
     episodes.close()
     print("test_episodes: 全部通过", TMP)
     return 0

@@ -1564,6 +1564,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         past = own + at_history(_quoted(event))
     # 事件记忆：被话题勾起就想起来，不用等「记得」；插话只想本群的事，「忘了吧」就不再主动提
     recall_note = ""
+    due_ids: list[int] = []
     if EPISODES_ENABLE and (addressed or (chime and is_group)):
         if addressed and wants_forget(text):
             hushed = episodes.quiet_recent(user_id, now=now)
@@ -1574,6 +1575,12 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             chime, (key, user_id) in _upset, any(hint in text for hint in RECALL_HINTS),
             1 if chime else EPISODES_RECALL_MAX, now,
         )
+        if addressed and not chime:
+            # 他来了：没下文的事问一句、答应他的事提一句，不用等话题勾起
+            seen = {r["id"] for r in recalled}
+            due = [d for d in episodes.due(user_id, group_id, 1, now) if d["id"] not in seen]
+            due_ids = [d["id"] for d in due]
+            recalled += due
         recall_note = episodes_block(recalled, name, now)
         if recalled:
             logger.info(f"persona: 想起 {len(recalled)} 件事：{'；'.join(r['text'] for r in recalled)}")
@@ -1806,6 +1813,10 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         f"{'，联网' if can_search else ''}{'，兴趣 ' + '/'.join(interest) if interest else ''}）"
     )
 
+    # 没下文的事、答应他的事真提出去了才算提过
+    if due_ids:
+        episodes.mark_due(due_ids, now)
+
     # 聊够几轮、或者对方在说自己的事，就摘一次个人日记（同一人至少隔 10 分钟）
     if DIARY_USER_EVERY > 0 and addressed:
         _diary_user_turns[user_id] += 1
@@ -1933,11 +1944,14 @@ async def _proactive_tick() -> None:
         return
     key = f"private_{uid}"
     name = devs.dev_name(uid) or str(rec.get("name") or "他")
+    # 有没下文的事、答应他的事就拿它当话题
+    due = episodes.due(uid, "", 1, now) if EPISODES_ENABLE else []
     messages = compose_messages(
         list(_history[key]), name, "", self_names=NICKNAMES, dev_name=devs.DEV_NAMES, dev_aliases=devs.DEV_ALIASES,
         hour=datetime.now().hour, attitude=att,
         user_notes=person_notes(rec, False), topics=bonds.top_topics(uid),
         flavor=_sticky_flavor(key, att), proactive=True, cute=random.random() < CUTE_CHANCE.get(att, 0.0),
+        recall_note=episodes_block(due, name, now),
     )
     try:
         raw = await ask_llm(messages, 100, stop=None)
@@ -1949,6 +1963,7 @@ async def _proactive_tick() -> None:
         return
     _proactive_day["n"] += 1
     bonds.mark_proactive(uid, now)
+    episodes.mark_due([d["id"] for d in due], now)
     bonds.save(force=True)
     for i, line in enumerate(parts):
         await _sleep(typing_delay(line, TYPING_SEC_PER_CHAR, TYPING_MAX_SEC) if i else 0)
