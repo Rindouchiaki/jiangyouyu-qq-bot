@@ -216,11 +216,48 @@ def takeover() -> None:
     print("PASS  旧库自动补 who 列")
 
 
+def night() -> None:
+    import bonds
+    from persona_rules import person_notes
+
+    v = episodes._norm([1.0, 0.2, 0.0])
+    old = episodes.add("person", "他养了一只橘猫", "30001", "", "g", 2, vec=v, now=NOW - 20 * DAY)
+    new = episodes.add("person", "他家有只橘猫", "30001", "", "g", 4, vec=v, now=NOW - 3600)
+    episodes.add("person", "他家猫叫橘子", "30002", "", "g", 3, vec=v, now=NOW - 3600)  # 别人的不并
+    assert episodes.merge_dups(NOW - 2 * DAY, NOW) == 1
+    left = [r[0] for r in episodes._db().execute("select id from mem where uid = '30001'").fetchall()]
+    assert left == [new] and old not in left, left  # 留重要的那条
+    print("PASS  夜里并掉同一个人几乎一样的记忆，别人的不碰")
+
+    episodes.add("person", "他在准备考研", "30003", "", "g", 4, now=NOW - DAY)
+    episodes.add("person", "他和女朋友分手了", "30003", "", "p", 5, now=NOW - DAY)
+    episodes.add("grudge", "他骂我笨", "30003", "", "g", 3, now=NOW - 40 * DAY)
+    assert episodes.about("30003", False, now=NOW) == ["他在准备考研"]  # 群里用的不带私聊的事、不带记仇
+    assert set(episodes.about("30003", True, now=NOW)) == {"他在准备考研", "他和女朋友分手了"}
+    assert "30003" in episodes.changed_people() and "30003" not in episodes.changed_people({"30003": NOW})
+    for _ in range(3):
+        episodes.soften_grudges("30003", NOW)
+    assert episodes._db().execute("select imp, state from mem where kind = 'grudge' and uid = '30003'").fetchone() == (1, "quiet")
+    assert "30003" not in episodes.grudge_owners()
+    print("PASS  整理印象只看原始记忆，群里那份不带私聊的事；不讨厌了的记仇一晚淡一点")
+
+    bonds.touch("30003", "小周", 0, now=NOW)
+    bonds.add_user_notes("30003", ["旧日记：爱喝奶茶"], "g", now=NOW)
+    assert person_notes(bonds.user("30003"), True) == ["旧日记：爱喝奶茶"]  # 还没整理过就用旧的
+    assert bonds.set_impression("30003", "在准备考研，挺拼的", "在准备考研，最近刚分手有点低落", NOW)
+    assert not bonds.set_impression("40404", "x", "x", NOW)  # 没记录的人不建
+    assert person_notes(bonds.user("30003"), True) == ["在准备考研，挺拼的"]
+    assert person_notes(bonds.user("30003"), False) == ["在准备考研，最近刚分手有点低落"]
+    assert person_notes({"impr": {"g": "", "p": "只有私聊的事"}}, True) == []  # 群里不会用私聊那份
+    print("PASS  印象替换小本本日记：群里用不带私聊的那份，私聊用全的")
+
+
 def main() -> int:
     rules()
     store()
     vectors()
     takeover()
+    night()
     episodes.close()
     print("test_episodes: 全部通过", TMP)
     return 0
