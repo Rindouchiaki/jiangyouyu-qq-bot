@@ -1,0 +1,284 @@
+"""事件记忆：她记得和谁发生过什么（整理过的一句话，不是原话），会淡忘、被想起就记得更牢。
+
+- 类别和在哪里能想起来见 persona_rules.episode_visible（群里的事不出群，私聊的事不进群，插话不点名）；
+- 向量用本机 Ollama 的 bge-m3；Ollama 不在时退回按 2 字片段比，照样能用；
+- 数据在 data/episodes.db（SQLite），不依赖 NoneBot，方便离线测。设计见 docs/记忆设计.md。
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import os
+import sqlite3
+import struct
+import threading
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+from persona_rules import episode_recency, episode_score, episode_visible, text_sim
+
+_data_env = os.getenv("PERSONA_DATA_DIR", "").strip()
+DATA_FILE = (Path(_data_env) if _data_env else Path(__file__).resolve().parent / "data") / "episodes.db"
+EMBED_URL = os.getenv("EPISODES_EMBED_URL", "http://127.0.0.1:11434").rstrip("/")
+EMBED_MODEL = os.getenv("EPISODES_EMBED_MODEL", "bge-m3")
+EMBED_ON = os.getenv("EPISODES_EMBED", "1") == "1"
+# 相关度过线才想起来：向量余弦 / 没向量时的片段重合度
+MIN_SIM = float(os.getenv("EPISODES_MIN_SIM", "0.5"))
+MIN_TEXT_SIM = float(os.getenv("EPISODES_MIN_TEXT_SIM", "0.15"))
+# 合并：几乎一样就当重复，有点像交给模型判断（片段比不出「三岁」「四岁」的差别，没向量时只认一字不差的重复）
+DUP_SIM, NEAR_SIM = 0.93, 0.75
+DUP_TEXT_SIM, NEAR_TEXT_SIM = 0.97, 0.45
+# 同一条在同一个会话里提过，隔多久才再带；刚记下的还在聊天记录里，先不带
+RESURFACE_SEC = float(os.getenv("EPISODES_RESURFACE_HOURS", "6")) * 3600
+FRESH_SEC = 2 * 3600
+# 同一批消息重想（对方补了话）时，刚带过的照样带、不重复算被想起
+RETHINK_SEC = 120
+# 每个人 / 每个群最多留多少条，满了删最不重要、最旧的
+CAP = int(os.getenv("EPISODES_CAP", "400"))
+# 近因低于这个就标「记不太清」
+FUZZY_BELOW = 0.25
+# Ollama 连不上时先别再试，免得每条消息都等超时
+EMBED_RETRY_SEC = 300
+
+_lock = threading.RLock()
+_conn: list[sqlite3.Connection] = []
+_embed_down = {"until": 0.0}
+_surfaced: dict[tuple[str, int], float] = {}
+
+_SCHEMA = """
+create table if not exists mem (
+    id integer primary key,
+    kind text not null,
+    uid text not null default '',
+    gid text not null default '',
+    src text not null default 'g',
+    text text not null,
+    imp integer not null default 3,
+    mood text not null default '',
+    t real not null,
+    last real not null default 0,
+    hits integer not null default 0,
+    state text not null default 'now',
+    vec blob
+);
+create index if not exists mem_uid on mem(uid);
+create index if not exists mem_gid on mem(gid);
+"""
+_COLS = ("id", "kind", "uid", "gid", "src", "text", "imp", "mood", "t", "last", "hits", "state", "vec")
+
+
+def _db() -> sqlite3.Connection:
+    if not _conn:
+        DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(DATA_FILE), check_same_thread=False)
+        conn.executescript(_SCHEMA)
+        _conn.append(conn)
+    return _conn[0]
+
+
+def close() -> None:
+    with _lock:
+        while _conn:
+            _conn.pop().close()
+
+
+def _row(row) -> dict:
+    rec = dict(zip(_COLS, row))
+    rec["vec"] = _unpack(rec["vec"])
+    return rec
+
+
+def _pack(vec: list[float] | None) -> bytes | None:
+    return struct.pack(f"{len(vec)}f", *vec) if vec else None
+
+
+def _unpack(blob) -> list[float] | None:
+    return list(struct.unpack(f"{len(blob) // 4}f", blob)) if blob else None
+
+
+def _norm(vec: list[float]) -> list[float]:
+    size = math.sqrt(sum(x * x for x in vec)) or 1.0
+    return [x / size for x in vec]
+
+
+def embed(texts: list[str]) -> list[list[float] | None]:
+    """本机 Ollama 算向量（归一化过）；关掉或连不上就全是 None，调用方退回按片段比。"""
+    if not texts or not EMBED_ON or time.time() < _embed_down["until"]:
+        return [None] * len(texts)
+    body = json.dumps({"model": EMBED_MODEL, "input": texts}).encode("utf-8")
+    req = urllib.request.Request(f"{EMBED_URL}/api/embed", data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            vecs = json.loads(resp.read().decode("utf-8")).get("embeddings") or []
+    except (OSError, ValueError, urllib.error.URLError):
+        _embed_down["until"] = time.time() + EMBED_RETRY_SEC
+        return [None] * len(texts)
+    if len(vecs) != len(texts):
+        return [None] * len(texts)
+    return [_norm([float(x) for x in v]) if v else None for v in vecs]
+
+
+def _sim(query: str, qvec, rec: dict) -> tuple[float, bool]:
+    """(相似度, 是不是向量算的)；两边都有向量才用余弦。"""
+    if qvec and rec.get("vec") and len(qvec) == len(rec["vec"]):
+        return sum(a * b for a, b in zip(qvec, rec["vec"])), True
+    return text_sim(query, rec.get("text", "")), False
+
+
+def _same_scope(kind: str, uid: str, gid: str) -> tuple[str, tuple]:
+    """合并时只和同一个范围的比：群里的事比本群，别的比同一个人（她自己的日常比她自己的）。"""
+    if kind == "group":
+        return "kind = 'group' and gid = ?", (gid,)
+    return "kind != 'group' and uid = ?", (uid,)
+
+
+def similar(text: str, vec, kind: str, uid: str = "", gid: str = "", limit: int = 3) -> list[tuple[float, bool, dict]]:
+    """同范围里最像的几条：[(相似度, 是否向量, 记录)]，最像的在前。"""
+    where, args = _same_scope(kind, uid, gid)
+    with _lock:
+        rows = _db().execute(f"select * from mem where {where} and state != 'past'", args).fetchall()
+    scored = [(*_sim(text, vec, rec), rec) for rec in map(_row, rows)]
+    scored.sort(key=lambda x: -x[0])
+    return scored[:limit]
+
+
+def plan(text: str, vec, kind: str, uid: str = "", gid: str = "") -> tuple[str, list[dict]]:
+    """新记的这条怎么处理：("dup", [那条]) 只刷新；("ask", 候选) 交给模型判断；("add", []) 直接记。"""
+    near = similar(text, vec, kind, uid, gid)
+    if not near:
+        return "add", []
+    best, by_vec, rec = near[0]
+    if best >= (DUP_SIM if by_vec else DUP_TEXT_SIM):
+        return "dup", [rec]
+    cands = [r for s, v, r in near if s >= (NEAR_SIM if v else NEAR_TEXT_SIM)]
+    return ("ask", cands) if cands else ("add", [])
+
+
+def add(kind: str, text: str, uid: str = "", gid: str = "", src: str = "g", imp: int = 3, mood: str = "",
+        vec=None, now: float | None = None) -> int:
+    now = time.time() if now is None else now
+    with _lock:
+        db = _db()
+        cur = db.execute(
+            "insert into mem (kind, uid, gid, src, text, imp, mood, t, vec) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (kind, uid, gid, src, text, max(1, min(5, int(imp))), mood, now, _pack(vec)),
+        )
+        _prune(kind, uid, gid, now)
+        db.commit()
+        return int(cur.lastrowid)
+
+
+def _prune(kind: str, uid: str, gid: str, now: float) -> None:
+    where, args = _same_scope(kind, uid, gid)
+    rows = [_row(r) for r in _db().execute(f"select * from mem where {where}", args).fetchall()]
+    if len(rows) <= CAP:
+        return
+    rows.sort(key=lambda r: episode_recency(now - r["t"], r["imp"], r["hits"]) * r["imp"])
+    drop = [r["id"] for r in rows[: len(rows) - CAP]]
+    _db().executemany("delete from mem where id = ?", [(i,) for i in drop])
+
+
+def refresh(mem_id: int, imp: int | None = None, now: float | None = None) -> None:
+    """又听说了一遍：时间刷新，重要度取高的。"""
+    now = time.time() if now is None else now
+    with _lock:
+        db = _db()
+        db.execute("update mem set t = ?, imp = max(imp, ?) where id = ?", (now, int(imp or 1), mem_id))
+        db.commit()
+
+
+def replace(mem_id: int, text: str, vec=None, imp: int = 3, mood: str = "", now: float | None = None) -> None:
+    """同一件事有了更准的说法：换掉内容，被想起的次数留着。"""
+    now = time.time() if now is None else now
+    with _lock:
+        db = _db()
+        db.execute(
+            "update mem set text = ?, vec = ?, imp = max(imp, ?), mood = ?, t = ?, state = 'now' where id = ?",
+            (text, _pack(vec), int(imp), mood, now, mem_id),
+        )
+        db.commit()
+
+
+def set_state(mem_id: int, state: str) -> None:
+    with _lock:
+        db = _db()
+        db.execute("update mem set state = ? where id = ?", (state, mem_id))
+        db.commit()
+
+
+def recall(query: str, uid: str, gid: str = "", chat: str = "", chime: bool = False, upset: bool = False,
+           asked: bool = False, limit: int = 2, now: float | None = None) -> list[dict]:
+    """这句话勾起了哪些事（最多 limit 条，按分数）。被带出来的算被想起一次，记得更牢。
+
+    chat 是会话 key：同一条在同一个会话里提过，RESURFACE_SEC 内不再带（明着问「记得吗」除外）。
+    """
+    now = time.time() if now is None else now
+    if not query.strip():
+        return []
+    with _lock:
+        rows = _db().execute(
+            "select * from mem where (uid = ? and uid != '') or (kind = 'group' and gid = ? and gid != '') "
+            "or (kind = 'self' and uid = '')",
+            (uid, gid),
+        ).fetchall()
+    recs = [r for r in map(_row, rows) if episode_visible(r, uid, gid, chime, upset, asked) and now - r["t"] >= FRESH_SEC]
+    if not recs:
+        return []
+    qvec = embed([query])[0] if any(r.get("vec") for r in recs) else None
+    picked = []
+    for rec in recs:
+        # 刚带过（同一批重想）照样带；提过一阵了才不再提
+        since = now - _surfaced.get((chat, rec["id"]), 0)
+        if not asked and RETHINK_SEC < since < RESURFACE_SEC:
+            continue
+        sim, by_vec = _sim(query, qvec, rec)
+        if sim < (MIN_SIM if by_vec else MIN_TEXT_SIM):
+            continue
+        rec["score"] = episode_score(sim, now - rec["t"], rec["imp"], rec["hits"])
+        rec["fuzzy"] = episode_recency(now - rec["t"], rec["imp"], rec["hits"]) < FUZZY_BELOW
+        picked.append(rec)
+    picked.sort(key=lambda r: -r["score"])
+    picked = picked[:limit]
+    fresh = [r for r in picked if now - _surfaced.get((chat, r["id"]), 0) >= RETHINK_SEC]
+    if fresh:
+        with _lock:
+            db = _db()
+            db.executemany("update mem set hits = hits + 1, last = ? where id = ?", [(now, r["id"]) for r in fresh])
+            db.commit()
+        for r in fresh:
+            _surfaced[(chat, r["id"])] = now
+    for r in picked:
+        r.pop("vec", None)
+    return picked
+
+
+def quiet_recent(uid: str, window: float = 3600, now: float | None = None) -> int:
+    """「忘了吧」：这个人最近记下的事降权、不再主动提（不真删，他明着问还能想起）。"""
+    now = time.time() if now is None else now
+    with _lock:
+        db = _db()
+        cur = db.execute(
+            "update mem set state = 'quiet', imp = 1 where uid = ? and kind != 'self' and t >= ?",
+            (uid, now - window),
+        )
+        db.commit()
+        return cur.rowcount
+
+
+def forget_user(uid: str) -> int:
+    """/小本本 删除：关于这个人的记忆全删（她答应他的也删）。"""
+    with _lock:
+        db = _db()
+        cur = db.execute("delete from mem where uid = ?", (uid,))
+        db.commit()
+        return cur.rowcount
+
+
+def stats() -> dict:
+    """按类别数条数，只给数字。"""
+    with _lock:
+        rows = _db().execute("select kind, count(*) from mem group by kind").fetchall()
+    return {k: n for k, n in rows}

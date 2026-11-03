@@ -47,6 +47,7 @@ import assoc
 import backstage
 import bonds
 import devs
+import episodes
 import gscore_guard
 import memory
 import slang
@@ -67,6 +68,9 @@ from persona_rules import (
     DERE_CHANCE,
     DEFAULT_GAME_PREFIXES,
     DIARY_GROUP_PROMPT,
+    EPISODE_GROUP_PROMPT,
+    EPISODE_MERGE_PROMPT,
+    EPISODE_USER_PROMPT,
     HATE_AFF,
     PESTER_LOSS,
     SHY_COAXED,
@@ -78,6 +82,7 @@ from persona_rules import (
     compose_messages,
     debounce_deadline,
     diary_user_prompt,
+    episodes_block,
     follow_decision,
     format_search_results,
     interest_hits,
@@ -97,7 +102,9 @@ from persona_rules import (
     looks_self_disclosure,
     name_call_prob,
     follow_prob,
+    parse_episodes,
     parse_group_diary,
+    parse_merge,
     parse_user_diary,
     parse_slang_candidates,
     parse_slang_meaning,
@@ -123,6 +130,7 @@ from persona_rules import (
     sticker_scene,
     typing_delay,
     visible_notes,
+    wants_forget,
     wants_help,
     wants_search,
     wants_sticker,
@@ -181,6 +189,9 @@ SNUB_SECONDS = float(os.getenv("SNUB_SECONDS", "100"))
 DIARY_USER_EVERY = int(os.getenv("DIARY_USER_EVERY", "4"))
 DIARY_GROUP_EVERY = int(os.getenv("DIARY_GROUP_EVERY", "30"))
 DIARY_GROUP_GAP = float(os.getenv("DIARY_GROUP_GAP", "900"))
+# 事件记忆：摘日记时顺便记事，跟她说话时想起来（见 docs/记忆设计.md）
+EPISODES_ENABLE = os.getenv("EPISODES_ENABLE", "1") == "1"
+EPISODES_RECALL_MAX = int(os.getenv("EPISODES_RECALL_MAX", "2"))
 # 看到库里没有的表情时按喜好收藏：可爱二次元 / 二次元 / 其它；没读懂（视觉模型没起来）时用 STICKER_SAVE_PROB
 STICKER_SAVE_BY_LIKE = {
     "可爱二次元": float(os.getenv("STICKER_SAVE_CUTE", "0.5")),
@@ -809,6 +820,74 @@ async def _diary_group(group_id: str, lines: list[tuple[str, str]]) -> None:
         logger.warning(f"persona: 摘群日记失败 {type(exc).__name__}: {exc}")
 
 
+async def _keep_episode(item: dict, uid: str, gid: str, src: str) -> str:
+    """记一件事：先和同范围里像的比，重复就刷新、像就问模型是更新还是变了，不像才新记。返回做了什么（打日志用）。"""
+    text, kind = item["text"], item["kind"]
+    if assoc.looks_like_injection(text):
+        return ""
+    if kind == "promise":
+        kind = "self"
+    elif kind == "self":
+        uid = ""
+    vec = (await asyncio.to_thread(episodes.embed, [text]))[0]
+    action, cands = await asyncio.to_thread(episodes.plan, text, vec, kind, uid, gid)
+    if action == "dup":
+        episodes.refresh(cands[0]["id"], item["imp"])
+        return f"刷新「{cands[0]['text']}」"
+    if action == "ask":
+        listing = "\n".join(f"{i + 1}. {c['text']}" for i, c in enumerate(cands))
+        raw = await ask_llm(
+            [{"role": "system", "content": EPISODE_MERGE_PROMPT},
+             {"role": "user", "content": f"旧记忆：\n{listing}\n新记的：{text}"}],
+            12, temperature=0.0,
+        )
+        act, idx = parse_merge(raw, len(cands))
+        if act == "dup":
+            episodes.refresh(cands[idx]["id"], item["imp"])
+            return f"刷新「{cands[idx]['text']}」"
+        if act == "update":
+            episodes.replace(cands[idx]["id"], text, vec, item["imp"], item["mood"])
+            return f"更新「{cands[idx]['text']}」→「{text}」"
+        if act == "past":
+            episodes.set_state(cands[idx]["id"], "past")
+    episodes.add(kind, text, uid, gid, src, item["imp"], item["mood"], vec)
+    return f"记下「{text}」"
+
+
+async def _episodes_user(user_id: str, name: str, lines: list[tuple[str, str]], gid: str) -> None:
+    """和某人聊了几轮：记下关于他的事、她自己说过的、答应他的、待跟进的、被惹的。"""
+    talk = [f"{'我' if who == '我' else '对方'}：{text}" for who, text in lines if who in ("我", name)][-12:]
+    if MOCK or not API_KEY or not any(t.startswith("对方") for t in talk):
+        return
+    try:
+        raw = await ask_llm(
+            [{"role": "system", "content": EPISODE_USER_PROMPT}, {"role": "user", "content": "\n".join(talk)}],
+            260, temperature=0.2, stop=None,
+        )
+        done = [await _keep_episode(it, user_id, gid, "g" if gid else "p") for it in parse_episodes(raw)]
+        if any(done):
+            logger.info(f"persona: 记事（{name}）：{'；'.join(d for d in done if d)}")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"persona: 记事失败 {type(exc).__name__}: {exc}")
+
+
+async def _episodes_group(group_id: str, lines: list[tuple[str, str]]) -> None:
+    """群里聊了一阵：记下群里发生的、以后可能再提起的事（只在本群想起）。"""
+    talk = [f"{who}：{text}" for who, text in lines][-30:]
+    if MOCK or not API_KEY or len(talk) < 10:
+        return
+    try:
+        raw = await ask_llm(
+            [{"role": "system", "content": EPISODE_GROUP_PROMPT}, {"role": "user", "content": "\n".join(talk)}],
+            200, temperature=0.2, stop=None,
+        )
+        done = [await _keep_episode(it, "", group_id, "g") for it in parse_episodes(raw, group=True, max_items=3)]
+        if any(done):
+            logger.info(f"persona: 记事（群{group_id}）：{'；'.join(d for d in done if d)}")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"persona: 记群里的事失败 {type(exc).__name__}: {exc}")
+
+
 async def _maybe_save_sticker(seg, card: str, user_id: str, context: str = "") -> None:
     """群友发了库里没有的表情，按喜好收藏（可爱的二次元最容易收）；讨厌的人发的不收。用途按场景记进表情备注。"""
     data = getattr(seg, "data", None) or {}
@@ -1138,6 +1217,8 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         if _diary_group_msgs[key] >= DIARY_GROUP_EVERY and now - _diary_group_last[key] >= DIARY_GROUP_GAP:
             _diary_group_msgs[key], _diary_group_last[key] = 0, now
             _background(_diary_group(str(event.group_id), list(history)))
+            if EPISODES_ENABLE:
+                _background(_episodes_group(str(event.group_id), list(history)))
             _background(_learn_slang(list(history), f"g{event.group_id}"))
 
     # 冬眠 = 完全不出声（不接续、不插话、不主动配图）；/模式、/表情、查询等命令走别的 matcher，照常可用
@@ -1512,6 +1593,21 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         facts_note = assoc.for_prompt(facts)
         if facts_note:
             logger.debug(f"persona: 想起 {[f.get('s') for f in facts]}")
+    # 事件记忆：被话题勾起就想起来，不用等「记得」；插话只想本群的事，「忘了吧」就不再主动提
+    recall_note = ""
+    if EPISODES_ENABLE and (addressed or (chime and is_group)):
+        if addressed and wants_forget(text):
+            hushed = episodes.quiet_recent(user_id, now=now)
+            if hushed:
+                logger.info(f"persona: {name} 让她忘了，{hushed} 条不再主动提")
+        recalled = await asyncio.to_thread(
+            episodes.recall, batch_text if chime else text, user_id, group_id, key,
+            chime, (key, user_id) in _upset, any(hint in text for hint in RECALL_HINTS),
+            1 if chime else EPISODES_RECALL_MAX, now,
+        )
+        recall_note = episodes_block(recalled, name, now)
+        if recalled:
+            logger.info(f"persona: 想起 {len(recalled)} 件事：{'；'.join(r['text'] for r in recalled)}")
     deck = None
     deck_note = ""
     if addressed and not chime and szb_decks.wants_deck(text):
@@ -1558,6 +1654,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         sv_note=sv_note,
         deck_note=deck_note,
         facts_note=facts_note,
+        recall_note=recall_note,
     )
 
     limit = HELP_MAX_TOKENS if help_mode or can_search else 120 if question else 100
@@ -1753,6 +1850,8 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             _diary_user_turns[user_id], _diary_user_last[user_id] = 0, now
             src = f"g{group_id}" if is_group else "p"
             _background(_diary_user(user_id, name, list(history), src))
+            if EPISODES_ENABLE:
+                _background(_episodes_user(user_id, name, list(history), group_id if is_group else ""))
             if not is_group:
                 _background(_learn_slang(list(history), f"p{user_id}"))
 
