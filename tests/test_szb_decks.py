@@ -143,6 +143,16 @@ def main() -> None:
     assert szb_decks.remove_deck(second["id"], by_uin="289635657") is True
     assert szb_decks.stats()["total"] == 3
 
+
+    # 聊天里问卡组：认得出「问卡组」并挑一套
+    assert szb_decks.wants_deck("皇家有什么卡组推荐")
+    assert szb_decks.wants_deck("影之诗现在上分用什么卡组")
+    assert not szb_decks.wants_deck("今天吃了什么")
+    assert not szb_decks.wants_deck("皇家")
+    picked = szb_decks.suggest("皇家有什么卡组推荐")
+    assert picked is not None and picked["cls"] == "皇家", picked
+    assert "必须答这套" in szb_decks.note_for(picked)
+
     print("test_szb_decks: 全部通过")
     print("tmp:", TMP)
 

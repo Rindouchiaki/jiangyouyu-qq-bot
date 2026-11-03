@@ -181,6 +181,41 @@ def deck_label(deck: dict) -> str:
     return f"{name}（{alias}）" if alias and alias != name else name
 
 
+_DECK_WORDS = ("卡组", "构筑", "牌组", "套牌", "上分", "用什么打")
+
+
+def wants_deck(text: str) -> bool:
+    """聊天里是不是在问影之诗的卡组。"""
+    low = (text or "").lower()
+    if not low:
+        return False
+    if not any(w in low for w in _DECK_WORDS):
+        return False
+    if "影之诗" in low or "szb" in low or "sv" == low.strip():
+        return True
+    return any(alias in low for aliases in _CLASS_ALIASES.values() for alias in aliases)
+
+
+def suggest(text: str) -> dict | None:
+    """按聊天内容挑一套最接近的卡组：先按名字，再按职业/环境。"""
+    deck = best_match(text, None, None)
+    if deck:
+        return deck
+    cls = parse_class(text)
+    if not cls:
+        return None
+    decks = list_decks(cls, parse_env(text), None, limit=1)
+    return decks[0] if decks else None
+
+
+def note_for(deck: dict) -> str:
+    """给模型看的卡组说明：这一条就答这套，别推回给群友、别换别的。"""
+    return (
+        f"（必须答这套）{deck_label(deck)}：{deck.get('cls')}·{deck.get('env')}。"
+        "一句话说清它是什么路子、强在哪，别推荐别的卡组，也别报编号和连胜数；卡组图会跟着发出去。"
+    )
+
+
 def _bigrams(text: str) -> set[str]:
     clean = re.sub(r"[^\w\u4e00-\u9fa5]", "", text or "")
     return {clean[i : i + 2] for i in range(len(clean) - 1)} if len(clean) > 1 else {clean}
