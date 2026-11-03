@@ -783,7 +783,8 @@ def build_system_prompt(
     if proactive:
         system += (
             "\n\n平时这个点你们常聊，他有一阵没说话了，你想找点话题跟他聊聊：一两条就好，像随手发的消息。"
-            "可以说说你在干嘛、接上次聊的事、聊聊他常聊的话题、或者问问小本本上记的他的事；"
+            "想起来的事里有还没下文的、你答应过他的，优先拿它开头（问问后来怎么样了、提一句你答应的事）；"
+            "没有就说说你在干嘛、接上次聊的事、聊聊他常聊的话题；"
             "别发「在吗」「好久不见」这种开场白，别解释为什么找他。"
         )
 
@@ -2161,6 +2162,8 @@ def episodes_block(items: list[dict], user_name: str, now: float) -> str:
             tail += "（这是以前的说法，后来变了）"
         if kind == "followup" and it.get("state") == "now":
             tail += "（还没下文，可以顺口问问）"
+        if kind == "self" and it.get("uid") and it.get("due"):
+            tail += "（还没兑现，找机会提一句）"
         if kind == "grudge":
             tail += "（他之前就惹过你）"
         if it.get("fuzzy"):
