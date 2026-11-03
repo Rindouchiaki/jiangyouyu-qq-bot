@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import functools
 import io
 import math
 from pathlib import Path
@@ -24,14 +25,16 @@ ROW = 30
 INLINE_LINKS = 10
 CAPTION_CHARS = 7
 
-# 态度档 → 她连到这个人的线的颜色；也是从里到外排圈的顺序
+# 态度档 → 她连到这个人的线的颜色（暖色是喜欢、冷色是讨厌，每档色相不同，别再用几种灰）；也是从里到外排圈的顺序
 ATT_COLORS = {
-    "亲近": (232, 87, 155),
-    "有好感": (242, 154, 196),
-    "普通": (154, 165, 177),
-    "陌生": (199, 204, 209),
-    "讨厌": (91, 103, 112),
+    "亲近": (226, 54, 120),
+    "有好感": (245, 150, 50),
+    "普通": (52, 168, 100),
+    "陌生": (170, 176, 186),
+    "讨厌": (122, 62, 168),
 }
+# 陌生画虚线：还不怎么认识
+DASHED = ("陌生",)
 TIER_ORDER = tuple(ATT_COLORS)
 LINK_COLOR = (74, 123, 209)
 # 群日记里指她自己的写法（「我」是记日记的人设自己）
@@ -52,6 +55,7 @@ _FONT_PATHS = (
 )
 
 
+@functools.lru_cache(maxsize=32)
 def _font(size: int) -> ImageFont.ImageFont:
     for path in _FONT_PATHS:
         if Path(path).is_file():
@@ -196,20 +200,46 @@ def _badge(draw: ImageDraw.ImageDraw, xy, num: int, font) -> None:
     draw.text((x - (tb[2] - tb[0]) / 2, y - (tb[3] - tb[1]) / 2 - tb[1]), text, font=font, fill=LINK_COLOR)
 
 
-def _node(draw: ImageDraw.ImageDraw, xy, name: str, r: int, font, fill, ring=None) -> None:
+def _node(draw: ImageDraw.ImageDraw, xy, name: str, r: int, size: int, fill, ring=None) -> None:
     x, y = xy
     draw.ellipse((x - r, y - r, x + r, y + r), fill=fill, outline=ring or INK, width=4 if ring else 2)
-    size = getattr(font, "size", 16)
-    text = _short(name, max(2, int(1.8 * r // size)))
+    # 名字放不下先缩字（最小 11），还放不下才截
+    font, text = _font(size), name
+    while size > 11 and draw.textlength(text, font=font) > 1.8 * r:
+        size -= 1
+        font = _font(size)
+    while len(text) > 2 and draw.textlength(text, font=font) > 1.8 * r:
+        text = name[: len(text.rstrip("…")) - 1] + "…"
     box = draw.textbbox((0, 0), text, font=font)
     draw.text((x - (box[2] - box[0]) / 2, y - (box[3] - box[1]) / 2 - box[1]), text, font=font, fill=INK)
+
+
+def _dash(draw: ImageDraw.ImageDraw, p1, p2, color, width: int, on: float = 10, off: float = 7) -> None:
+    length = math.hypot(p2[0] - p1[0], p2[1] - p1[1]) or 1
+    ux, uy = (p2[0] - p1[0]) / length, (p2[1] - p1[1]) / length
+    t = 0.0
+    while t < length:
+        e = min(t + on, length)
+        draw.line((p1[0] + ux * t, p1[1] + uy * t, p1[0] + ux * e, p1[1] + uy * e), fill=color, width=width)
+        t = e + off
+
+
+def _spoke(draw: ImageDraw.ImageDraw, p1, p2, level: str | None) -> None:
+    """她连到一个人的线：颜色是态度，亲近的粗一点，陌生的是虚线。"""
+    level = level or "陌生"
+    color = ATT_COLORS.get(level, ATT_COLORS["普通"])
+    width = 5 if level == "亲近" else 3
+    if level in DASHED:
+        _dash(draw, p1, p2, color, width)
+    else:
+        draw.line((p1, p2), fill=color, width=width)
 
 
 def _legend(draw: ImageDraw.ImageDraw, font, y: float, spokes: bool) -> None:
     """标题下面一行图例：线（人多时是人外面那圈）的颜色 = 她对这人的态度。"""
     x = 24
-    for level, color in ATT_COLORS.items():
-        draw.line((x, y + 11, x + 36, y + 11), fill=color, width=4 if level in ("亲近", "有好感") else 2)
+    for level in ATT_COLORS:
+        _spoke(draw, (x, y + 11), (x + 36, y + 11), level)
         draw.text((x + 44, y), level, font=font, fill=INK)
         x += 44 + draw.textlength(level, font=font) + 28
     tip = "名字下面是她和这人的关系" if spokes else "人外圈的颜色是态度，越靠里越亲近；名字下面是她和这人的关系"
@@ -280,7 +310,7 @@ def render(
     pair_links = [(a, b, rel) for a, b, rel in pair_links if a in shown and b in shown]
     rel_pos, r, outer = layout(names, att, pair_links)
     cf = caption_size(r)
-    f_node, f_cap, f_label, f_title = _font(max(14, int(r * 0.46))), _font(cf), _font(17), _font(26)
+    node_size, f_cap, f_label, f_title = max(14, int(r * 0.46)), _font(cf), _font(17), _font(26)
 
     spokes = len(names) <= SPOKES_MAX
     half = max(MIN_SIZE / 2, outer + r + 2 * cf + 50)
@@ -348,16 +378,16 @@ def render(
     colors = {n: ATT_COLORS.get(att.get(n) or "陌生", ATT_COLORS["普通"]) for n in names}
     if spokes:
         for n in names:
-            draw.line((mid, pos[n]), fill=colors[n], width=4 if att.get(n) in ("亲近", "有好感") else 2)
+            _spoke(draw, mid, pos[n], att.get(n))
     else:
         # 人多不画她连出去的线，画几道淡淡的圈当参考：越靠里越亲近
         for rad in sorted({round(math.hypot(x, y)) for x, y in rel_pos.values()}):
             draw.ellipse((mid[0] - rad, mid[1] - rad, mid[0] + rad, mid[1] + rad), outline=(236, 238, 242), width=1)
     for curve in curves:
         draw.line(curve, fill=LINK_COLOR, width=2 if len(curves) > INLINE_LINKS else 3, joint="curve")
-    _node(draw, mid, center, r + 8, _font(max(16, int(r * 0.5))), SELF_FILL)
+    _node(draw, mid, center, r + 8, max(16, int(r * 0.5)), SELF_FILL)
     for n in names:
-        _node(draw, pos[n], n, r, f_node, NODE_FILL, None if spokes else colors[n])
+        _node(draw, pos[n], n, r, node_size, NODE_FILL, None if spokes else colors[n])
         for box, line in captions[n]:
             _label(draw, box, line, f_cap, SOFT_INK)
     for box, text in inline:
