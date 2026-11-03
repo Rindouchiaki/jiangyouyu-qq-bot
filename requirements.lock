@@ -233,6 +233,8 @@ nonebot2==2.5.0
     #   nonebot-plugin-waiter
 nonestorage==0.1.0
     # via nonebot-plugin-localstore
+numpy==2.5.4
+    # via -r requirements.txt
 opentelemetry-api==1.45.1
     # via fastapi
 pillow==11.0.0

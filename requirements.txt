@@ -23,3 +23,5 @@ nonebot-bison>=0.9.14,<0.10
 playwright>=1.60
 # 推送只用机器人号发（bot/bot.py）改的是它的内部函数 auto_select_bot._refresh_bot，换大版本要复核
 nonebot-plugin-send-anything-anywhere>=0.7.1,<0.8
+# 事件记忆和知识库的向量检索（几千条一起算相似度，纯 Python 太慢）
+numpy>=1.26,<3
