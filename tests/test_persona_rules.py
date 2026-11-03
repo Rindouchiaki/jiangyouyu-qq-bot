@@ -132,6 +132,19 @@ MOOD_CASES = [
 ]
 
 
+def check_help() -> None:
+    from persona_rules import help_sections, help_text
+
+    public = "\n".join(help_text(help_sections(False)))
+    full = "\n".join(help_text(help_sections(True)))
+    assert "游戏查询" in public and "/szb" in public and "扫码登录" in public
+    for word in ("/学习", "/好感", "/关系图", "/模式", "/记忆", "开发者"):
+        assert word not in public, word  # 群友看到的菜单里不能有管理指令，也不提开发者
+    assert public in full and "/学习" in full and "/小本本 删除" in full
+    assert all(part.startswith("【") for part in help_text(help_sections(True)))
+    print("PASS  /帮助：群友只看到群友的指令，开发者在内部对话里才看到管理指令")
+
+
 def main() -> int:
     failed = 0
 
@@ -790,6 +803,7 @@ def main() -> int:
     assert msgs[-1]["content"] == "小明：皇家有什么卡组" and "role：" not in msgs[-1]["content"], msgs[-1]
     print("PASS  卡组资料作为单独的 user 消息进提示词")
 
+    check_help()
     print(f"\n结果: {'全部通过' if failed == 0 else f'{failed} 项失败'}")
     return 0 if failed == 0 else 1
 

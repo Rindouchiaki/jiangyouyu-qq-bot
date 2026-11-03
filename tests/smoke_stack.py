@@ -186,6 +186,12 @@ async def run(args, token: str, self_id: int) -> None:
 
             # 后台数据只在全是开发者的对话里给看，而且是先人设说两句再给资料
             dev = 289635657
+            await c.send("/帮助", user=10002)
+            got = await c.collect(10, lambda g: len(g) >= 1)
+            check(got and "游戏查询" in str(got) and "/学习" not in str(got), "群友 /帮助：有群友能用的，没有管理指令", str(got)[:300])
+            await c.send("/帮助", user=dev)
+            got = await c.collect(10, lambda g: len(g) >= 1)
+            check(got and "/学习" not in str(got), "有普通群友的群里，开发者 /帮助 也不列管理指令", str(got)[:300])
             await c.send("/小本本", user=dev)
             got = await c.collect(6)
             check(not got, "有普通群友的群里，开发者的 /小本本 也不理", str(got))
@@ -203,6 +209,9 @@ async def run(args, token: str, self_id: int) -> None:
             await c.send("/记忆", user=dev)
             got = await c.collect(15, lambda g: any("各类记了多少" in str(a) for a in g))
             check(any("各类记了多少" in str(a) for a in got), "内部群里 /记忆：人设说话 + 统计", str(got)[:300])
+            await c.send("/帮助", user=dev)
+            got = await c.collect(10, lambda g: len(g) >= 1)
+            check(got and "/学习" in str(got) and "游戏查询" in str(got), "内部群里开发者 /帮助：群友的和管理指令都有", str(got)[:300])
             c.members = [c.self_id, 10002, 10003]
             await c.send("/用量", user=10002, private=True)
             got = await c.collect(5)
