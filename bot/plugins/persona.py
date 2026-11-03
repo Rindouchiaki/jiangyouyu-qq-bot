@@ -51,6 +51,7 @@ import gscore_guard
 import memory
 import slang
 import sv_data
+import szb_decks
 import sticker_lib
 import topics
 import vision
@@ -1475,7 +1476,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     if memory.available() and any(hint in text for hint in RECALL_HINTS):
         # 只带本会话的记录和开发者 /记 的笔记
         scope = f"群{group_id}" if is_group else f"私聊{user_id}"
-        notes = await asyncio.to_thread(memory.recent, 5, (scope, *devs.DEV_NAMES))
+        notes = await asyncio.to_thread(memory.recall, text, (scope,), 3)
         if notes:
             logger.info(f"persona: 带上 {len(notes)} 条记忆")
 
@@ -1511,6 +1512,13 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         facts_note = assoc.for_prompt(facts)
         if facts_note:
             logger.debug(f"persona: 想起 {[f.get('s') for f in facts]}")
+    deck = None
+    deck_note = ""
+    if addressed and not chime and szb_decks.wants_deck(text):
+        deck = szb_decks.suggest(text)
+        if deck:
+            deck_note = szb_decks.note_for(deck)
+            logger.debug(f"persona: 卡组资料 {szb_decks.deck_label(deck)}")
     sv_hits = sv_data.mention(text)
     sv_note = sv_data.for_prompt(sv_hits) if sv_hits else ""
     if sv_note:
@@ -1548,6 +1556,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         interests=INTERESTS if chime else (),
         chime_free=mcfg["free"] and att != "讨厌",
         sv_note=sv_note,
+        deck_note=deck_note,
         facts_note=facts_note,
     )
 
@@ -1713,6 +1722,12 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         history.append(("我", content))
         sent.append(content)
     _save_history(force=True)
+    # 问的是卡组：文字说完把卡组图跟上（多图会打包成一条消息记录）
+    if deck is not None and sent:
+        try:
+            await szb_decks.send_image(bot, event, deck)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"persona: 卡组图没发出去 {type(exc).__name__}: {exc}")
     if is_group:
         _mark_sent(key, now, called)
     reply = " / ".join(sent)
