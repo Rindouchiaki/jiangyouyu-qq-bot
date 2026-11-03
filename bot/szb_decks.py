@@ -497,6 +497,8 @@ async def send_image(bot, event, deck: dict) -> bool:
             if await _send_forward(bot, event, deck, files):
                 return True
         except Exception as e:  # noqa: BLE001
+            from nonebot.log import logger
+
             logger.debug(f"szb: 合并转发没成（{type(e).__name__}: {e}），改逐张发")
     return await _send_one_by_one(bot, event, files)
 
