@@ -32,6 +32,7 @@ python tests\test_slang.py                 # 热梗词典；学到的梗按会�
 python tests\test_topics.py                # 话题词表和自学习
 python tests\test_sticker_weights.py       # 表情按权重抽、心情分类
 python tests\test_backstage.py             # 后台数据：内部对话判断、关系解析、关系图
+python tests\test_episodes.py              # 事件记忆：记事、合并、隔离规则、淡忘、「忘了吧」（临时目录里跑）
 python tests\test_bili_group.py            # B 站订阅指令解析、推送通知文字
 python tests\test_push_marks.py            # 刚推过的链接名单（解析插件避让）
 powershell -File tests\test_env_sync.ps1  # 一键更新按样例重写 persona.env，临时目录里跑
@@ -93,6 +94,7 @@ python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（-
 ## 改之前先想清楚的地方
 
 - **记忆隔离是刻意的**：不要为了「记得更多」把 `memory.recent` 的会话标签过滤去掉，否则私聊和别的群的内容会被带进来。想让机器人跨群记住某件事，用开发者 `/记`（署名是 `devs.py` 里的名字，任何会话问到「记得/上次」时都会被带出）。
+- **事件记忆的规矩是作者逐条定的**（`docs/记忆设计.md` 第五节）：关于某人的事跟着 QQ 号跨群，群里的事不出群，私聊来的不进群，A 说 B 的事挂在原群、不跟 B 提，插话只想本群的事（不当众点名），记仇只在他又惹她时翻（`episode_visible`）。会淡忘不会删（`episode_recency`），「忘了吧」只是不再主动提（`quiet_recent`），真删走 `/小本本 删除`。她自己说过的话只当别前后矛盾的参考，不能升级成设定；记忆只放 user 消息（`episodes_block`），别挪进 system。想起来的频率作者要「适中，常常想起」，但同一件事 6 小时内不重复提。
 - **学到的梗分会话**：`slang_learned.json` 里只有网上查得到（`results_mention` 确认搜索结果里真有这个词，再按摘要解释得出来）的才进 `public`，哪里都认；查不到的记在 `scoped` 的 `g群号` / `p QQ号` 下，只在原会话用。聊天里不认识的新游戏、作品、活动也走这条路（`parse_slang_candidates` 标「东西」，用 `THING_EXPLAIN_PROMPT` 解释），作者要求「遇到不理解的内容自己去查一下记下来，好融入群聊」。作者要求「某些群自己的梗不能带到外面」，别把 scoped 合进 public、别让 `slang.hint` 不带 scope 查。接梗按 `SLANG_PLAY_PROB` 抽签、`SLANG_PLAY_GAP` 间隔、`slang_play_ok` 看气氛，作者要求「非常偶尔接一下」，别调高。
 - **小本本按人共用、私事不进群**：`bonds.py` 按 QQ 号存好感、熟悉度和日记，群里私聊是同一条（作者要求「换个地方也认得」）；但私聊里摘的日记带 `src="p"`，`visible_notes` 在群里会滤掉，别去掉。日记和群风格是群友原话整理的，只能放 user 消息（`compose_messages` 的小本本块）；system 里只放由数字算出的态度档位，不放名字和日记原文。
 - **群里话多少看档位**：只有三档（`TIERS`：自宅 / 默认 / 冬眠，米游抽卡另用 `/米游抽卡`）。被 @ 必回、喊名字按态度回（亲近必回），默认档的接续、插话、只发表情受 `REPLY_CASUAL_GAP` 间隔和 `REPLY_GROUP_PER_HOUR` 额度限制；作者要求「群比较小可以活跃一点，像小话唠」，自宅档「全部尽可能拉满，让整个群聊绕着她转」「取消限制，随便发言」（`free`：间隔、冷却、每小时额度、全局每分钟额度、插话间隔、来回次数、插话前看气氛和退避都不管；作者要求「表现的像特别特别活跃的网友住在群里」「模型也有权利不想回」，所以插话仍可 `[不回]`，只是不退避）。全局每分钟额度 `REPLY_PER_MIN` 是防风控，默认档和米游抽卡照旧，别拆；自宅档不受它管是作者要的，有被风控的风险。讨厌档的人不吃自宅档（作者要求「不想回就不回，不接话也可以，不插话也 ok」）：喊名字、接续最多照默认档（`name_call_prob` / `follow_prob`），他说的话引起的插话照默认档的概率、退避和看气氛，提示词也不用「住在群里」那段；被 @ 照样交给模型，可以 `[不回]`。人设可以嘴毒、吐槽，但 `is_offensive` 那道兜底（带脏话不发）别拆。

@@ -6,7 +6,7 @@
 只有在本群里画关系图时连上本群群日记里的关系。
 
 - /关系图 [群号]         那个群的关系图：她在中间，连到每个记过的群友（线的颜色是态度档，线上写她和这人的关系）；在那个群里画才连群友之间的关系
-- /小本本 删除 @某人 或 QQ号   删掉关于这个人的全部记录（好感、熟悉度、日记），比如本人要求时
+- /小本本 删除 @某人 或 QQ号   删掉关于这个人的全部记录（好感、熟悉度、日记、记着的事），比如本人要求时
 - /小本本 清空 群号      清掉那个群的群日记
 - /好感 @某人            看这个人的好感 / 熟悉 / 态度档
 - /好感 @某人 +10        好感加 10（也可以 -10；=30 或直接 30 是设成 30）
@@ -21,6 +21,7 @@ import re
 
 import backstage
 import bonds
+import episodes
 import relation_graph
 from bot_guard import is_our_bot
 from nonebot import on_command
@@ -100,6 +101,8 @@ async def _notebook(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
             await notebook_cmd.finish("用法：/小本本 删除 @某人 或 /小本本 删除 QQ号")
         existed = bonds.forget_user(uid)
         bonds.save(force=True)
+        # 记着的事（关于他的、答应他的）一起删
+        existed = episodes.forget_user(uid) > 0 or existed
         await notebook_cmd.finish(f"关于 {uid} 的记录删了" if existed else f"本来就没有 {uid} 的记录")
     # 翻日记拿掉了：谁都不能看别人的日记，开发者也不行
     await notebook_cmd.finish("小本本不给翻。只能 /小本本 删除 @某人（或 QQ号）、/小本本 清空 群号")
