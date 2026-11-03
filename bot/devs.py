@@ -11,6 +11,9 @@ DEVS: dict[str, tuple[str, ...]] = {
     "189963059": ("小帽", "帽子", "夜雨轩烛"),
 }
 
+# debug 群：报错自动发到这里，也能在这里看日志（只有开发者在里面，见 plugins/debug_group.py）
+DEBUG_GROUP = "895462706"
+
 # 群里统一用的名字（每人一个），提示词和 /记 署名用
 DEV_NAMES: tuple[str, ...] = tuple(names[0] for names in DEVS.values())
 # 除统一名字外的其它叫法，提示词里告诉模型「说的是同一个人」

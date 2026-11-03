@@ -27,6 +27,8 @@ sys.path.insert(0, str(ROOT / "bot"))
 from gscore_guard import LOGIN_MARKERS, QR_CAPTION  # noqa: E402
 
 GROUP = 987654321
+# 报错和上线通知发去的 debug 群（bot/devs.py 的 DEBUG_GROUP）
+DEBUG_GROUP = "895462706"
 
 
 def env_file() -> dict[str, str]:
@@ -47,6 +49,7 @@ class Client:
         self.msg_id = int(time.time()) % 100000 * 1000
         # 测试群的成员：默认有普通群友；测后台指令时换成「全是开发者」
         self.members = [self_id, 10002, 10003]
+        self.debug: list[dict] = []
 
     async def __aenter__(self) -> "Client":
         headers = {"X-Self-ID": str(self.self_id), "X-Client-Role": "Universal"}
@@ -100,6 +103,10 @@ class Client:
                 data = [{"group_id": GROUP, "group_name": "冒烟测试群", "member_count": len(self.members)}]
             await self.ws.send(json.dumps({"status": "ok", "retcode": 0, "data": data, "echo": p.get("echo")}))
             if p["action"].startswith("send_"):
+                if str(params.get("group_id")) == DEBUG_GROUP:
+                    # 发到 debug 群的上线通知和报错另记，不算对测试消息的回复
+                    self.debug.append({"action": p["action"], **params})
+                    continue
                 got.append({"action": p["action"], **params})
                 if until and until(got):
                     break
@@ -165,6 +172,7 @@ async def run(args, token: str, self_id: int) -> None:
         await c.send("/ping")
         got = await c.collect(15, lambda g: g)
         check(any("pong" in text_of(a) for a in got), "/ping 回 pong", str(got))
+        check(any("上线了" in text_of(a) for a in c.debug), "连上 QQ 时往 debug 群发「上线了」", str(c.debug)[:300])
 
         if args.mock:
             await c.send("在吗", at=True, user=10003)
@@ -195,6 +203,9 @@ async def run(args, token: str, self_id: int) -> None:
             await c.send("/小本本", user=dev)
             got = await c.collect(6)
             check(not got, "有普通群友的群里，开发者的 /小本本 也不理", str(got))
+            await c.send("/日志", user=dev)
+            got = await c.collect(6)
+            check(not got, "有普通群友的群里，开发者的 /日志 也不理（日志里有私聊原话）", str(got))
             c.members = [c.self_id, dev, 189963059]
             await c.send(f"/关系图 {GROUP}", user=dev)
             got = await c.collect(20, lambda g: any(has_image(a) for a in g))
@@ -212,6 +223,9 @@ async def run(args, token: str, self_id: int) -> None:
             await c.send("/帮助", user=dev)
             got = await c.collect(10, lambda g: len(g) >= 1)
             check(got and "/学习" in str(got) and "游戏查询" in str(got), "内部群里开发者 /帮助：群友的和管理指令都有", str(got)[:300])
+            await c.send("/日志 错误", user=dev)
+            got = await c.collect(10, lambda g: len(g) >= 1)
+            check(got and "日志" in str(got), "内部群里 /日志 有回复", str(got)[:300])
             c.members = [c.self_id, 10002, 10003]
             await c.send("/用量", user=10002, private=True)
             got = await c.collect(5)

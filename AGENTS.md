@@ -18,7 +18,7 @@ README 只做简介；功能细节见 `docs/使用手册.md`，架构见 `docs/�
 - **部署**：`scripts/setup.ps1` 要能重复跑（已装的跳过、已有的配置不覆盖；只有 `-Update` 按上面的规则重写 persona.env），新增的安装步骤也照这个写；改了部署流程同步更新 `docs/部署指南.md`。
 - **依赖**：新增第三方包写进 `requirements.txt`（写范围），再跑 `python tools/update_deps.py` 重新生成 `requirements.lock`；外部组件的版本只改 `external.lock.json`（平时由自动更新 PR 改；`vision` 那项是本地视觉模型，手动锁定、不自动更新，换版本连 sha256 一起改）。
 - **游戏功能**：游戏查询都交给早柚核心的插件（列表在 `external.lock.json`，加新游戏照 `docs/早柚核心接入.md` 第六节），本仓库只管连接、登录拦截、人设避让和全员自动签到（`gscore_plugins/JiangyouyuAuto`，一键部署拷进核心），不再自己写游戏接口。
-- **权限判断**：开发者名单写死在 `bot/devs.py`（个人项目：酱酱鱼 289635657、小帽 189963059，不走 persona.env）。开发者专用指令一律写成 `if not devs.is_dev(event.get_user_id()): return`；认人、提示词里的开发者、`/记` 署名、防冒充的保留名也都从 `devs` 取，别再读环境变量。后台数据（好感、小本本、关系图、用量、常用表情）的指令再加一道 `await backstage.devs_only(bot, event)`：只在除了机器人全是开发者的对话里能用，看的结果走 `backstage.present`（先人设说两句再给资料）。
+- **权限判断**：开发者名单写死在 `bot/devs.py`（个人项目：酱酱鱼 289635657、小帽 189963059，不走 persona.env）。开发者专用指令一律写成 `if not devs.is_dev(event.get_user_id()): return`；认人、提示词里的开发者、`/记` 署名、防冒充的保留名也都从 `devs` 取，别再读环境变量。后台数据（好感、小本本、关系图、用量、常用表情）的指令再加一道 `await backstage.devs_only(bot, event)`：只在除了机器人全是开发者的对话里能用，看的结果走 `backstage.present`（先人设说两句再给资料）。 debug 群也写死在 `devs.DEBUG_GROUP`（895462706，作者说只有开发者在里面）：警告和错误自动发过去（`plugins/debug_group.py`，攒批、去重、每小时限量），`/日志` 只在 `devs_only` 的对话里给看（日志里有私聊原话），别放宽。
 - **纯逻辑放 `bot/persona_rules.py`**：不依赖 NoneBot，方便离线测。
 - **提交**：一个问题一个分支一个 PR，squash merge；提交信息用 `fix(范围): 中文说明`。
 
@@ -34,6 +34,7 @@ python tests\test_sticker_weights.py       # 表情按权重抽、心情分类
 python tests\test_backstage.py             # 后台数据：内部对话判断、关系解析、关系图
 python tests\test_episodes.py              # 事件记忆：记事、合并、隔离规则、淡忘、「忘了吧」（临时目录里跑）
 python tests\test_knowledge.py             # 知识库：录入、合并、每周检查、待审区、额度（假模型假搜索）
+python tests\test_debug_report.py          # debug 群：报错攒批、合并重复、限流，读日志
 python tests\test_bili_group.py            # B 站订阅指令解析、推送通知文字
 python tests\test_push_marks.py            # 刚推过的链接名单（解析插件避让）
 powershell -File tests\test_env_sync.ps1  # 一键更新按样例重写 persona.env，临时目录里跑
