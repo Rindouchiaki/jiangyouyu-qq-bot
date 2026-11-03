@@ -32,7 +32,6 @@ from persona_rules import (
     parse_check,
     parse_merge,
     parse_outline,
-    text_sim,
 )
 
 _data_env = os.getenv("PERSONA_DATA_DIR", "").strip()
@@ -156,10 +155,8 @@ def _cards(name: str) -> list[dict]:
     return [{"id": i, "title": t, "text": x, "vec": episodes._unpack(v)} for i, t, x, v in rows]
 
 
-def _sim(text: str, vec, card: dict) -> tuple[float, bool]:
-    if vec and card.get("vec") and len(vec) == len(card["vec"]):
-        return sum(a * b for a, b in zip(vec, card["vec"])), True
-    return text_sim(text, f"{card['title']} {card['text']}"), False
+def _card_text(card: dict) -> str:
+    return f"{card['title']} {card['text']}"
 
 
 async def _keep(name: str, title: str, text: str, url: str, now: float) -> str:
@@ -167,7 +164,9 @@ async def _keep(name: str, title: str, text: str, url: str, now: float) -> str:
     if looks_like_injection(title) or looks_like_injection(text):
         return "skip"
     vec = (await asyncio.to_thread(episodes.embed, [f"{title} {text}"]))[0]
-    near = sorted(((*_sim(f"{title} {text}", vec, c), c) for c in _cards(name)), key=lambda x: -x[0])[:3]
+    cards = _cards(name)
+    near = sorted(((*m, c) for m, c in zip(episodes.match(f"{title} {text}", vec, cards, _card_text), cards)),
+                  key=lambda x: -x[0])[:3]
     action, idx = "add", -1
     if near and near[0][0] >= (DUP_SIM if near[0][1] else 0.97):
         action, idx = "dup", 0
@@ -322,11 +321,10 @@ def recall(text: str, limit: int = RECALL_MAX) -> list[dict]:
     if not rows:
         return []
     cards = [{"topic": tp, "title": t, "text": x, "vec": episodes._unpack(v)} for tp, t, x, v in rows]
-    qvec = episodes.embed([text])[0] if any(c["vec"] for c in cards) else None
+    qvec = episodes.embed([text])[0] if any(c["vec"] is not None for c in cards) else None
     picked = []
-    for c in cards:
+    for c, (sim, by_vec) in zip(cards, episodes.match(text, qvec, cards, _card_text)):
         # 提到话题名本身也算相关（「影之诗最近什么环境」）
-        sim, by_vec = _sim(text, qvec, c)
         if c["topic"] in text:
             sim = max(sim, MIN_SIM if by_vec else MIN_TEXT_SIM)
         if sim >= (MIN_SIM if by_vec else MIN_TEXT_SIM):

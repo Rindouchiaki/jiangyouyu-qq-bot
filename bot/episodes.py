@@ -1,23 +1,22 @@
 """事件记忆：她记得和谁发生过什么（整理过的一句话，不是原话），会淡忘、被想起就记得更牢。
 
 - 类别和在哪里能想起来见 persona_rules.episode_visible（群里的事不出群，私聊的事不进群，插话不点名）；
-- 向量用本机 Ollama 的 bge-m3；Ollama 不在时退回按 2 字片段比，照样能用；
+- 向量用本机 Ollama 的 bge-m3，相似度用 numpy 一次算完（每个范围几千条也只要几毫秒）；Ollama 不在时退回按 2 字片段比；
 - 数据在 data/episodes.db（SQLite），不依赖 NoneBot，方便离线测。设计见 docs/记忆设计.md。
 """
 
 from __future__ import annotations
 
 import json
-import math
 import os
 import sqlite3
-import struct
 import threading
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
+import numpy as np
 from persona_rules import episode_recency, episode_score, episode_visible, text_sim
 
 _data_env = os.getenv("PERSONA_DATA_DIR", "").strip()
@@ -37,7 +36,7 @@ FRESH_SEC = 2 * 3600
 # 同一批消息重想（对方补了话）时，刚带过的照样带、不重复算被想起
 RETHINK_SEC = 120
 # 每个人 / 每个群最多留多少条，满了删最不重要、最旧的
-CAP = int(os.getenv("EPISODES_CAP", "400"))
+CAP = int(os.getenv("EPISODES_CAP", "2000"))
 # 近因低于这个就标「记不太清」
 FUZZY_BELOW = 0.25
 # Ollama 连不上时先别再试，免得每条消息都等超时
@@ -96,17 +95,18 @@ def _row(row) -> dict:
     return rec
 
 
-def _pack(vec: list[float] | None) -> bytes | None:
-    return struct.pack(f"{len(vec)}f", *vec) if vec else None
+def _pack(vec) -> bytes | None:
+    return np.asarray(vec, dtype=np.float32).tobytes() if vec is not None and len(vec) else None
 
 
-def _unpack(blob) -> list[float] | None:
-    return list(struct.unpack(f"{len(blob) // 4}f", blob)) if blob else None
+def _unpack(blob) -> np.ndarray | None:
+    return np.frombuffer(blob, dtype=np.float32) if blob else None
 
 
-def _norm(vec: list[float]) -> list[float]:
-    size = math.sqrt(sum(x * x for x in vec)) or 1.0
-    return [x / size for x in vec]
+def _norm(vec) -> np.ndarray:
+    v = np.asarray(vec, dtype=np.float32)
+    size = float(np.linalg.norm(v)) or 1.0
+    return v / size
 
 
 def embed(texts: list[str]) -> list[list[float] | None]:
@@ -123,14 +123,19 @@ def embed(texts: list[str]) -> list[list[float] | None]:
         return [None] * len(texts)
     if len(vecs) != len(texts):
         return [None] * len(texts)
-    return [_norm([float(x) for x in v]) if v else None for v in vecs]
+    return [_norm(v) if v else None for v in vecs]
 
 
-def _sim(query: str, qvec, rec: dict) -> tuple[float, bool]:
-    """(相似度, 是不是向量算的)；两边都有向量才用余弦。"""
-    if qvec and rec.get("vec") and len(qvec) == len(rec["vec"]):
-        return sum(a * b for a, b in zip(qvec, rec["vec"])), True
-    return text_sim(query, rec.get("text", "")), False
+def match(query: str, qvec, recs: list[dict], text=lambda r: r.get("text", "")) -> list[tuple[float, bool]]:
+    """每条和这句话的 (相似度, 是不是向量算的)：有向量的一次矩阵乘法算完，没向量的按字面片段比。"""
+    out: list[tuple[float, bool] | None] = [None] * len(recs)
+    if qvec is not None:
+        idx = [i for i, r in enumerate(recs) if r.get("vec") is not None and len(r["vec"]) == len(qvec)]
+        if idx:
+            sims = np.stack([recs[i]["vec"] for i in idx]) @ np.asarray(qvec, dtype=np.float32)
+            for i, v in zip(idx, sims.tolist()):
+                out[i] = (v, True)
+    return [o if o is not None else (text_sim(query, text(r)), False) for o, r in zip(out, recs)]
 
 
 def _same_scope(kind: str, uid: str, gid: str) -> tuple[str, tuple]:
@@ -147,7 +152,8 @@ def similar(text: str, vec, kind: str, uid: str = "", gid: str = "", limit: int 
     where, args = _same_scope(kind, uid, gid)
     with _lock:
         rows = _db().execute(f"select * from mem where {where} and state != 'past'", args).fetchall()
-    scored = [(*_sim(text, vec, rec), rec) for rec in map(_row, rows)]
+    recs = [_row(r) for r in rows]
+    scored = [(*m, rec) for m, rec in zip(match(text, vec, recs), recs)]
     scored.sort(key=lambda x: -x[0])
     return scored[:limit]
 
@@ -234,14 +240,13 @@ def recall(query: str, uid: str, gid: str = "", chat: str = "", chime: bool = Fa
     recs = [r for r in map(_row, rows) if episode_visible(r, uid, gid, chime, upset, asked) and now - r["t"] >= FRESH_SEC]
     if not recs:
         return []
-    qvec = embed([query])[0] if any(r.get("vec") for r in recs) else None
+    qvec = embed([query])[0] if any(r.get("vec") is not None for r in recs) else None
     picked = []
-    for rec in recs:
+    for rec, (sim, by_vec) in zip(recs, match(query, qvec, recs)):
         # 刚带过（同一批重想）照样带；提过一阵了才不再提
         since = now - _surfaced.get((chat, rec["id"]), 0)
         if not asked and RETHINK_SEC < since < RESURFACE_SEC:
             continue
-        sim, by_vec = _sim(query, qvec, rec)
         if sim < (MIN_SIM if by_vec else MIN_TEXT_SIM):
             continue
         rec["score"] = episode_score(sim, now - rec["t"], rec["imp"], rec["hits"])
@@ -348,7 +353,7 @@ def backfill(limit: int = 64) -> int:
     if not rows:
         return 0
     vecs = embed([t for _, t in rows])
-    done = [(_pack(v), i) for (i, _), v in zip(rows, vecs) if v]
+    done = [(_pack(v), i) for (i, _), v in zip(rows, vecs) if v is not None]
     if done:
         with _lock:
             db = _db()
@@ -404,13 +409,21 @@ def merge_dups(since: float, now: float | None = None) -> int:
         scopes.setdefault(_scope_key(r), []).append(r)
     gone: set[int] = set()
     for recs in scopes.values():
-        for new in [r for r in recs if r["t"] >= since]:
+        dim = len(recs[0]["vec"])
+        recs = [r for r in recs if len(r["vec"]) == dim]
+        fresh = [i for i, r in enumerate(recs) if r["t"] >= since]
+        if not fresh:
+            continue
+        # 最近记的 × 同范围全部，一次算完
+        mat = np.stack([r["vec"] for r in recs])
+        sims = mat[fresh] @ mat.T
+        for row, i in enumerate(fresh):
+            new = recs[i]
             if new["id"] in gone:
                 continue
-            for old in recs:
-                if old["id"] == new["id"] or old["id"] in gone or len(old["vec"]) != len(new["vec"]):
-                    continue
-                if sum(a * b for a, b in zip(new["vec"], old["vec"])) < DUP_SIM:
+            for j in np.flatnonzero(sims[row] >= DUP_SIM).tolist():
+                old = recs[j]
+                if old["id"] == new["id"] or old["id"] in gone:
                     continue
                 keep, drop = (new, old) if new["imp"] >= old["imp"] else (old, new)
                 with _lock:

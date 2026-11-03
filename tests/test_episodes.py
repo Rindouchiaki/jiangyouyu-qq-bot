@@ -152,6 +152,14 @@ def vectors() -> None:
         episodes.embed = real
     print("PASS  有向量时按意思想起（「宠物」想起「猫」）")
 
+    import struct
+
+    old_blob = struct.pack("3f", 0.6, 0.8, 0.0)  # #61~#66 用 struct 存的向量，换 numpy 后照样读
+    assert episodes._unpack(old_blob).tolist() == list(struct.unpack("3f", old_blob))
+    assert episodes._pack(episodes._unpack(old_blob)) == old_blob and episodes._pack(None) is None
+    assert episodes.match("x", [1.0, 0.0, 0.0], [{"vec": episodes._unpack(old_blob)}, {"text": "x"}])[0][1]
+    print("PASS  旧库里的向量换成 numpy 后读写一致")
+
     episodes.CAP = 3
     for i in range(5):
         episodes.add("group", f"第{i}件事", "", "9", "g", 1 + (i == 0) * 4, now=NOW - (10 - i) * DAY)
