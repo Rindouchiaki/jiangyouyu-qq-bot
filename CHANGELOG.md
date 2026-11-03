@@ -8,6 +8,7 @@
 
 | PR | 问题 | 改法 |
 |---|---|---|
+| #60 | 关系图里她不认得自己：群日记把她写成「我」（提示词里「我」是她自己），画图只认「酱油鱼」这个名字，三个人的群里多出「我」和另一个「酱油鱼」；她连到群友的线上写的是态度档，信息少；两个人正好对着时群友之间的线从她身上穿过，挡住关系的字 | `relation_graph.arrange()` 把「我」「自己」、`NICKNAMES` 里的别名和带后缀的名片都并到中间；她连到每个人的线颜色是态度档（右上角加图例），线上改写她和这人的关系（群日记里「我/小红：…」那条），没记过就不写；群日记提示词补「和我的写成『我/小红：…』」；群友之间的线往外弯，有关系的人在圈上挨着排（补单测） |
 | #57 | 2026-10-31 | 推送的合并转发里没有正文，只剩一串图片 | 解析插件把动态正文画进卡片，`render_contents()` 只把配图塞进转发；转发最前面补正文节点、最后面补「传送门：链接」（`bot/bili_card_text.py`）；视频/直播/番剧链接不再交给解析，仍发标题 + 封面 + 链接 |
 | #56 | 推送发送修好 await、解析超时放宽到 240 秒、合并转发节点名改「动态转发的消息记录」 | 推送内容改走解析插件的 `render_messages()` 之后，`UniMessage.send` 那条链路没跑通：`_send_uni` 直接把 `uni.export()` 的协程塞给 `send_msg`，每次推送都 `TypeError: Object of type coroutine is not JSON serializable` 然后退回 Bison 原文；改成 `await uni.send(target=..., bot=...)`，和群里贴链接 `message.send()` 同一套。解析超时 90→240 秒（图集要下几十张图），并记一条用时日志。解析插件拼合并转发时节点名默认 `nonebot-plugin-parser`，改成可配置的 `PARSER_NICKNAME`（默认「动态转发的消息记录」）。 |
 | #55 | 自动推送的内容跟群里有人贴链接解析出来的「云泥之别」：推送只调了 `render_image()` 拿一张卡片，`render_contents()` 那半段（动态里的配图、视频）全丢了，再套一层「通知条 + 合并转发」；另外推送出去的链接还会被解析插件再抓一次（先推一次、再解析一次） | 推送不再自己拼内容：`bili_push.py` 把 `nonebot_bison.send.send_msgs`（含 scheduler 里绑定的同名函数）换成自己的——从 Bison 消息里抠出动态链接，交给 `BilibiliParser.search_url()` + `parse()` + `get_renderer(...).render_messages()`，和贴链接走完全同一条渲染链路（含 `parser_video_only.py` 的「视频只发视频」），逐条 `export` 成 OneBot 消息发到目标；解析不了（直播间、下播）才回退 Bison 原消息，不漏推。通知条、合并转发、`_parser_card`/`_drawn_card`、`_gen_with_card`、`_cards` 全部删掉；`PUSH_LINK_TTL` 从 900 秒改成 15 秒（只挡自己刚推的那一下），去掉不再使用的 `BILI_CARD_MAX_HEIGHT`；使用手册 2.9、架构文档「两条链路」同步改写 |

@@ -1,4 +1,4 @@
-"""群关系图：酱油鱼在中间，连到每个记过的群友（线上写态度档），群友之间有关系的连线写关系。
+"""群关系图：酱油鱼在中间，连到每个记过的群友（线的颜色是态度档，线上写她和这人的关系），群友之间有关系的连线写关系。
 
 只用 Pillow 画，不依赖 NoneBot，方便离线测。中文字体按 Windows / macOS / Linux 常见位置找。
 """
@@ -26,6 +26,8 @@ ATT_COLORS = {
     "讨厌": (91, 103, 112),
 }
 LINK_COLOR = (74, 123, 209)
+# 群日记里指她自己的写法（「我」是记日记的人设自己）
+SELF_WORDS = ("我", "自己", "本人")
 BG = (255, 255, 255)
 INK = (40, 44, 52)
 SELF_FILL = (255, 214, 231)
@@ -72,23 +74,93 @@ def _node(draw: ImageDraw.ImageDraw, xy: tuple[float, float], name: str, font, f
     draw.text((x - (box[2] - box[0]) / 2, y - (box[3] - box[1]) / 2 - box[1]), text, font=font, fill=INK)
 
 
+def _bow(p1, p2, mid) -> list[tuple[float, float]]:
+    """群友之间的线往外弯：直线会穿过中间压住她和别的线（两个人正好对着时最明显）。"""
+    mx, my = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
+    dx, dy = mx - mid[0], my - mid[1]
+    d = math.hypot(dx, dy)
+    if d < RING * 0.3:
+        # 弦穿过中间：沿弦的垂直方向弯
+        dx, dy = p1[1] - p2[1], p2[0] - p1[0]
+        d, amount = math.hypot(dx, dy) or 1, RING * 0.55
+    else:
+        amount = RING * 0.25
+    cx, cy = mx + dx / d * amount, my + dy / d * amount
+    pts = []
+    for i in range(25):
+        t = i / 24
+        pts.append(((1 - t) ** 2 * p1[0] + 2 * t * (1 - t) * cx + t * t * p2[0],
+                    (1 - t) ** 2 * p1[1] + 2 * t * (1 - t) * cy + t * t * p2[1]))
+    return pts
+
+
+def _legend(draw: ImageDraw.ImageDraw, font) -> None:
+    """右上角的颜色图例：线的颜色 = 她对这人的态度。"""
+    x, y = SIZE - 150, 22
+    for level, color in ATT_COLORS.items():
+        draw.line((x, y + 12, x + 40, y + 12), fill=color, width=4 if level in ("亲近", "有好感") else 2)
+        draw.text((x + 50, y), level, font=font, fill=INK)
+        y += 28
+
+
+def arrange(
+    center: str,
+    people: list[tuple[str, str | None]],
+    links: list[tuple[str, str, str]],
+    self_names: tuple[str, ...] = (),
+) -> tuple[list[str], dict, dict[str, str], list[tuple[str, str, str]]]:
+    """排座次：返回（圈上的名字, 态度档, 她和谁的关系, 群友之间的关系）；她的别名和「我」都并到中间。"""
+    aliases = tuple(n for n in (center, *self_names) if len(n) >= 2)
+
+    def is_self(name: str) -> bool:
+        # 「酱油鱼🐟」这类带后缀的名片也算她
+        return name in SELF_WORDS or any(a in name for a in aliases)
+
+    people = [(n, level) for n, level in people if not is_self(n)]
+    att = dict(people)
+    # 她和某人的关系写在连她的线上，不再单画一个「我」
+    self_rel: dict[str, str] = {}
+    pair_links: list[tuple[str, str, str]] = []
+    for a, b, rel in links:
+        if is_self(a) and is_self(b):
+            continue
+        if is_self(a) or is_self(b):
+            self_rel.setdefault(b if is_self(a) else a, rel)
+        else:
+            pair_links.append((a, b, rel))
+    # 有关系的两个人在圈上挨着放，连线短、不横穿中间压住别的字
+    near: dict[str, list[str]] = {}
+    for a, b, _ in pair_links:
+        near.setdefault(a, []).append(b)
+        near.setdefault(b, []).append(a)
+    names: list[str] = []
+
+    def walk(n: str) -> None:
+        # 顺着关系往下走，连着的人排在一起
+        names.append(n)
+        for m in near[n]:
+            if m not in names:
+                walk(m)
+
+    for n in near:
+        if n not in names:
+            walk(n)
+    names += [n for n in self_rel if n not in names]
+    names += [n for n, _ in people if n not in names]
+    return names, att, self_rel, pair_links
+
+
 def render(
     center: str,
     people: list[tuple[str, str | None]],
     links: list[tuple[str, str, str]],
     notes: list[str] = (),
     title: str = "",
+    self_names: tuple[str, ...] = (),
 ) -> bytes:
     """画一张关系图，返回 PNG。people 是 (名字, 她对这人的态度档)；links 是 (甲, 乙, 关系)；
-    notes 是认不出是谁和谁的关系笔记，列在图下面。"""
-    att = dict(people)
-    # 有关系的两个人在圈上挨着放，连线短、不横穿中间压住别的字
-    names: list[str] = []
-    for a, b, _ in links:
-        for n in (a, b):
-            if n not in names and n != center:
-                names.append(n)
-    names += [n for n, _ in people if n not in names]
+    notes 是认不出是谁和谁的关系笔记，列在图下面；self_names 是她的别名，和「我」一样都算中间那个。"""
+    names, att, self_rel, pair_links = arrange(center, people, links, self_names)
     names = names[:MAX_PEOPLE]
     notes = [n for n in notes if n][:8]
     height = SIZE + (NOTE_LINE * (len(notes) + 1) + 20 if notes else 0)
@@ -105,23 +177,24 @@ def render(
     # 先画线再画圈，圈压在线头上
     for name in names:
         level = att.get(name)
-        if level:
-            color = ATT_COLORS.get(level, ATT_COLORS["普通"])
+        if level or name in self_rel:
+            # 没记过好感的（只在群日记里出现）按陌生画
+            color = ATT_COLORS.get(level or "陌生", ATT_COLORS["普通"])
             draw.line((mid, pos[name]), fill=color, width=4 if level in ("亲近", "有好感") else 2)
     drawn = []
-    for a, b, rel in links:
+    for a, b, rel in pair_links:
         if a in pos and b in pos:
-            draw.line((pos[a], pos[b]), fill=LINK_COLOR, width=3)
-            drawn.append((a, b, rel))
+            curve = _bow(pos[a], pos[b], mid)
+            draw.line(curve, fill=LINK_COLOR, width=3, joint="curve")
+            drawn.append((curve[len(curve) // 2], rel))
     for name in names:
-        level = att.get(name)
-        if level:
+        rel = self_rel.get(name)
+        if rel:
             x, y = pos[name]
-            _label(draw, (mid[0] + (x - mid[0]) * 0.55, mid[1] + (y - mid[1]) * 0.55), level, f_label,
-                   ATT_COLORS.get(level, INK))
-    for a, b, rel in drawn:
-        (x1, y1), (x2, y2) = pos[a], pos[b]
-        _label(draw, ((x1 + x2) / 2, (y1 + y2) / 2), _short(rel, 10), f_label, LINK_COLOR)
+            _label(draw, (mid[0] + (x - mid[0]) * 0.55, mid[1] + (y - mid[1]) * 0.55), _short(rel, 10), f_label,
+                   INK)
+    for xy, rel in drawn:
+        _label(draw, xy, _short(rel, 10), f_label, LINK_COLOR)
 
     _node(draw, mid, center, f_node, SELF_FILL)
     for name in names:
@@ -129,6 +202,7 @@ def render(
 
     if title:
         draw.text((24, 18), title, font=f_title, fill=INK)
+    _legend(draw, f_label)
     if notes:
         y = SIZE + 10
         draw.text((24, y), "认不出是谁和谁的关系：", font=f_label, fill=INK)

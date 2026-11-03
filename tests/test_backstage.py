@@ -50,6 +50,15 @@ def main() -> int:
     )
     with Image.open(io.BytesIO(png)) as img:
         assert img.format == "PNG" and img.width == relation_graph.SIZE and img.height > relation_graph.SIZE
+    # 群日记写「我」、名片带后缀都并到中间；她和谁的关系写在连她的线上
+    names, att, self_rel, pairs = relation_graph.arrange(
+        "酱油鱼", [("小红", "普通"), ("酱油鱼🐟", "普通")],
+        [("我", "小红", "常拉我聊番"), ("大肥鱼", "小明", "天天互怼"), ("小红", "小明", "同学"), ("我", "酱油鱼", "自己")],
+        ("酱油鱼", "大肥鱼"),
+    )
+    assert sorted(names) == ["小明", "小红"] and "酱油鱼🐟" not in att, names
+    assert self_rel == {"小红": "常拉我聊番", "小明": "天天互怼"} and pairs == [("小红", "小明", "同学")]
+    assert "我/小红" in DIARY_GROUP_PROMPT
     empty = relation_graph.render("酱油鱼", [], [])
     with Image.open(io.BytesIO(empty)) as img:
         assert img.height == relation_graph.SIZE  # 没有认不出的关系就不加底栏

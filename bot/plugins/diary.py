@@ -5,7 +5,7 @@
 日记（个人日记、群日记、群风格）谁都不能翻，开发者也不行：这些指令的资料里不带日记原文，
 只有在本群里画关系图时连上本群群日记里的关系。
 
-- /关系图 [群号]         那个群的关系图：她在中间，连到每个记过的群友（写态度档）；在那个群里画才连群友之间的关系
+- /关系图 [群号]         那个群的关系图：她在中间，连到每个记过的群友（线的颜色是态度档，线上写她和这人的关系）；在那个群里画才连群友之间的关系
 - /小本本 删除 @某人 或 QQ号   删掉关于这个人的全部记录（好感、熟悉度、日记），比如本人要求时
 - /小本本 清空 群号      清掉那个群的群日记
 - /好感 @某人            看这个人的好感 / 熟悉 / 态度档
@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 
 import backstage
@@ -30,6 +31,8 @@ from persona_rules import INITIAL_AFF, INITIAL_FAM, attitude, parse_relation
 notebook_cmd = on_command("小本本", priority=17, block=True)
 bond_cmd = on_command("好感", priority=17, block=True)
 graph_cmd = on_command("关系图", priority=17, block=True)
+# 她的别名：群日记里写成这些名字的都画在中间，不单独成一个人
+NICKNAMES = tuple(n.strip() for n in os.getenv("NICKNAMES", "酱油鱼,大肥鱼,鲸鱼娘").split(",") if n.strip())
 
 
 def _describe_user(uid: str) -> str:
@@ -74,7 +77,7 @@ async def _graph(bot: Bot, gid: str, title: str, links_ok: bool) -> tuple[bytes,
         rel = parse_relation(note["t"])
         (links if rel else loose).append(rel or note["t"])
     lines += [f"{a} — {b}：{r}" for a, b, r in links] + [f"（关系）{t}" for t in loose]
-    png = await asyncio.to_thread(relation_graph.render, "酱油鱼", nodes, links, loose, title)
+    png = await asyncio.to_thread(relation_graph.render, "酱油鱼", nodes, links, loose, title, NICKNAMES)
     return png, "\n".join(lines) or "这个群还没记过谁"
 
 
