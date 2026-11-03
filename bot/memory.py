@@ -136,6 +136,86 @@ def search(keyword: str, limit: int = 3, tags: tuple[str, ...] = ()) -> list[str
     return [f"{d}：{s}" for _, d, s in hits[:limit]]
 
 
+_KEYWORD_STOP = {
+    "记得", "上次", "之前", "以前", "那次", "回忆", "白守", "记忆",
+    "什么", "怎么", "为什么", "是不是", "可以", "一个", "现在", "今天",
+    "昨天", "明天", "我们", "你们", "他们", "自己", "感觉", "觉得", "那个",
+}
+
+
+def _keywords(text: str) -> list[str]:
+    """从一句话里挑出能拿去翻旧日记的词：中文/英文连续片段 + 引号里的词。"""
+    runs = re.findall(r"[\u4e00-\u9fa5A-Za-z0-9]{2,}", text or "")
+    quoted = re.findall(r"[「『\"\']([^」』\"\']{2,10})[」』\"\']", text or "")
+    out: list[str] = []
+    for word in list(quoted):
+        word = word.strip()
+        if len(word) >= 2 and word not in _KEYWORD_STOP and word not in out:
+            out.append(word)
+    for run in runs:
+        # 中文没有空格，整句当一个词搜不到，切成 2~3 字的片段
+        for size in (2, 3):
+            for i in range(0, max(0, len(run) - size + 1)):
+                gram = run[i : i + size]
+                if gram in _KEYWORD_STOP or gram in out:
+                    continue
+                if any(stop in gram for stop in ("记得", "什么", "怎么", "为什么", "是不是")):
+                    continue
+                out.append(gram)
+    return out[:24]
+
+
+def recall(text: str, tags: tuple[str, ...] = (), limit: int = 3) -> list[str]:
+    """问到「记得/上次」时用什么：先翻旧日记里跟这句话有关的事，再补两条最近的。
+
+    - 只翻本会话（tags）的记录，别把别的群/私聊的事带出来；
+    - 跳过今天：今天刚聊的在 history 里，不用重复塞；
+    - 跳过自己说的话（「我：」），免得把机器人的口头禅当成事实带回来。
+    """
+    marks = tuple(f"[{t}] " for t in tags if t)
+    today = datetime.now().strftime("%Y-%m-%d")
+    words = _keywords(text)
+    scored: list[tuple[int, str, str]] = []
+    if words:
+        for path in _iter_md():
+            try:
+                body = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            date = _date_of(path, body)
+            if date == today:
+                continue
+            for line in body.splitlines():
+                line = line.strip()
+                if not line.startswith(("- ", "* ")) or len(line) <= 4:
+                    continue
+                if marks and not _has_tag(line, marks):
+                    continue
+                if " 我：" in line or line[2:].startswith("我："):
+                    continue
+                score = sum(line.count(w) for w in words)
+                if score:
+                    scored.append((score, date, line[2:].strip()))
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    out: list[str] = []
+    for _, date, line in scored:
+        item = f"{date} {line}"
+        if item not in out:
+            out.append(item)
+        if len(out) >= limit:
+            break
+    if len(out) < limit:
+        for item in recent(limit - len(out) + 2, marks and tags or ()):
+            if " 我：" in item or "[私聊]" in item and not tags:
+                continue
+            if item in out:
+                continue
+            out.append(item)
+            if len(out) >= limit:
+                break
+    return out
+
+
 def stats() -> dict:
     files = list(_iter_md())
     return {

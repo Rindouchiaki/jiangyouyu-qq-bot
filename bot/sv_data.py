@@ -17,8 +17,9 @@ DATA_FILE = Path(os.getenv("SV_CARD_DATA", r"Z:\ShadowverseWB_card_data\output\s
 IMAGE_INDEX = Path(os.getenv("SV_CARD_INDEX", r"Z:\ShadowverseWB_card_data\output\images_index.json"))
 IMAGE_ROOT = IMAGE_INDEX.parent
 
-# class：0 中立、1 精灵、2 皇家、3 巫师、4 龙族、5 死灵、6 吸血鬼、7 复仇者
-CLASSES = {0: "中立", 1: "精灵", 2: "皇家", 3: "巫师", 4: "龙族", 5: "死灵", 6: "吸血鬼", 7: "复仇者"}
+# class：0 中立、1 精灵（妖精）、2 皇家、3 巫师（法师）、4 龙族、5 梦魇、6 主教、7 超越者
+# WB 把死灵和吸血鬼合成「梦魇」，复仇者改名「超越者」；对照卡牌 cn 名核对过：class 5 有腐臭的僵尸/夜之歌的演唱会，class 6 有圣盾祭司/修女，class 7 有组装失败/永不停火的枪手
+CLASSES = {0: "中立", 1: "精灵", 2: "皇家", 3: "巫师", 4: "龙族", 5: "梦魇", 6: "主教", 7: "超越者"}
 # type：1 随从、2/3 护符（3 是带吟唱的）、4 法术
 TYPES = {1: "随从", 2: "护符", 3: "护符", 4: "法术"}
 RARITIES = {1: "青铜", 2: "白银", 3: "黄金", 4: "传说"}

@@ -1475,7 +1475,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     if memory.available() and any(hint in text for hint in RECALL_HINTS):
         # 只带本会话的记录和开发者 /记 的笔记
         scope = f"群{group_id}" if is_group else f"私聊{user_id}"
-        notes = await asyncio.to_thread(memory.recent, 5, (scope, *devs.DEV_NAMES))
+        notes = await asyncio.to_thread(memory.recall, text, (scope,), 3)
         if notes:
             logger.info(f"persona: 带上 {len(notes)} 条记忆")
 
