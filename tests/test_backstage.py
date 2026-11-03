@@ -1,6 +1,7 @@
 """后台数据的离线校验：只有全是开发者的对话能看、群日记里的关系认得出、关系图画得出来。"""
 
 import io
+import math
 import os
 import sys
 import tempfile
@@ -49,7 +50,8 @@ def main() -> int:
         [("小红", "小明", "常一起打鸣潮"), ("小明", "路人乙", "同学")], ["小张是小李的室友"], "群 123 的关系图",
     )
     with Image.open(io.BytesIO(png)) as img:
-        assert img.format == "PNG" and img.width == relation_graph.SIZE and img.height > relation_graph.SIZE
+        assert img.format == "PNG" and img.width == relation_graph.MIN_SIZE
+        assert img.height > relation_graph.HEADER + relation_graph.MIN_SIZE  # 有认不出的关系就加底栏
     # 群日记写「我」、名片带后缀都并到中间；她和谁的关系写在连她的线上
     names, att, self_rel, pairs = relation_graph.arrange(
         "酱油鱼", [("小红", "普通"), ("酱油鱼🐟", "普通")],
@@ -61,8 +63,29 @@ def main() -> int:
     assert "我/小红" in DIARY_GROUP_PROMPT
     empty = relation_graph.render("酱油鱼", [], [])
     with Image.open(io.BytesIO(empty)) as img:
-        assert img.height == relation_graph.SIZE  # 没有认不出的关系就不加底栏
+        assert img.height == relation_graph.HEADER + relation_graph.MIN_SIZE  # 没有认不出的关系就不加底栏
     print("PASS  关系图：她在中间、群友连线、认不出的关系列在下面，画得出 PNG")
+
+    # 大群：越亲近越靠里，一圈放不下往外加，人和人不叠；人多了图跟着变大，画不下的写在底下
+    tiers = ["亲近", "有好感", "普通", "陌生", "讨厌", None]
+    crowd = [(f"群友{i}", tiers[i % 6]) for i in range(120)]
+    links = [(f"群友{i}", f"群友{i + 1}", "同学") for i in range(0, 60, 3)] + [("我", "群友7", "常拉我聊番")]
+    names, att, _, pairs = relation_graph.arrange("酱油鱼", crowd, links)
+    pos, r, outer = relation_graph.layout(names[: relation_graph.MAX_PEOPLE], att, pairs)
+    pts = list(pos.values())
+    assert len(pts) == relation_graph.MAX_PEOPLE
+    assert all(math.dist(a, b) >= 2 * r for i, a in enumerate(pts) for b in pts[i + 1:])
+    dist = {n: math.hypot(*xy) for n, xy in pos.items()}
+    close = [dist[n] for n in pos if att.get(n) == "亲近"]
+    far = [dist[n] for n in pos if att.get(n) in ("陌生", "讨厌")]
+    assert max(close) <= min(far), (max(close), min(far))
+    assert relation_graph.node_radius(6) > relation_graph.node_radius(80)
+    big = relation_graph.render("酱油鱼", crowd, links, [], "大群")
+    with Image.open(io.BytesIO(big)) as img:
+        assert img.width > relation_graph.MIN_SIZE and img.height > img.width  # 底下列着编号的关系和没画进来的人
+    assert relation_graph.caption_lines("常拉我聊番") == ["常拉我聊番"]
+    assert relation_graph.caption_lines("一起打了一整个暑假的鸣潮") == ["一起打了一整个", "暑假的鸣潮"]
+    print("PASS  大群关系图：按亲近程度一圈圈往外排、人不叠、图跟着变大，画不下的写明")
     return 0
 
 
