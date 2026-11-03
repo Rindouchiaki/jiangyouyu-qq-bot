@@ -263,6 +263,17 @@ def mark_proactive(uid: str, now: float | None = None) -> None:
         _state["dirty"] = True
 
 
+def set_impression(uid: str, public: str, private: str, now: float | None = None) -> bool:
+    """夜里整理出的印象：public 只用群里听来的事（群里用），private 连私聊的一起（私聊用）。没记录的人不建。"""
+    with _lock:
+        rec = _data["users"].get(str(uid))
+        if rec is None:
+            return False
+        rec["impr"] = {"g": public[:NOTE_MAX_CHARS * 2], "p": private[:NOTE_MAX_CHARS * 2], "t": now or time.time()}
+        _state["dirty"] = True
+        return True
+
+
 def private_contacts() -> list[tuple[str, dict]]:
     """私聊过的人（只读副本），主动找人时从这里挑。"""
     with _lock:

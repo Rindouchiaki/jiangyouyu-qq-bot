@@ -351,6 +351,84 @@ def import_assoc(path: Path) -> int:
     return count
 
 
+def _scope_key(rec: dict) -> tuple:
+    if rec["kind"] == "group":
+        return ("g", rec["gid"])
+    if rec["kind"] == "note":
+        return ("n",)
+    return ("u", rec["uid"])
+
+
+def merge_dups(since: float, now: float | None = None) -> int:
+    """夜里：最近记下的和同范围里的旧记忆几乎一样（向量）就并成一条，留重要的、想起次数加起来。返回并掉几条。"""
+    now = time.time() if now is None else now
+    with _lock:
+        rows = [_row(r) for r in _db().execute("select * from mem where vec is not null and state != 'past'").fetchall()]
+    scopes: dict[tuple, list[dict]] = {}
+    for r in rows:
+        scopes.setdefault(_scope_key(r), []).append(r)
+    gone: set[int] = set()
+    for recs in scopes.values():
+        for new in [r for r in recs if r["t"] >= since]:
+            if new["id"] in gone:
+                continue
+            for old in recs:
+                if old["id"] == new["id"] or old["id"] in gone or len(old["vec"]) != len(new["vec"]):
+                    continue
+                if sum(a * b for a, b in zip(new["vec"], old["vec"])) < DUP_SIM:
+                    continue
+                keep, drop = (new, old) if new["imp"] >= old["imp"] else (old, new)
+                with _lock:
+                    db = _db()
+                    db.execute("update mem set hits = hits + ?, t = max(t, ?) where id = ?",
+                               (drop["hits"], drop["t"], keep["id"]))
+                    db.execute("delete from mem where id = ?", (drop["id"],))
+                    db.commit()
+                gone.add(drop["id"])
+                if drop is new:
+                    break
+    return len(gone)
+
+
+def changed_people(since: dict[str, float] | None = None) -> list[str]:
+    """关于谁的记忆在他上次整理印象之后有变化（新记、刷新、被想起），按最近变化排。since 是 {QQ号: 上次整理时间}。"""
+    since = since or {}
+    with _lock:
+        rows = _db().execute(
+            "select uid, max(max(t, last)) from mem where uid != '' and kind in ('person', 'followup', 'grudge', 'self') "
+            "group by uid order by 2 desc"
+        ).fetchall()
+    return [uid for uid, latest in rows if latest > since.get(uid, 0)]
+
+
+def about(uid: str, private: bool, limit: int = 15, now: float | None = None) -> list[str]:
+    """整理印象用：关于这个人的事（不含记仇和「忘了吧」的），private 为假时只要群里听来的；按记得多牢排。"""
+    now = time.time() if now is None else now
+    with _lock:
+        rows = [_row(r) for r in _db().execute(
+            "select * from mem where uid = ? and kind in ('person', 'followup') and state in ('now', 'done')", (uid,)
+        ).fetchall()]
+    rows = [r for r in rows if private or r["src"] != "p"]
+    rows.sort(key=lambda r: -episode_recency(now - r["t"], r["imp"], r["hits"]) * r["imp"])
+    return [r["text"] for r in rows[:limit]]
+
+
+def grudge_owners() -> list[str]:
+    with _lock:
+        return [r[0] for r in _db().execute("select distinct uid from mem where kind = 'grudge' and state = 'now'")]
+
+
+def soften_grudges(uid: str, now: float | None = None) -> None:
+    """不讨厌他了：记仇一晚淡一点，淡到底又过了 30 天就不再翻。"""
+    now = time.time() if now is None else now
+    with _lock:
+        db = _db()
+        db.execute("update mem set imp = max(1, imp - 1) where uid = ? and kind = 'grudge'", (uid,))
+        db.execute("update mem set state = 'quiet' where uid = ? and kind = 'grudge' and imp = 1 and t < ?",
+                   (uid, now - 30 * 86400))
+        db.commit()
+
+
 def stats() -> dict:
     """按类别数条数，只给数字。"""
     with _lock:

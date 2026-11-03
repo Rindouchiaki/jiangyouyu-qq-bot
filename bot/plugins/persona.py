@@ -70,6 +70,8 @@ from persona_rules import (
     EPISODE_MERGE_PROMPT,
     EPISODE_USER_PROMPT,
     HATE_AFF,
+    IMPRESSION_MAX_CHARS,
+    IMPRESSION_PROMPT,
     PESTER_LOSS,
     SHY_COAXED,
     SHY_HIDE_SEC,
@@ -105,6 +107,7 @@ from persona_rules import (
     parse_group_diary,
     parse_merge,
     parse_user_diary,
+    person_notes,
     parse_slang_candidates,
     parse_slang_meaning,
     results_mention,
@@ -187,6 +190,9 @@ DIARY_GROUP_GAP = float(os.getenv("DIARY_GROUP_GAP", "900"))
 # 事件记忆：摘日记时顺便记事，跟她说话时想起来（见 docs/记忆设计.md）
 EPISODES_ENABLE = os.getenv("EPISODES_ENABLE", "1") == "1"
 EPISODES_RECALL_MAX = int(os.getenv("EPISODES_RECALL_MAX", "2"))
+# 每天几点整理记忆（并重复、淡记仇、重写对人的印象），一晚最多整理几个人
+EPISODES_NIGHT_HOUR = int(os.getenv("EPISODES_NIGHT_HOUR", "4"))
+EPISODES_NIGHT_PEOPLE = int(os.getenv("EPISODES_NIGHT_PEOPLE", "40"))
 # 看到库里没有的表情时按喜好收藏：可爱二次元 / 二次元 / 其它；没读懂（视觉模型没起来）时用 STICKER_SAVE_PROB
 STICKER_SAVE_BY_LIKE = {
     "可爱二次元": float(os.getenv("STICKER_SAVE_CUTE", "0.5")),
@@ -770,7 +776,7 @@ def _count_pester_at(key: str, batch: list[dict], now: float) -> None:
 
 
 async def _diary_user(user_id: str, name: str, lines: list[tuple[str, str]], src: str) -> None:
-    """从和这个人最近的几句里摘一两条以后用得上的事，顺便看整段给好感打分（看上下文，不按单句关键词）。"""
+    """看和这个人最近的几句给好感打分（看上下文，不按单句关键词）；记事交给事件记忆。"""
     talk = [f"{'我' if who == '我' else '对方'}：{text}" for who, text in lines if who in ("我", name)][-12:]
     if MOCK or not API_KEY or not any(t.startswith("对方") for t in talk):
         return
@@ -781,15 +787,11 @@ async def _diary_user(user_id: str, name: str, lines: list[tuple[str, str]], src
             [{"role": "system", "content": diary_user_prompt(att)}, {"role": "user", "content": "\n".join(talk)}],
             120, temperature=0.2,
         )
-        score, notes = parse_user_diary(raw, 3, bonds.NOTE_MAX_CHARS)
-        if notes:
-            bonds.add_user_notes(user_id, notes, src)
-            logger.info(f"persona: 小本本记下 {name}：{'；'.join(notes)}")
+        score, _ = parse_user_diary(raw, 3, bonds.NOTE_MAX_CHARS)
         if score:
             after = bonds.judge(user_id, score)
             if after:
                 logger.info(f"persona: {name} 这段聊天好感 {score:+d}，{pre.get('aff')} → {after.get('aff')}")
-        if notes or score:
             bonds.save(force=True)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"persona: 摘个人日记失败 {type(exc).__name__}: {exc}")
@@ -1550,7 +1552,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     dere = random.random() < DERE_CHANCE.get(att or "普通", 0.0)
     cute = random.random() < CUTE_CHANCE.get(att or "普通", 0.0)
     # 小本本：跟她说话时才带（插话不带，省 token）
-    user_notes = visible_notes(bond.get("notes"), is_group) if addressed else None
+    user_notes = person_notes(bond, is_group) if addressed else None
     group_rec = bonds.group(group_id) if is_group else {}
     group_notes = visible_notes(group_rec.get("notes"), True) if addressed else None
     # 本群风格插话时也带，冒泡才像这个群的人
@@ -1934,7 +1936,7 @@ async def _proactive_tick() -> None:
     messages = compose_messages(
         list(_history[key]), name, "", self_names=NICKNAMES, dev_name=devs.DEV_NAMES, dev_aliases=devs.DEV_ALIASES,
         hour=datetime.now().hour, attitude=att,
-        user_notes=visible_notes(rec.get("notes"), False), topics=bonds.top_topics(uid),
+        user_notes=person_notes(rec, False), topics=bonds.top_topics(uid),
         flavor=_sticky_flavor(key, att), proactive=True, cute=random.random() < CUTE_CHANCE.get(att, 0.0),
     )
     try:
@@ -1985,16 +1987,59 @@ async def _start_proactive() -> None:
 _episodes_task: list[asyncio.Task] = []
 
 
+_night = {"date": ""}
+
+
+async def _impression(facts: list[str]) -> str:
+    """从记得的事里写一两句对这个人的印象（只读原始记忆，不拿上次的印象再总结）。"""
+    raw = await ask_llm(
+        [{"role": "system", "content": IMPRESSION_PROMPT}, {"role": "user", "content": "\n".join(f"- {f}" for f in facts)}],
+        120, temperature=0.3, stop=None,
+    )
+    text = " ".join((raw or "").split())[:IMPRESSION_MAX_CHARS]
+    return "" if text in ("", "无") or looks_like_injection(text) else text
+
+
+async def _night_tidy(now: float) -> None:
+    """夜里整理：并掉重复的记忆、不讨厌了的人记仇淡一点、给记忆有变化的人重写印象（替换小本本日记）。"""
+    merged = await asyncio.to_thread(episodes.merge_dups, now - 2 * 86400, now)
+    for uid in episodes.grudge_owners():
+        rec = bonds.user(uid)
+        if attitude(int(rec.get("aff", 0)), int(rec.get("fam", 0))) != "讨厌":
+            episodes.soften_grudges(uid, now)
+    stamps = {uid: float((bonds.user(uid).get("impr") or {}).get("t") or 0) for uid in episodes.changed_people()}
+    written = 0
+    for uid in episodes.changed_people(stamps)[:EPISODES_NIGHT_PEOPLE]:
+        if MOCK or not API_KEY:
+            break
+        public = episodes.about(uid, False, now=now)
+        full = episodes.about(uid, True, now=now)
+        if not full:
+            continue
+        # 群里用的那份只看群里听来的事，私聊的事不进群
+        g = await _impression(public) if public else ""
+        p = g if full == public else await _impression(full)
+        if bonds.set_impression(uid, g, p, now):
+            written += 1
+    bonds.save(force=True)
+    logger.info(f"persona: 夜里整理记忆：并掉 {merged} 条重复，重写 {written} 个人的印象")
+
+
 async def _episodes_loop() -> None:
-    """Ollama 不在时记下的事没有向量，隔一阵补上。"""
+    """Ollama 不在时记下的事没有向量，隔一阵补上；每天 EPISODES_NIGHT_HOUR 点整理一次。"""
     while True:
         await asyncio.sleep(600)
         try:
             filled = await asyncio.to_thread(episodes.backfill)
             if filled:
                 logger.info(f"persona: 给 {filled} 条记忆补上了向量")
+            now = time.time()
+            today = datetime.now().strftime("%Y-%m-%d")
+            if datetime.now().hour == EPISODES_NIGHT_HOUR and _night["date"] != today:
+                _night["date"] = today
+                await _night_tidy(now)
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"persona: 补记忆向量出错 {type(exc).__name__}: {exc}")
+            logger.warning(f"persona: 整理记忆出错 {type(exc).__name__}: {exc}")
 
 
 @nonebot.get_driver().on_startup
