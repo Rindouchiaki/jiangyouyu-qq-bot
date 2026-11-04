@@ -50,7 +50,7 @@ jobs:
 
       # 冒烟启动时，bison 要渲染卡片就得有 chromium；不预装会临时下载、来不及起来
       - name: 缓存 Chromium
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: D:\a\htmlrender
           key: playwright-chromium-${{ hashFiles('requirements.lock') }}
