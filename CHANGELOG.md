@@ -8,6 +8,7 @@
 
 | PR | 问题 | 改法 |
 |---|---|---|
+| #73 | 每解析一条消息都刷两条警告：`Unsupported Client: SnowLuma for message reaction!` ×2，以及 `哔哩哔哩凭证刷新需要包含 SESSDATA, ac_time_value`；表情回应其实没发出去 | 新增 `plugins/snowluma_compat.py`：①把 uniseg `Onebot11MessageExporter.reaction` 的 `SnowLuma` 分支接到 SnowLuma 实现的 `set_msg_emoji_like`（`message_id` / `emoji_id` / `set`），其它客户端走原实现；②包 `bilibili_api.utils.network.Credential.check_refresh`，cookie 里没有 `ac_time_value` 时直接返回「不用刷新」（没有它就调不了续期接口），有则走官方逻辑 |
 | #72 | 发 `/知识库`、`/记`、`/模式` 这类机器人指令时，人设也当聊天接一句（私聊态度亲近，看着像亲密度回复），等于指令、聊天各回一遍，指令还进了上下文历史 | `persona_rules` 新增 `COMMAND_WORDS` 与 `is_command_text()`（`/` 开头且第一段是指令词，带参数也算）；`plugins/persona.py` 在 B 站指令之后直接 return，指令不回话也不进历史（补单测） |
 | #71 | 报错只在作者本机的 `logs\nonebot.out.log` 里，不在电脑前就不知道出了问题，也没法远程看日志 | 写死 debug 群 `devs.DEBUG_GROUP`（895462706）：新增 `plugins/debug_group.py`，loguru 挂一个 WARNING 及以上的 sink，每 30 秒把攒下的报错合成一条发过去，同一类（数字不同也算）只记次数、带堆栈末尾，每小时最多 20 条，压下的下个小时说一声（纯逻辑在 `bot/debug_report.py`）；发 debug 群自己出的错不再报回去；连上 QQ 时发「上线了（代码版本）」；新增 `/日志 [行数] [错误] [关键词]` 看 `nonebot.out.log` 最后几行，只在全是开发者的对话里能用，群里发合并转发；`/帮助` 的开发者部分补上（补单测和冒烟，冒烟不把 debug 群的消息算成回复） |
 | #70 | 没有一个指令能一次看全部指令，群友不知道能用什么，开发者也得翻使用手册 | 新增 `/帮助`（`/菜单`、`/指令`、`/help`，`bot/plugins/help.py`）：内容在 `persona_rules.HELP_PUBLIC` / `HELP_DEV`，一段一条；群里发成一条合并转发（失败就直接发），私聊直接发；开发者指令只在开发者私聊或全是开发者的群里列（`backstage.devs_only`），普通群里开发者发也只看到群友的，免得暴露谁是开发者（补单测和冒烟） |
