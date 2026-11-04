@@ -93,6 +93,7 @@ from persona_rules import (
     is_offensive,
     is_silent,
     is_bili_command,
+    is_command_text,
     is_game_command,
     is_question,
     knowledge_block,
@@ -1166,6 +1167,9 @@ async def _handle(bot: Bot, event: MessageEvent) -> None:
         return
     if is_bili_command(text):
         # B 站订阅指令由 Bison 回，人设让开（否则会抢着用闲聊口气答）
+        return
+    if is_command_text(text):
+        # 机器人自己的指令（/知识库、/记、/模式…）走各自的 matcher，人设不接话、不进上下文
         return
     media_only = not text
     if not text:
