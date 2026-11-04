@@ -23,7 +23,7 @@ jobs:
       # 仓库里的 .ps1 要原样的 BOM + CRLF，别让 Git 转换行符
       - run: git config --global core.autocrlf false
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: astral-sh/setup-uv@v10.3.3
 
       - name: PowerShell 5.1 语法检查
         shell: powershell
