@@ -54,6 +54,7 @@ from persona_rules import (  # noqa: E402
     leaks_persona,
     is_game_command,
     is_bili_command,
+    is_command_text,
     is_question,
     judge_atmosphere,
     judge_annoyance,
@@ -803,6 +804,13 @@ def main() -> int:
     assert msgs[-1]["content"] == "小明：皇家有什么卡组" and "role：" not in msgs[-1]["content"], msgs[-1]
     print("PASS  卡组资料作为单独的 user 消息进提示词")
 
+    # ---- 机器人指令人设不接话 ----
+    for t in ("/知识库", "/知识库 更新 影之诗", "/记 今天喝了好多糖", "/卡 天枪深渊",
+              "/szb 12", "/模式 默认", "/帮助", "/表情 可爱", "/ping"):
+        assert is_command_text(t), t
+    for t in ("知识库在哪", "5/10 分", "/", "/ 你好", "我今天 /知识库 了", ""):
+        assert not is_command_text(t), t
+    print("PASS  指令识别：/知识库、/记、/模式… 人设让开，正常聊天不受影响")
     check_help()
     print(f"\n结果: {'全部通过' if failed == 0 else f'{failed} 项失败'}")
     return 0 if failed == 0 else 1

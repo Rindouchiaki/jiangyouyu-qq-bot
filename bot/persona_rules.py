@@ -2253,6 +2253,32 @@ def knowledge_block(cards: list[dict]) -> str:
     return KB_HEAD + "\n" + "\n".join(lines) if lines else ""
 
 
+# ---------------------------------------------------------------- 指令识别
+# 机器人自己的指令（人设不接话、也不进上下文）：新增指令记得加到这儿
+COMMAND_WORDS = frozenset({
+    "模式", "米游抽卡", "圣经", "定型文", "抽卡圣经", "用量", "插话",
+    "好感", "小本本", "记", "记忆", "回忆",
+    "学习", "知识库",
+    "缓存", "ping", "帮助", "菜单", "指令", "help", "日志", "关系图",
+    "表情", "szb", "卡", "卡牌",
+    "群订阅", "私聊订阅", "添加订阅", "查询订阅", "删除订阅", "修改订阅",
+    "群管理", "后台管理", "订阅", "添加cookie", "删除cookie", "关联cookie", "取消关联cookie",
+})
+
+
+def is_command_text(text: str) -> bool:
+    """是不是机器人指令（以 / 开头、第一段是指令词）。"""
+    t = (text or "").strip()
+    if len(t) < 2 or t[0] not in "/／":
+        return False
+    head = t.split(maxsplit=1)[0][1:].strip("／").lower()
+    if not head or " " in head:
+        return False
+    if head in {w.lower() for w in COMMAND_WORDS}:
+        return True
+    return bool(re.fullmatch(r"[\w\u4e00-\u9fff]{1,8}", head))
+
+
 # ---------------------------------------------------------------- /帮助
 # 群友能用的；开发者的只在开发者私聊或全是开发者的群里给（普通群里列出来等于告诉大家这是 bot、谁是开发者）
 HELP_PUBLIC = (
