@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -207,22 +208,48 @@ def recall(query: str, limit: int = 3, min_score: float | None = None) -> list[d
                     break
             return out
 
-        # Ollama 不在 / 分数都不够：退回关键词，先找标题对得上的
+        # Ollama 不在 / 分数都不够：退回关键词。标题或道具名对得上的直接用那页第一块，
+        # 道具页标题是 C164、真名在 display 里，别只查 title。
+        like = f"%{query}%"
+        has_display = any(r[1] == "display" for r in con.execute("pragma table_info(pages)"))
+        disp = "p.display" if has_display else "''"
+        where = "p.title like ?" + (" or coalesce(p.display, '') like ?" if has_display else "")
+        params = (like, like, limit) if has_display else (like, limit)
         for row in con.execute(
-            "select p.title, p.url, (select text from chunks where page_id=p.id limit 1) text"
-            " from pages p where p.title like ? limit ?",
-            (f"%{query}%", limit),
+            f"select p.title, {disp} display, p.url,"
+            " (select text from chunks where page_id=p.id order by ord limit 1) text"
+            f" from pages p where {where} limit ?",
+            params,
         ):
-            out.append({"title": row["title"], "text": row["text"] or "", "score": 0.0, "url": row["url"] or ""})
+            out.append({
+                "title": row["title"],
+                "display": row["display"] if row["display"] and row["display"] != row["title"] else "",
+                "text": row["text"] or "",
+                "score": 0.0,
+                "url": row["url"] or "",
+            })
         if out:
             return out
-        like = f"%{query}%"
+        # 只在正文里顺嘴提一句的不给（Bug 列表那种会把答案带偏），至少同一块里出现两次
         for row in con.execute(
-            "select c.text, p.title, p.url from chunks c join pages p on p.id=c.page_id"
-            " where c.text like ? limit ?",
-            (like, limit),
+            f"select c.text, p.title, {disp} display, p.url, p.id pid from chunks c join pages p on p.id=c.page_id"
+            " where c.text like ? limit 50",
+            (like,),
         ):
-            out.append({"title": row["title"], "text": row["text"], "score": 0.0, "url": row["url"] or ""})
+            if row["text"].count(query) < 2:
+                continue
+            first = con.execute(
+                "select text from chunks where page_id=? order by ord limit 1", (row["pid"],)
+            ).fetchone()
+            out.append({
+                "title": row["title"],
+                "display": row["display"] if row["display"] and row["display"] != row["title"] else "",
+                "text": first["text"] if first else row["text"],
+                "score": 0.0,
+                "url": row["url"] or "",
+            })
+            if len(out) >= limit:
+                break
         return out
     finally:
         con.close()
@@ -245,9 +272,12 @@ def format_note(hits: list[dict], chars: int | None = None) -> str:
     )
 
 
+_MATH_RE = re.compile(r"\\[()\[\]]")
+
+
 def _tidy(text: str) -> str:
     """道具页第一块前面是一大段信息框（ID、图鉴、道具池…），只留正文。"""
-    body = (text or "").strip()
+    body = _MATH_RE.sub("", (text or "").strip())
     lines = body.split("\n")
     if len(lines) < 3:
         return body

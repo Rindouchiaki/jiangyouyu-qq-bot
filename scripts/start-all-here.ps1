@@ -15,7 +15,7 @@
       .\scripts\启动全部.ps1 -Vl              # persona.env 里关了视觉模型时，这次也拉起它
       .\scripts\启动全部.ps1 -NoAutoLoad      # SnowLuma 不自动注入 QQ 账号
       .\scripts\启动全部.ps1 -NoCore          # 不启早柚核心（米哈游等游戏的查询）
-      .\scripts\启动全部.ps1 -NoOllama        # 不启 Ollama（事件记忆的向量模型 bge-m3）
+      .\scripts\启动全部.ps1 -Ollama          # 连 Ollama 一起起（事件记忆的向量模型 bge-m3，默认不启）
       .\scripts\启动全部.ps1 -NoQQ            # 不去拉起 QQ
 
 .NOTES
@@ -30,7 +30,7 @@ param(
     [switch]$NoAutoLoad,
     [switch]$NoCore,
     [switch]$NoQQ,
-    [switch]$NoOllama,
+    [switch]$Ollama,
     [int]$NoneBotPort = 18080,
     [int]$WebUiPort = 5099,
     [int]$VlPort = 11435,
@@ -127,12 +127,13 @@ if ($qqRunning) {
 # ------------------------------------------------------------------ 2) Ollama（事件记忆的向量模型 bge-m3）
 # 注意：Ollama 桌面版会把模型目录写死到 C:\Users\<you>\.ollama\models，
 # 这里直接用 ollama serve 并把 OLLAMA_MODELS 指到 Z 盘那份，才能读到 bge-m3。
-if (-not $NoOllama) {
-    if (Test-Listening $OllamaPort) {
-        Write-Host "Ollama 已在 $OllamaPort 运行，跳过" -ForegroundColor DarkGray
-    } elseif (-not (Test-Path $ollamaExe)) {
-        Write-Host '没装 Ollama（可选），跳过；事件记忆退回按字面比' -ForegroundColor DarkGray
-    } else {
+if (Test-Listening $OllamaPort) {
+    Write-Host "Ollama 已在 $OllamaPort 运行" -ForegroundColor DarkGray
+} elseif (-not $Ollama) {
+    Write-Host 'Ollama 默认不启动（事件记忆、知识库、以撒检索先按字面比）；要启加 -Ollama' -ForegroundColor DarkGray
+} elseif (-not (Test-Path $ollamaExe)) {
+    Write-Host '没装 Ollama（可选），跳过；事件记忆退回按字面比' -ForegroundColor DarkGray
+} else {
         Write-Host '启动 Ollama（bge-m3 向量模型）...' -ForegroundColor Yellow
         $prevModels = $env:OLLAMA_MODELS
         $env:OLLAMA_MODELS = $ollamaModels
@@ -146,7 +147,6 @@ if (-not $NoOllama) {
         } else {
             Write-Host "Ollama 已启动 (pid $($p.Id))  http://127.0.0.1:$OllamaPort" -ForegroundColor Green
         }
-    }
 }
 
 # ------------------------------------------------------------------ 3) 本地视觉模型（默认开，VLM_ENABLED=0 或 -NoVl 不开）
