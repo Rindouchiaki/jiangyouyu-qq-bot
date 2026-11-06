@@ -118,6 +118,11 @@ def main() -> None:
     assert isaac_wiki.label({"title": "C164", "display": "蓝蜡烛"}) == "蓝蜡烛（C164）"
     assert isaac_wiki.label({"title": "蓝蜡烛", "display": ""}) == "蓝蜡烛"
 
+    # 聊天里不带「以撒」也认名字：mention 直接按页面名找
+    m = isaac_wiki.mention("蓝蜡烛有什么用", 1)
+    assert m and m[0]["title"] == "蓝蜡烛", m
+    assert isaac_wiki.mention("今天吃什么") == []
+
     print("test_isaac_wiki: 全部通过")
 
 

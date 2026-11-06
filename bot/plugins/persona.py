@@ -1612,8 +1612,13 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     if sv_note:
         logger.debug(f"persona: 影之诗资料 {[c['name'] for c in sv_hits]}")
     isaac_note = ""
-    if not chime and isaac_wiki.ready() and wants_isaac(text):
-        isaac_hits = await asyncio.to_thread(isaac_wiki.recall, text, 2)
+    if not chime and isaac_wiki.ready():
+        isaac_hits: list[dict] = []
+        if wants_isaac(text):
+            isaac_hits = await asyncio.to_thread(isaac_wiki.recall, text, 2)
+        if not isaac_hits:
+            # 没带「以撒」也认：聊天里点到 wiki 里的名字（蓝蜡烛、硫磺火…）就带上那一条
+            isaac_hits = await asyncio.to_thread(isaac_wiki.mention, text, 1)
         if isaac_hits:
             isaac_note = isaac_wiki.format_note(isaac_hits)
             logger.info(f"persona: 以撒资料 {[h['title'] for h in isaac_hits]}")

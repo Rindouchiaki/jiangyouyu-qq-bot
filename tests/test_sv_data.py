@@ -115,3 +115,18 @@ cards, total = sv_data.filter_cards(sv_data.parse_filters("中立 99/99/99"), li
 assert total == 0 and cards == [], (total, cards)
 
 print("test_sv_data: 条件筛选全部通过")
+
+# ---- 数据库 ID / 列表行 / 进化前后卡图 ----
+
+fresh = sv_data.load()
+sample = sv_data.find("天枪深渊")[0]
+assert sv_data.by_id(sample["id"])["name"] == "天枪深渊"
+assert sv_data.by_id("99999999") is None
+assert sv_data.by_id("天枪深渊") is None
+assert sv_data.line(sample) == f"{sample['id']} 天枪深渊 1/0/0", sv_data.line(sample)
+if sv_data.IMAGE_INDEX.exists():
+    with_evo = [c for c in fresh if c.get("evo_image")]
+    assert with_evo, "图片索引里带了 evo_file，却没有一张卡配上进化图"
+    assert all(Path(c["evo_image"]).exists() for c in with_evo[:20])
+
+print("test_sv_data: ID / 列表行 / 进化图全部通过")
