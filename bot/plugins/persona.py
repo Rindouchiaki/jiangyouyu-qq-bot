@@ -2103,7 +2103,14 @@ async def _mode_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
 
     tokens = arg.extract_plain_text().strip().split()
     scope = "local"
-    if tokens and tokens[0] in ("全局", "默认"):
+    # 「默认」既是档位名又能当「改所有群默认」的前缀：
+    #   /模式 默认        → 本群切到「默认」档
+    #   /模式 全局 默认   → 所有群统一成「默认」
+    #   /模式 默认 自宅   → 兼容旧说法，等同 /模式 全局 自宅
+    if tokens and tokens[0] == "全局":
+        scope = "global"
+        tokens = tokens[1:]
+    elif len(tokens) >= 2 and tokens[0] == "默认" and OLD_MODES.get(tokens[1], tokens[1]) in MODES:
         scope = "global"
         tokens = tokens[1:]
     name = tokens[0] if tokens else ""
@@ -2120,7 +2127,7 @@ async def _mode_cmd(bot: Bot, event: MessageEvent, arg=CommandArg()) -> None:
                 f"全局群聊默认「{_mode_name(kind)}」；{_mode_desc(cfg)}\n"
                 f"可选：{options}\n"
                 f"「自宅」= 能拉满的都拉满；「默认」= 小话痨；「冬眠」= 完全不说话（不插话也不接续）\n"
-                f"只改本群：/模式 自宅　统一所有群：/模式 全局 自宅（会清掉各群单独设置）"
+                f"只改本群：/模式 默认　统一所有群：/模式 全局 默认（会清掉各群单独设置）"
             )
         await mode_cmd.finish(
             f"{label}当前「{_mode_name(kind, key)}」：{_mode_desc(cfg)}\n"
