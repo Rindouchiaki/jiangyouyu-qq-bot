@@ -1,6 +1,6 @@
 {
   "source": "C:\\Users\\<you>\\AppData\\Roaming\\Tencent\\TF\\Tencent Files\\100000002\\nt_qq\\nt_data\\Emoji\\personal_emoji\\Ori",
-  "count": 492,
+  "count": 459,
   "items": [
     {
       "id": "4d45539c9fb3168c",
@@ -190,23 +190,6 @@
         "无文字",
         "近方图",
         "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
-      "id": "7dba4016b7125bd2",
-      "file": "ori/7dba4016b7125bd2.gif",
-      "format": "gif",
-      "animated": true,
-      "width": 160,
-      "height": 160,
-      "bytes": 10581,
-      "tags": [
-        "动图",
-        "方图",
-        "无文字",
-        "暖色"
       ],
       "text": "",
       "category": "无文字"
@@ -1192,24 +1175,6 @@
       "category": "其他"
     },
     {
-      "id": "a6b4c3013ae519f3",
-      "file": "ori/a6b4c3013ae519f3.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 278,
-      "height": 300,
-      "bytes": 30167,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "lvl50大家好，我疋月新ycmddw",
-      "category": "其他"
-    },
-    {
       "id": "f5eaf49a071b096c",
       "file": "ori/f5eaf49a071b096c.jpeg",
       "format": "jpeg",
@@ -1418,23 +1383,6 @@
       ],
       "text": "你当我傻啊？",
       "category": "疑问"
-    },
-    {
-      "id": "3de2316efe3efb98",
-      "file": "ori/3de2316efe3efb98.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 1118,
-      "height": 1080,
-      "bytes": 98636,
-      "tags": [
-        "无文字",
-        "暖色",
-        "近方图",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
     },
     {
       "id": "0910d29ff54dbc09",
@@ -1735,24 +1683,6 @@
       "category": "无文字"
     },
     {
-      "id": "da058163dcbcd9f3",
-      "file": "ori/da058163dcbcd9f3.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 177,
-      "bytes": 4267,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "町生正而上我吖mefran山e",
-      "category": "其他"
-    },
-    {
       "id": "2429987b04377bae",
       "file": "ori/2429987b04377bae.jpeg",
       "format": "jpeg",
@@ -1902,23 +1832,6 @@
       "width": 472,
       "height": 464,
       "bytes": 38926,
-      "tags": [
-        "中性",
-        "无文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
-      "id": "e29b679cdb580089",
-      "file": "ori/e29b679cdb580089.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 190,
-      "height": 189,
-      "bytes": 4000,
       "tags": [
         "中性",
         "无文字",
@@ -2295,23 +2208,6 @@
       "category": "无文字"
     },
     {
-      "id": "6f72506d3c67e2e2",
-      "file": "ori/6f72506d3c67e2e2.gif",
-      "format": "gif",
-      "animated": true,
-      "width": 84,
-      "height": 84,
-      "bytes": 8597,
-      "tags": [
-        "中性",
-        "动图",
-        "方图",
-        "无文字"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
       "id": "af3a4eafc5b74aa8",
       "file": "ori/af3a4eafc5b74aa8.jpeg",
       "format": "jpeg",
@@ -2520,23 +2416,6 @@
       "category": "无文字"
     },
     {
-      "id": "4c06f225a0f491cf",
-      "file": "ori/4c06f225a0f491cf.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 1080,
-      "height": 1080,
-      "bytes": 99091,
-      "tags": [
-        "方图",
-        "无文字",
-        "暖色",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
       "id": "dc6daa6463f2e84f",
       "file": "ori/dc6daa6463f2e84f.jpeg",
       "format": "jpeg",
@@ -2704,23 +2583,6 @@
         "动图",
         "无文字",
         "横图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
-      "id": "4ce514c036cf88cb",
-      "file": "ori/4ce514c036cf88cb.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 60,
-      "height": 52,
-      "bytes": 497,
-      "tags": [
-        "中性",
-        "无文字",
-        "近方图",
-        "静图"
       ],
       "text": "",
       "category": "无文字"
@@ -2953,24 +2815,6 @@
       "category": "无文字"
     },
     {
-      "id": "3ebb1fa858a28a8d",
-      "file": "ori/3ebb1fa858a28a8d.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 66,
-      "height": 70,
-      "bytes": 11302,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "可了不得",
-      "category": "其他"
-    },
-    {
       "id": "7d97a48cadbb8427",
       "file": "ori/7d97a48cadbb8427.jpeg",
       "format": "jpeg",
@@ -3077,23 +2921,6 @@
       "category": "无文字"
     },
     {
-      "id": "cc7da15a4abb1f42",
-      "file": "ori/cc7da15a4abb1f42.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 49,
-      "height": 49,
-      "bytes": 11761,
-      "tags": [
-        "中性",
-        "方图",
-        "无文字",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
       "id": "66875fce0a36bada",
       "file": "ori/66875fce0a36bada.jpeg",
       "format": "jpeg",
@@ -3146,24 +2973,6 @@
       "category": "无文字"
     },
     {
-      "id": "eaa938428ca89399",
-      "file": "ori/eaa938428ca89399.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 106,
-      "bytes": 3627,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "横图",
-        "静图"
-      ],
-      "text": "看看我的丨0",
-      "category": "其他"
-    },
-    {
       "id": "ec6a2db389d7f8c9",
       "file": "ori/ec6a2db389d7f8c9.jpeg",
       "format": "jpeg",
@@ -3192,23 +3001,6 @@
         "中性",
         "无文字",
         "近方图",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
-      "id": "7ebd02cfdf172026",
-      "file": "ori/7ebd02cfdf172026.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 102,
-      "bytes": 2347,
-      "tags": [
-        "中性",
-        "无文字",
-        "横图",
         "静图"
       ],
       "text": "",
@@ -3598,25 +3390,6 @@
       "category": "拒绝"
     },
     {
-      "id": "1b37a5f6e360543b",
-      "file": "ori/1b37a5f6e360543b.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 84,
-      "height": 65,
-      "bytes": 11866,
-      "tags": [
-        "其他",
-        "无文字",
-        "暖色",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "是这样的",
-      "category": "其他"
-    },
-    {
       "id": "48f8c87eec9cba04",
       "file": "ori/48f8c87eec9cba04.gif",
       "format": "gif",
@@ -3737,24 +3510,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "1dddbad237431261",
-      "file": "ori/1dddbad237431261.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 300,
-      "height": 300,
-      "bytes": 12060,
-      "tags": [
-        "其他",
-        "方图",
-        "暖色",
-        "有文字",
-        "静图"
-      ],
-      "text": "等他说完再电他，现在先打他。",
-      "category": "其他"
     },
     {
       "id": "088f9547786d4358",
@@ -4066,41 +3821,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "43cfb4a5a72f687a",
-      "file": "ori/43cfb4a5a72f687a.gif",
-      "format": "gif",
-      "animated": true,
-      "width": 188,
-      "height": 245,
-      "bytes": 136466,
-      "tags": [
-        "动图",
-        "无文字",
-        "暖色",
-        "近方图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
-      "id": "40ef15aff12a08e8",
-      "file": "ori/40ef15aff12a08e8.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 133,
-      "bytes": 3656,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "横图",
-        "静图"
-      ],
-      "text": "我小要跟你说话，你編我上床",
-      "category": "其他"
     },
     {
       "id": "184daa43d3688ac9",
@@ -4868,25 +4588,6 @@
       "category": "无文字"
     },
     {
-      "id": "6d47eb187a059e18",
-      "file": "ori/6d47eb187a059e18.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 173,
-      "bytes": 5807,
-      "tags": [
-        "中性",
-        "其他",
-        "无文字",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "回氵",
-      "category": "其他"
-    },
-    {
       "id": "26864ca3a5084bb2",
       "file": "ori/26864ca3a5084bb2.jpeg",
       "format": "jpeg",
@@ -5185,42 +4886,6 @@
       "category": "无文字"
     },
     {
-      "id": "da1717848ef4658f",
-      "file": "ori/da1717848ef4658f.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 162,
-      "height": 128,
-      "bytes": 14335,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "已经没有这种操作了",
-      "category": "其他"
-    },
-    {
-      "id": "4c584b2fb0c2f1ec",
-      "file": "ori/4c584b2fb0c2f1ec.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 198,
-      "bytes": 4171,
-      "tags": [
-        "中性",
-        "其他",
-        "方图",
-        "有文字",
-        "静图"
-      ],
-      "text": "老淫魔",
-      "category": "其他"
-    },
-    {
       "id": "8f9780b435986abc",
       "file": "ori/8f9780b435986abc.jpeg",
       "format": "jpeg",
@@ -5515,23 +5180,6 @@
       "category": "无文字"
     },
     {
-      "id": "beff90ef65b93ed7",
-      "file": "ori/beff90ef65b93ed7.gif",
-      "format": "gif",
-      "animated": false,
-      "width": 198,
-      "height": 198,
-      "bytes": 17662,
-      "tags": [
-        "方图",
-        "无文字",
-        "暖色",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
       "id": "c83171dd6bd213ec",
       "file": "ori/c83171dd6bd213ec.jpeg",
       "format": "jpeg",
@@ -5549,25 +5197,6 @@
       "category": "无文字"
     },
     {
-      "id": "e90bf3043723ea30",
-      "file": "ori/e90bf3043723ea30.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 244,
-      "height": 108,
-      "bytes": 9763,
-      "tags": [
-        "搞笑",
-        "暖色",
-        "有文字",
-        "横图",
-        "草",
-        "静图"
-      ],
-      "text": "等他说完冉唢．喷完冉电电完再草·草完再射",
-      "category": "搞笑"
-    },
-    {
       "id": "be21fadedc87964a",
       "file": "ori/be21fadedc87964a.jpeg",
       "format": "jpeg",
@@ -5579,23 +5208,6 @@
         "中性",
         "方图",
         "无文字",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
-      "id": "bf8da972eb0831b5",
-      "file": "ori/bf8da972eb0831b5.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 196,
-      "height": 198,
-      "bytes": 18172,
-      "tags": [
-        "中性",
-        "无文字",
-        "近方图",
         "静图"
       ],
       "text": "",
@@ -5967,23 +5579,6 @@
       "category": "无文字"
     },
     {
-      "id": "bef67da9456ab10b",
-      "file": "ori/bef67da9456ab10b.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 182,
-      "bytes": 18634,
-      "tags": [
-        "中性",
-        "无文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "",
-      "category": "无文字"
-    },
-    {
       "id": "4bc4ff030c4b64c9",
       "file": "ori/4bc4ff030c4b64c9.jpeg",
       "format": "jpeg",
@@ -6088,43 +5683,6 @@
       "category": "无文字"
     },
     {
-      "id": "db799ebd3094b959",
-      "file": "ori/db799ebd3094b959.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 195,
-      "bytes": 3858,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "00不过如此",
-      "category": "其他"
-    },
-    {
-      "id": "2974b2b52b80ccce",
-      "file": "ori/2974b2b52b80ccce.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 440,
-      "height": 350,
-      "bytes": 47052,
-      "tags": [
-        "中性",
-        "吗",
-        "有文字",
-        "疑问",
-        "近方图",
-        "静图"
-      ],
-      "text": "你也是学着学着手机就自一跳到手里了吗",
-      "category": "疑问"
-    },
-    {
       "id": "122044714aa95838",
       "file": "ori/122044714aa95838.jpeg",
       "format": "jpeg",
@@ -6191,25 +5749,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "0c673d0f99ebc5e1",
-      "file": "ori/0c673d0f99ebc5e1.gif",
-      "format": "gif",
-      "animated": true,
-      "width": 500,
-      "height": 500,
-      "bytes": 538265,
-      "tags": [
-        "中性",
-        "其他",
-        "动图",
-        "方图",
-        "无文字",
-        "有文字"
-      ],
-      "text": "e疒乙00",
-      "category": "其他"
     },
     {
       "id": "2f031df8ca9c9926",
@@ -6468,24 +6007,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "4ea695b2665e43dd",
-      "file": "ori/4ea695b2665e43dd.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 275,
-      "height": 276,
-      "bytes": 20475,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "说丶出话丿",
-      "category": "其他"
     },
     {
       "id": "cacbced0e164ed1c",
@@ -6770,24 +6291,6 @@
       "category": "其他"
     },
     {
-      "id": "8f960c5b00a3365f",
-      "file": "ori/8f960c5b00a3365f.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 198,
-      "height": 198,
-      "bytes": 6810,
-      "tags": [
-        "其他",
-        "方图",
-        "暖色",
-        "有文字",
-        "静图"
-      ],
-      "text": "不是的你听",
-      "category": "其他"
-    },
-    {
       "id": "87d352e179795b79",
       "file": "ori/87d352e179795b79.jpeg",
       "format": "jpeg",
@@ -6874,24 +6377,6 @@
       "category": "无文字"
     },
     {
-      "id": "b0d5791f3b27be5e",
-      "file": "ori/b0d5791f3b27be5e.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 720,
-      "height": 645,
-      "bytes": 34835,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "微笑中透露着妈卖批",
-      "category": "其他"
-    },
-    {
       "id": "e5fa638eada45f53",
       "file": "ori/e5fa638eada45f53.jpeg",
       "format": "jpeg",
@@ -6907,24 +6392,6 @@
         "静图"
       ],
       "text": "膨胀",
-      "category": "其他"
-    },
-    {
-      "id": "9b1410061b8dce05",
-      "file": "ori/9b1410061b8dce05.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 438,
-      "height": 424,
-      "bytes": 21052,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "把爷逗的乐开花",
       "category": "其他"
     },
     {
@@ -7606,24 +7073,6 @@
       "category": "无文字"
     },
     {
-      "id": "e3b6e70aed67cea0",
-      "file": "ori/e3b6e70aed67cea0.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 799,
-      "height": 998,
-      "bytes": 400811,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "马趴腩！",
-      "category": "其他"
-    },
-    {
       "id": "1b53f5119fa63e73",
       "file": "ori/1b53f5119fa63e73.jpeg",
       "format": "jpeg",
@@ -7849,24 +7298,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "8ca19d939ae5a872",
-      "file": "ori/8ca19d939ae5a872.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 182,
-      "height": 198,
-      "bytes": 3810,
-      "tags": [
-        "中性",
-        "其他",
-        "有文字",
-        "近方图",
-        "静图"
-      ],
-      "text": "说的好像你不是一样",
-      "category": "其他"
     },
     {
       "id": "7e1529fadcc92dcb",
@@ -8248,24 +7679,6 @@
       ],
       "text": "",
       "category": "无文字"
-    },
-    {
-      "id": "19527f74175848d4",
-      "file": "ori/19527f74175848d4.jpeg",
-      "format": "jpeg",
-      "animated": false,
-      "width": 641,
-      "height": 641,
-      "bytes": 30333,
-      "tags": [
-        "中性",
-        "其他",
-        "方图",
-        "有文字",
-        "静图"
-      ],
-      "text": "放你的屁",
-      "category": "其他"
     },
     {
       "id": "c9ee8292c77db29f",
