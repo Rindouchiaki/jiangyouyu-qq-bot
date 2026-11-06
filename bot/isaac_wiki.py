@@ -255,6 +255,98 @@ def recall(query: str, limit: int = 3, min_score: float | None = None) -> list[d
         con.close()
 
 
+_names_cache: dict[str, object] = {"stamp": None, "names": []}
+
+# 这些词条名太泛，出现在句子里不代表在问这个词条
+_GENERIC = {
+    "道具", "饰品", "卡片", "角色", "怪物", "成就", "实体", "标签", "房间",
+    "结局", "机制", "操作", "界面", "基础", "表情", "音乐", "音效",
+}
+
+
+def _names() -> list[tuple[str, str, str]]:
+    """所有能用来“聊天里认名字”的候选：(小写名, 原名, 词条标题)，长名优先。"""
+    stamp = DB.stat().st_mtime if ready() else None
+    if stamp is not None and _names_cache["stamp"] == stamp:
+        return _names_cache["names"]  # type: ignore[return-value]
+    if not ready():
+        _names_cache.update({"stamp": stamp, "names": []})
+        return []
+    con = _db()
+    try:
+        cols = {row[1] for row in con.execute("pragma table_info(pages)")}
+        display_sql = "coalesce(p.display, '')" if "display" in cols else "''"
+        rows = con.execute(f"select p.title, {display_sql} as display from pages p").fetchall()
+    finally:
+        con.close()
+    out: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    for row in rows:
+        title = (row["title"] or "").strip()
+        display = (row["display"] or "").strip()
+        for name in (display, title):
+            if len(name) < 2 or name in _GENERIC or name in seen:
+                continue
+            if title and not display and not any("\u4e00" <= ch <= "\u9fff" for ch in name):
+                continue
+            seen.add(name)
+            out.append((name.lower(), name, title))
+    out.sort(key=lambda item: -len(item[0]))
+    _names_cache.update({"stamp": stamp, "names": out})
+    return out
+
+
+def mention(text: str, limit: int = 2) -> list[dict]:
+    """聊天里提到 wiki 里的东西（不必带「以撒」）就把那一条捞出来。
+
+    只认名字，所以很快；认不准就返回空，别硬塞资料。
+    """
+    low = (text or "").lower()
+    if not low or not ready():
+        return []
+    picked: list[tuple[int, str]] = []
+    used: set[str] = set()
+    for name_low, name, title in _names():
+        if title in used or name_low not in low:
+            continue
+        used.add(title)
+        picked.append((len(name), title))
+    if not picked:
+        return []
+    picked.sort(key=lambda item: -item[0])
+    titles = [t for _, t in picked[:limit]]
+    con = _db()
+    try:
+        cols = {row[1] for row in con.execute("pragma table_info(pages)")}
+        display_sql = "coalesce(p.display, '') as display" if "display" in cols else "'' as display"
+        out: list[dict] = []
+        for title in titles:
+            row = con.execute(
+                f"select p.title, p.url, {display_sql}, c.text from pages p"
+                " join chunks c on c.page_id=p.id where p.title=? order by c.ord limit 1",
+                (title,),
+            ).fetchone()
+            if not row:
+                continue
+            body = row["text"] or ""
+            if "消歧义页" in body:
+                # 「蜡烛」这种只列一串名字的页，别拿来当资料
+                continue
+            display = row["display"] or ""
+            out.append(
+                {
+                    "title": row["title"] or "",
+                    "display": display if display and display != row["title"] else "",
+                    "text": body,
+                    "score": 0.0,
+                    "url": row["url"] or "",
+                }
+            )
+        return out
+    finally:
+        con.close()
+
+
 def format_note(hits: list[dict], chars: int | None = None) -> str:
     """塞进提示词的一段：说明这是本地 wiki 资料，只能照这个说。"""
     if not hits:

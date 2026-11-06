@@ -48,9 +48,10 @@ def _clip(text: str, limit: int = MAX_SKILL_CHARS) -> str:
     return text[:limit].rstrip("，,、；;：: ") + "…"
 
 
-def _image_path(card_id: str) -> str:
+def _image_path(card_id: str, evo: bool = False) -> str:
     images = _cache.get("images") or {}
-    rel = images.get(str(card_id)) or ""
+    pair = images.get(str(card_id)) or ("", "")
+    rel = (pair[1] if evo else pair[0]) or ""
     if not rel:
         return ""
     path = IMAGE_ROOT / rel
@@ -71,12 +72,12 @@ def load(force: bool = False) -> list[dict]:
     details = (raw.get("data") or {}).get("card_details") or {}
     set_names = (raw.get("data") or {}).get("card_set_names") or {}
 
-    images: dict[str, str] = {}
+    images: dict[str, tuple[str, str]] = {}
     try:
         for item in json.loads(IMAGE_INDEX.read_text(encoding="utf-8")):
-            rel = item.get("normal_file") or ""
-            if rel and item.get("card_id"):
-                images[str(item["card_id"])] = rel
+            cid = item.get("card_id")
+            if cid:
+                images[str(cid)] = (item.get("normal_file") or "", item.get("evo_file") or "")
     except (OSError, ValueError):
         images = {}
 
@@ -106,6 +107,7 @@ def load(force: bool = False) -> list[dict]:
         if evo.get("skill_text"):
             card["evo_skill"] = _clean(evo.get("skill_text"))
         card["image"] = _image_path(card["id"])
+        card["evo_image"] = _image_path(card["id"], evo=True)
         cards.append(card)
         by_id[card["id"]] = card
 
@@ -117,6 +119,20 @@ def load(force: bool = False) -> list[dict]:
 
 def size() -> int:
     return len(load())
+
+
+def by_id(card_id: str) -> dict | None:
+    """按数据库 ID（那串数字）精确取一张卡。"""
+    cid = (card_id or "").strip()
+    if not cid.isdigit():
+        return None
+    load()
+    return (_cache.get("by_id") or {}).get(cid)
+
+
+def line(card: dict) -> str:
+    """列表里的一行：ID 卡名 费用/攻击/血量。"""
+    return f"{card['id']} {card['name']} {card['cost']}/{card['atk']}/{card['life']}"
 
 
 def find(query: str, limit: int = 8) -> list[dict]:
