@@ -109,16 +109,43 @@ def _norm(vec) -> np.ndarray:
     return v / size
 
 
+_api_kind = {"prefer": os.getenv("EPISODES_EMBED_API", "").strip().lower()}
+
+
+def _request_embeddings(texts: list[str]) -> list[list[float]] | None:
+    """先按 Ollama 的 /api/embed，再按 OpenAI 的 /v1/embeddings（llama.cpp 用后者）。"""
+    kinds = ["ollama", "openai"]
+    if _api_kind["prefer"] in kinds:
+        kinds.remove(_api_kind["prefer"])
+        kinds.insert(0, _api_kind["prefer"])
+    for kind in kinds:
+        if kind == "ollama":
+            url, key = f"{EMBED_URL}/api/embed", "embeddings"
+        else:
+            url, key = f"{EMBED_URL}/v1/embeddings", "data"
+        body = json.dumps({"model": EMBED_MODEL, "input": texts}).encode("utf-8")
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except (OSError, ValueError, urllib.error.URLError):
+            continue
+        if kind == "ollama":
+            vecs = data.get(key) or []
+        else:
+            vecs = [d.get("embedding") for d in (data.get(key) or [])]
+        if len(vecs) == len(texts) and all(vecs):
+            _api_kind["prefer"] = kind
+            return vecs
+    return None
+
+
 def embed(texts: list[str]) -> list[list[float] | None]:
     """本机 Ollama 算向量（归一化过）；关掉或连不上就全是 None，调用方退回按片段比。"""
     if not texts or not EMBED_ON or time.time() < _embed_down["until"]:
         return [None] * len(texts)
-    body = json.dumps({"model": EMBED_MODEL, "input": texts}).encode("utf-8")
-    req = urllib.request.Request(f"{EMBED_URL}/api/embed", data=body, headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            vecs = json.loads(resp.read().decode("utf-8")).get("embeddings") or []
-    except (OSError, ValueError, urllib.error.URLError):
+    vecs = _request_embeddings(texts)
+    if vecs is None:
         _embed_down["until"] = time.time() + EMBED_RETRY_SEC
         return [None] * len(texts)
     if len(vecs) != len(texts):
