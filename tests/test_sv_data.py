@@ -83,3 +83,35 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# ---- 条件筛选（职业 / 身材 / 能力词条）----
+
+spec = sv_data.parse_filters("皇 5/4/4 疾驰")
+assert spec["cls"] == ["皇家"], spec
+assert (spec["cost"], spec["atk"], spec["life"]) == (5, 4, 4), spec
+assert spec["abilities"] == ["疾驰"], spec
+
+spec = sv_data.parse_filters("妖精 2/2")
+assert spec["cls"] == ["精灵"] and spec["cost"] == 2 and spec["atk"] == 2 and spec["life"] is None, spec
+
+spec = sv_data.parse_filters("主教 疾驰 守护")
+assert spec["cls"] == ["主教"] and spec["abilities"] == ["疾驰", "守护"], spec
+
+spec = sv_data.parse_filters("疾驰守护")
+assert spec["abilities"] == ["疾驰守护"], spec
+
+spec = sv_data.parse_filters("天枪深渊")
+assert spec["names"] == ["天枪深渊"] and not sv_data.has_filters(spec), spec
+
+assert sv_data.describe_filters(sv_data.parse_filters("皇 5/4/4 疾驰")) == "皇家 5费 4/4 疾驰"
+
+cards, total = sv_data.filter_cards(sv_data.parse_filters("皇"), limit=3)
+assert total >= 1 and all(c["class"] == "皇家" for c in cards), (total, cards)
+
+cards, total = sv_data.filter_cards(sv_data.parse_filters("疾驰守护"), limit=3)
+assert total >= 1 and "疾驰" in cards[0]["skill"] or "疾驰" in cards[0].get("evo_skill", ""), cards
+
+cards, total = sv_data.filter_cards(sv_data.parse_filters("中立 99/99/99"), limit=3)
+assert total == 0 and cards == [], (total, cards)
+
+print("test_sv_data: 条件筛选全部通过")

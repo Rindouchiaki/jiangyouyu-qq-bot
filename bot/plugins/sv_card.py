@@ -1,4 +1,4 @@
-"""影之诗查卡：/卡 卡名（模糊找，命中多张就打包成一条消息记录）。
+"""影之诗查卡：/卡 卡名，或者按职业 / 费用·攻击·血量 / 能力词条筛。
 
 数据是本地那份 `shadowverse_cards_chs.json`（`SV_CARD_DATA` 可改），不联网。
 认不准就明说，让对方补个职业、费用或效果里的词，绝不硬猜。
@@ -22,7 +22,11 @@ COOLDOWN_SEC = 3.0
 MAX_LIST = 4  # 一条消息记录里最多放几张卡
 _last: dict[str, float] = {}
 
-USAGE = "用法：/卡 卡名，比如 /卡 天枪深渊。记不全就发你能想起来的几个字，或者说说职业、几费、效果。"
+USAGE = (
+    "用法：/卡 卡名，比如 /卡 天枪深渊；也可以筛：/卡 皇 5/4/4 疾驰\n"
+    "职业（皇、妖、法、龙、梦、教、超、中立）、费用/攻击/血量（5 或 5/4/4，没写的空着）、"
+    "能力词条可以写几个，比如 /卡 主教 疾驰 守护。"
+)
 NO_HIT = "没查到「{q}」。可以说说职业、费用，或者效果里的词，我再找找。"
 
 
@@ -103,6 +107,28 @@ async def _card(bot: Bot, event: MessageEvent, arg: Message = CommandArg()):
     query = arg.extract_plain_text().strip()
     if not query:
         await card_cmd.finish(USAGE)
+
+    spec = sv_data.parse_filters(query)
+    if sv_data.has_filters(spec):
+        cards, total = sv_data.filter_cards(spec, MAX_LIST)
+        label = sv_data.describe_filters(spec)
+        if not cards and spec.get("names"):
+            # 「皇 天枪深渊」这种：条件对不上时退回按名字找一次
+            hits = sv_data.search(" ".join(spec["names"]), limit=8)
+            cards = [card for _, card, _ in hits if not spec["cls"] or card["class"] in spec["cls"]]
+            total = len(cards)
+            cards = cards[:MAX_LIST]
+            label += "（名字那条条件放宽了）"
+        if not cards:
+            await card_cmd.finish(f"没找到符合条件的卡：{label}。条件松一点再试试？")
+        head = f"{label} 共 {total} 张"
+        if total > len(cards):
+            head += "，先看这几张"
+        if len(cards) == 1:
+            await _send_card(cards[0], head + "：")
+            return
+        await _send_many(bot, event, head + "：", cards)
+        return
 
     hits = sv_data.search(query, limit=8)
     if not hits:
