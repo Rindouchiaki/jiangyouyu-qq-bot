@@ -37,6 +37,8 @@ python tests\test_knowledge.py             # 知识库：录入、合并、每�
 python tests\test_debug_report.py          # debug 群：报错攒批、合并重复、限流，读日志
 python tests\test_bili_group.py            # B 站订阅指令解析、推送通知文字
 python tests\test_push_marks.py            # 刚推过的链接名单（解析插件避让）
+python tests\test_sv_data.py               # 影之诗卡片检索：精确/前缀/模糊/能力关键词、详情格式
+python tests\test_isaac_wiki.py            # 以撒 wiki 检索：向量召回、不硬凑、Ollama 不在时的关键词兜底
 powershell -File tests\test_env_sync.ps1  # 一键更新按样例重写 persona.env，临时目录里跑
 python tests\smoke_stack.py --start-bot     # 起一个 NoneBot 模拟收发（--core 连已启动的整套）
 ```

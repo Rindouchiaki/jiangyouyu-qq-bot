@@ -48,6 +48,7 @@ import bonds
 import devs
 import episodes
 import gscore_guard
+import isaac_wiki
 import knowledge
 import slang
 import sv_data
@@ -138,6 +139,7 @@ from persona_rules import (
     wants_forget,
     wants_help,
     wants_search,
+    wants_isaac,
     wants_sticker,
 )
 
@@ -1609,6 +1611,12 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     sv_note = sv_data.for_prompt(sv_hits) if sv_hits else ""
     if sv_note:
         logger.debug(f"persona: 影之诗资料 {[c['name'] for c in sv_hits]}")
+    isaac_note = ""
+    if not chime and isaac_wiki.ready() and wants_isaac(text):
+        isaac_hits = await asyncio.to_thread(isaac_wiki.recall, text, 2)
+        if isaac_hits:
+            isaac_note = isaac_wiki.format_note(isaac_hits)
+            logger.info(f"persona: 以撒资料 {[h['title'] for h in isaac_hits]}")
     messages = compose_messages(
         past,
         name,
@@ -1641,6 +1649,7 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         chime_free=mcfg["free"] and att != "讨厌",
         sv_note=sv_note,
         deck_note=deck_note,
+        isaac_note=isaac_note,
         recall_note=recall_note,
         knowledge_note=knowledge_block(known),
     )
