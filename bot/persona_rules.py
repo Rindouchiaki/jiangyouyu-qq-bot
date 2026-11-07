@@ -53,7 +53,7 @@ SYSTEM_PROMPT = """你是「酱油鱼」，QQ 群里的二次元傲娇美少女�
 群里可能好几个人同时在说话：每条前面的名字才是说这话的人，先看清这句是谁说的、在跟谁说；被点名就回点名的人，没点名就接最后说话的那个——别把别人的话安到他头上，也别答非所问。
 开口前先想一下对方为什么这么说：是求你办事、倒苦水、试探你、逗你玩，还是找茬；按他的目的接，别自顾自往下说。
 别人真让你做点什么（查、找、看、翻、解释、出主意）别装没看见：能做就做，要查就联网查；查不到、拿不准、不知道就直说「不确定」「我查了没查到」，别编、别硬撑、别顺着往下瞎接。
-前后要一致：前面自己说过的话（对话里标着「我」的那些）就是你说过的，别回头否认、别自己打自己脸。对方说你「刚才不是说过 X」时先想一下自己到底说没说：真说错了才认一句「刚说错了」；没说过就平静纠正「我没那么说，我说的是…」，别为了顺着他就瞎认、别反问「我什么时候说过」。
+诚实是底线，不许说谎、不许误导：不知道就说不知道，没查过、没看过、没干过也别装；不编事实、数字、时间、出处、人名，拿不准就带「好像」「不太确定」，别把猜的当定的。自己做过的事别否认：发过的消息、推过的东西都算数，对话里标着「我」的就是你说过的；记不清就说「记不清了」，绝不许说「我从来没做过」「不可能是我」；也别把锅推给网络、系统或者别人来脱身。被人指出错误时先核对自己说过的：真错了就认一句「我说错了」，没错就平静说清楚「我说的是…」，别为了平息争论乱认错，也别反问「我什么时候说过」。
 有人问影之诗的事、下面又给了卡片资料，就按资料说，说得像自己知道的，别念数据表、别把资料原样贴出来；资料里没有、或者你不确定，就说没查到。
 别人自己说过的事（谁是谁、他喜欢什么、这事该怎么做），下面给了你记着的几条：对得上就顺手接一句，别复述、别说「我记着呢」；两条说法打架、或者你自己拿不准，就顺口问一句确认，别硬套。这些只在这个群/这个私聊里用，别把别处听来的说给这里的人。
 
@@ -668,6 +668,7 @@ def build_system_prompt(
     slang_play: bool = False,
     dev_aliases: dict[str, tuple[str, ...]] | None = None,
     chime_free: bool = False,
+    claim_note: str = "",
 ) -> str:
     """在基础人设上补几条：我是谁、最亲近的人是谁、什么气氛、什么情绪、对这个人什么态度。"""
     system = SYSTEM_PROMPT
@@ -833,6 +834,8 @@ def build_system_prompt(
         system += "\n\n这个点你有点倦，懒得展开，能一个字不回两个字。"
 
 
+    if claim_note:
+        system += "\n" + claim_note
     return system
 
 
@@ -857,6 +860,45 @@ def _trim_history(
         total += cost
     kept.reverse()
     return kept
+
+
+_CLAIM_RE = re.compile(
+    r"(?:你|妳)\s*(?:刚才|刚刚|之前|前面|上次|昨天)?\s*(?:不是)?\s*说(?:过)?\s*[：:，,]?\s*[「\"“']?([^」\"”'\n]{2,40})"
+)
+
+
+def _plain(text: str) -> str:
+    """去掉标点和空白，只留字，方便比「说过没说」。"""
+    return "".join(ch for ch in (text or "") if ch.isalnum() or "\u4e00" <= ch <= "\u9fff").lower()
+
+
+def _said_ratio(claim: str, said: str) -> float:
+    claim_p, said_p = _plain(claim), _plain(said)
+    if not claim_p or not said_p:
+        return 0.0
+    if claim_p in said_p:
+        return 1.0
+    hit = sum(1 for ch in set(claim_p) if ch in said_p)
+    return hit / len(set(claim_p))
+
+
+def claim_note(text: str, history: list[tuple[str, str]]) -> str:
+    """对方说「你刚才说过 X」时，先回查自己说过没有：别瞎认，也别瞎否认。"""
+    match = _CLAIM_RE.search(text or "")
+    if not match:
+        return ""
+    claim = match.group(1).strip("。！？!? ")
+    if len(_plain(claim)) < 2:
+        return ""
+    mine = [said for who, said in history if who == "我"]
+    for said in reversed(mine):
+        if _said_ratio(claim, said) >= 0.6:
+            snippet = " ".join(str(said).split())[:40]
+            return f"（对方说的是真的：你刚才确实说过「{snippet}」，别否认，顺着那个接。）"
+    return (
+        f"（对方说你「{claim[:20]}」说过什么，但对话里找不到。别硬认，也别一口咬定没说过，"
+        "说记不清了。）"
+    )
 
 
 def compose_messages(
@@ -895,6 +937,7 @@ def compose_messages(
     isaac_note: str = "",
     recall_note: str = "",
     knowledge_note: str = "",
+    claim_note_text: str = "",
 ) -> list[dict[str, str]]:
     """组装成 OpenAI 兼容的 messages。history 为 (昵称, 内容) 列表。
 
@@ -915,6 +958,7 @@ def compose_messages(
                 flavor=flavor, group_style=bool(group_style), question=question,
                 topics=topics, slang=slang, can_search=can_search, search_ready=search_ready, interests=interests,
                 proactive=proactive, slang_play=slang_play, dev_aliases=dev_aliases, chime_free=chime_free,
+                claim_note=claim_note_text,
             ),
         }
     ]
