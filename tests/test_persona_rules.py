@@ -9,7 +9,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 
-from persona_rules import (  # noqa: E402
+from persona_rules import (  # noqa: E402
+    claim_note,
+    SYSTEM_PROMPT,
+    build_system_prompt,
     ATTITUDE_LINES,
     CUTE_CHANCE,
     CUTE_ENDINGS,
@@ -131,6 +134,30 @@ MOOD_CASES = [
         False,
     ),
 ]
+
+
+def check_honesty() -> None:
+    """诚实是底线：提示词里必须写死「不许说谎」，也不许否认自己做过的事。"""
+    prompt = SYSTEM_PROMPT
+    assert "不许说谎" in prompt, "提示词少了「不许说谎」"
+    assert "不许误导" in prompt, "提示词少了「不许误导」"
+    assert "记不清了" in prompt, "记不清的时候要给出口，而不是硬否认"
+    assert "我从来没做过" in prompt, "必须点名禁止「我从来没做过」这种否认"
+    assert "不许说「我从来没做过」" in prompt or "绝不许说「我从来没做过」" in prompt
+    assert "别把猜的当定的" in prompt
+    # 真正拼出来的 system 里也得有，别只挂在常量上
+    built = build_system_prompt(self_names=["酱油鱼"], atmosphere=None, mood="平常")
+    assert "不许说谎" in built, "build_system_prompt 没带上诚实规则"
+    print("PASS  诚实规则：不许说谎/误导、不否认做过的事、记不清就直说")
+
+    # 「你刚才不是说过 X」：说过就得认，没说过就说记不清，别乱认也别乱否认
+    said = [("小明", "在吗"), ("我", "记好了，下午调日记，别又忘了")]
+    note = claim_note("你刚才不是说过「下午调日记」吗", said)
+    assert "确实说过" in note and "别否认" in note, note
+    assert claim_note("你刚才说「我中了一千万」", said).find("找不到") >= 0, note
+    assert claim_note("今天吃什么", said) == ""
+    built_claim = build_system_prompt(self_names=["酱油鱼"], claim_note=note)
+    assert "确实说过" in built_claim
 
 
 def check_help() -> None:
@@ -811,6 +838,7 @@ def main() -> int:
     for t in ("知识库在哪", "5/10 分", "/", "/ 你好", "我今天 /知识库 了", ""):
         assert not is_command_text(t), t
     print("PASS  指令识别：/知识库、/记、/模式… 人设让开，正常聊天不受影响")
+    check_honesty()
     check_help()
     print(f"\n结果: {'全部通过' if failed == 0 else f'{failed} 项失败'}")
     return 0 if failed == 0 else 1
