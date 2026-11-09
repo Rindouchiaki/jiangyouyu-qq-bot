@@ -10,6 +10,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 
 from persona_rules import (  # noqa: E402
+    accuse_note,
+    capability_note,
     claim_note,
     SYSTEM_PROMPT,
     build_system_prompt,
@@ -158,6 +160,21 @@ def check_honesty() -> None:
     assert claim_note("今天吃什么", said) == ""
     built_claim = build_system_prompt(self_names=["酱油鱼"], claim_note=note)
     assert "确实说过" in built_claim
+
+    # 能力边界：问到打游戏/语音这类做不到的事，必须被提醒说不行
+    assert "打不了游戏" in SYSTEM_PROMPT or "打游戏" in SYSTEM_PROMPT
+    cap = capability_note("你能打游戏吗")
+    assert "做不到" in cap and "打字" in cap, cap
+    assert capability_note("今天吃什么") == ""
+    # 说「你刚才不是说能打游戏吗」：即使先前嘴硬过，也要指向「说过也是错的」
+    said_cap = [("小明", "你能打游戏吗"), ("我", "能啊，怎么不能")]
+    over = claim_note("你刚才不是说过能打游戏吗", said_cap)
+    assert "做不到" in over or "错的" in over, over
+    # 直接骂「谎言」时，回查自己有没有越界吹过
+    acc = accuse_note("谎言", said_cap)
+    assert "认" in acc, acc
+    assert accuse_note("今天天气不错", said_cap) == ""
+    print("PASS  能力边界：打游戏/语音这类做不到，被指撒谎时认错而不是嘴硬")
 
 
 def check_help() -> None:

@@ -54,6 +54,7 @@ SYSTEM_PROMPT = """你是「酱油鱼」，QQ 群里的二次元傲娇美少女�
 开口前先想一下对方为什么这么说：是求你办事、倒苦水、试探你、逗你玩，还是找茬；按他的目的接，别自顾自往下说。
 别人真让你做点什么（查、找、看、翻、解释、出主意）别装没看见：能做就做，要查就联网查；查不到、拿不准、不知道就直说「不确定」「我查了没查到」，别编、别硬撑、别顺着往下瞎接。
 诚实是底线，不许说谎、不许误导：不知道就说不知道，没查过、没看过、没干过也别装；不编事实、数字、时间、出处、人名，拿不准就带「好像」「不太确定」，别把猜的当定的。自己做过的事别否认：发过的消息、推过的东西都算数，对话里标着「我」的就是你说过的；记不清就说「记不清了」，绝不许说「我从来没做过」「不可能是我」；也别把锅推给网络、系统或者别人来脱身。被人指出错误时先核对自己说过的：真错了就认一句「我说错了」，没错就平静说清楚「我说的是…」，别为了平息争论乱认错，也别反问「我什么时候说过」。
+你只有打字这一副身体：能看群聊、回话、发表情、查影之诗和以撒的资料、推 B 站动态、看图摘要。打游戏、语音、视频、打电话、拍照、出门、做饭、扫码登录、下载东西到自己电脑、收钱——这些你都做不到，问就说不行，别逞强、别演。被人说「你刚才不是说能吗」「这是谎言」时，先看是不是自己越过了这条线：越线了就直接认「我说错了，我打不了游戏」，认错比嘴硬体面，嘴硬本身就是撒谎。
 有人问影之诗的事、下面又给了卡片资料，就按资料说，说得像自己知道的，别念数据表、别把资料原样贴出来；资料里没有、或者你不确定，就说没查到。
 别人自己说过的事（谁是谁、他喜欢什么、这事该怎么做），下面给了你记着的几条：对得上就顺手接一句，别复述、别说「我记着呢」；两条说法打架、或者你自己拿不准，就顺口问一句确认，别硬套。这些只在这个群/这个私聊里用，别把别处听来的说给这里的人。
 
@@ -882,6 +883,51 @@ def _said_ratio(claim: str, said: str) -> float:
     return hit / len(set(claim_p))
 
 
+# 「你能不能……」这类问句里出现这些词，说明对方问的是她做不到的事
+CAPABILITY_LIMITS = (
+    "打游戏", "玩游戏", "开黑", "上号", "代打", "语音", "打电话", "视频通话", "视频聊天",
+    "唱歌", "拍照", "看家", "做饭", "出门", "跑腿", "扫码", "登录你的", "登录我", "收钱",
+    "转账", "发红包", "下载到", "装个软件", "开电脑", "关机", "开车", "亲我", "抱我",
+)
+# 对方在问「能不能 / 会不会」：越界了就得说不行
+_ASK_CAN_RE = re.compile(r"(?:能不能|可不可以|会不会|能吗|会吗|可以吗|你会|你能|你可以)")
+
+
+def capability_note(text: str) -> str:
+    """问到越界能力时给一句提醒；没问到返回空串。"""
+    low = (text or "").strip()
+    if not low:
+        return ""
+    hit = next((w for w in CAPABILITY_LIMITS if w in low), "")
+    if not hit:
+        return ""
+    if _ASK_CAN_RE.search(low):
+        return (
+            f"（对方问的是「{hit}」这类事，你做不到：你只能打字、发图、查资料、推动态。"
+            "直接说不行，别逞强，也别编自己做过。）"
+        )
+    return f"（提到「{hit}」时别装作做过：你打不了游戏、没有身体，只能打字。）"
+
+
+ACCUSE_WORDS = ("谎言", "撒谎", "骗人", "骗我", "瞎编", "胡说", "瞎说", "不对吧")
+
+
+def accuse_note(text: str, history: list[tuple[str, str]]) -> str:
+    """对方直接说「谎言 / 你在骗我」：如果自己刚说过越界的能力，就得认错。"""
+    low = (text or "").strip()
+    if not any(w in low for w in ACCUSE_WORDS):
+        return ""
+    mine = [said for who, said in history if who == "我"][-5:]
+    for said in reversed(mine):
+        hit = next((w for w in CAPABILITY_LIMITS if w in str(said)), "")
+        if hit:
+            return (
+                f"（对方在说你撒谎/瞎说，指的是你前面那句「{hit}」。那确实做不到，"
+                "直接认「我说错了」，别解释、别再嘴硬，也别把话题岔开。）"
+            )
+    return "（对方在说你说谎/瞎说：先核对自己刚才那句到底有没有底，错了就认，没错就平静说清楚。）"
+
+
 def claim_note(text: str, history: list[tuple[str, str]]) -> str:
     """对方说「你刚才说过 X」时，先回查自己说过没有：别瞎认，也别瞎否认。"""
     match = _CLAIM_RE.search(text or "")
@@ -891,10 +937,21 @@ def claim_note(text: str, history: list[tuple[str, str]]) -> str:
     if len(_plain(claim)) < 2:
         return ""
     mine = [said for who, said in history if who == "我"]
+    over_line = next((w for w in CAPABILITY_LIMITS if w in (text or "")), "")
     for said in reversed(mine):
         if _said_ratio(claim, said) >= 0.6:
             snippet = " ".join(str(said).split())[:40]
+            if over_line:
+                return (
+                    f"（你刚才确实说过「{snippet}」，但那是错的：你做不到「{over_line}」。"
+                    "直接认「我说错了，我打不了」，别嘴硬、别辩解，嘴硬就是撒谎。）"
+                )
             return f"（对方说的是真的：你刚才确实说过「{snippet}」，别否认，顺着那个接。）"
+    if over_line:
+        return (
+            f"（对方指的是「{over_line}」这种你做不到的事。你要么没说过、要么说过也是错的："
+            "直接说不行或者认错，别嘴硬，别说「我说能就能」。）"
+        )
     return (
         f"（对方说你「{claim[:20]}」说过什么，但对话里找不到。别硬认，也别一口咬定没说过，"
         "说记不清了。）"
