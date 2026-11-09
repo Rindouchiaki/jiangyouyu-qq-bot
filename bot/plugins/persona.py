@@ -48,6 +48,7 @@ import bonds
 import devs
 import episodes
 import gscore_guard
+import groupmate
 import isaac_wiki
 import knowledge
 import slang
@@ -216,6 +217,14 @@ STICKER_SAVED_PREFER = float(os.getenv("STICKER_SAVED_PREFER", "0.3"))
 # 被 @ 和正经求助除外，同一个群至少隔 STICKER_ONLY_COOLDOWN 秒
 STICKER_ONLY_PROB = float(os.getenv("STICKER_ONLY_PROB", "0.5"))
 STICKER_ONLY_COOLDOWN = float(os.getenv("STICKER_ONLY_COOLDOWN", "900"))
+# 群友档案（bot/groupmate.py）：classic 不覆盖任何东西，groupmate 才换一套更短、更爱甩图的习惯
+_PROFILE_CFG = groupmate.profile()
+MAX_CHARS = groupmate.int_of(_PROFILE_CFG, "max_chars", MAX_CHARS)
+MAX_CHARS_QUESTION = groupmate.int_of(_PROFILE_CFG, "max_chars_question", MAX_CHARS_QUESTION)
+STICKER_ONLY_PROB = groupmate.float_of(_PROFILE_CFG, "sticker_only_prob", STICKER_ONLY_PROB)
+STICKER_ONLY_COOLDOWN = groupmate.float_of(_PROFILE_CFG, "sticker_only_cooldown", STICKER_ONLY_COOLDOWN)
+STICKER_ONLY_CALLED_PROB = groupmate.float_of(_PROFILE_CFG, "sticker_only_called_prob", 0.0)
+logger.info(f"persona: 群友档案 {groupmate.active()}（上限 {MAX_CHARS} 字，被叫甩图 {STICKER_ONLY_CALLED_PROB:.0%}）")
 # 没有明显场景时，偶尔随手甩一张无厘头表情的概率（同样受上面的间隔限制）
 STICKER_RANDOM_PROB = float(os.getenv("STICKER_RANDOM_PROB", "0.05"))
 
@@ -1548,14 +1557,18 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     # 群里碰到明显场景时有时只甩一张对得上的表情，偶尔也随手甩张无厘头的：像真人冒个泡，也少说话少露馅
     item = None
     if (
-        is_group and not help_mode and not called and not wants_sticker(text)
-        and now - _last_sticker_only[key] >= STICKER_ONLY_COOLDOWN
+        is_group and not help_mode and not wants_sticker(text)
         and now - _last_sticker.get(key, 0) >= STICKER_AUTO_COOLDOWN
+        and now - _last_sticker_only[key] >= STICKER_ONLY_COOLDOWN
     ):
-        if scene and random.random() < STICKER_ONLY_PROB:
-            item = sticker_lib.pick_for_scene(scene[1], key, STICKER_SAVED_PREFER)
-        elif not scene and random.random() < STICKER_RANDOM_PROB:
-            item = sticker_lib.pick("", key)
+        if not called:
+            if scene and random.random() < STICKER_ONLY_PROB:
+                item = sticker_lib.pick_for_scene(scene[1], key, STICKER_SAVED_PREFER)
+            elif not scene and random.random() < STICKER_RANDOM_PROB:
+                item = sticker_lib.pick("", key)
+        elif not question and STICKER_ONLY_CALLED_PROB > 0 and random.random() < STICKER_ONLY_CALLED_PROB:
+            # 被叫也可能懒得说话，甩张对心情的图就走（groupmate 档案才开）
+            item = sticker_lib.pick_for_mood(mood, key, STICKER_SAVED_PREFER) or sticker_lib.pick("", key)
     if item:
         await _sleep(reaction_delay(False) + random.uniform(0.5, 1.5))
         if await sticker_lib.send(bot, event, item):
@@ -1569,7 +1582,8 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
             st_eng = _engaged.get(key)
             if st_eng is not None and addressed:
                 st_eng["last"], st_eng["turns"] = now, int(st_eng.get("turns", 0)) + 1
-            logger.info(f"persona: 只回了张表情 {item['file']}（{mode}，场景 {scene[0] if scene else '无厘头'}）")
+            label_why = scene[0] if scene else ("看心情" if called else "无厘头")
+            logger.info(f"persona: 只回了张表情 {item['file']}（{mode}，场景 {label_why}）")
             return True
 
     chime = mode.startswith("插话")
