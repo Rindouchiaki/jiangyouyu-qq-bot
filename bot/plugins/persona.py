@@ -153,6 +153,8 @@ API_KEY = os.getenv("LLM_API_KEY", "").strip()
 MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
 MOCK = os.getenv("LLM_MOCK", "0") == "1"
 # 一次对话请求最多等多久；超了当失败，免得整个会话被一条请求堵住
+LLM_ATTEMPTS = max(1, int(os.getenv("LLM_ATTEMPTS", "3")))
+LLM_RETRY_DELAY = float(os.getenv("LLM_RETRY_DELAY", "1.2"))
 LLM_DEADLINE = 60.0
 
 MAX_CHARS = int(os.getenv("REPLY_MAX_CHARS", "20"))
@@ -665,8 +667,21 @@ def _chat_sync(payload: dict) -> dict:
     )
 
     # 25 秒是两次收到数据之间的间隔；排队时服务端一直回空行，总时长另外掐
-    with urllib.request.urlopen(req, timeout=25) as resp:
-        data = web_search.read_json(resp, LLM_DEADLINE)
+    last_exc: Exception | None = None
+    for attempt in range(LLM_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                data = web_search.read_json(resp, LLM_DEADLINE)
+            break
+        except (urllib.error.URLError, OSError) as exc:
+            # 家里的网/系统代理偶尔抽风（WinError 10061 被拒），隔一会儿重发一次就好
+            last_exc = exc
+            if attempt + 1 >= LLM_ATTEMPTS:
+                raise
+            logger.info(f"persona: LLM 连接没通（{type(exc).__name__}），{LLM_RETRY_DELAY} 秒后重试 {attempt + 2}/{LLM_ATTEMPTS}")
+            time.sleep(LLM_RETRY_DELAY * (attempt + 1))
+    else:  # pragma: no cover - 循环里 break / raise 二选一
+        raise last_exc or RuntimeError("LLM 调用失败")
 
     _record_usage(data.get("usage"))
 
@@ -824,7 +839,7 @@ async def _diary_group(group_id: str, lines: list[tuple[str, str]]) -> None:
             bonds.save(force=True)
             logger.info(f"persona: 群日记记下 群{group_id}：关系 {'；'.join(notes) or '无'}｜风格 {'；'.join(style) or '无'}")
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"persona: 摘群日记失败 {type(exc).__name__}: {exc}")
+        logger.info(f"persona: 摘群日记失败（后台任务，不影响回话）{type(exc).__name__}: {exc}")
 
 
 async def _keep_episode(item: dict, uid: str, gid: str, src: str) -> str:
@@ -892,7 +907,7 @@ async def _episodes_group(group_id: str, lines: list[tuple[str, str]]) -> None:
         if any(done):
             logger.info(f"persona: 记事（群{group_id}）：{'；'.join(d for d in done if d)}")
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"persona: 记群里的事失败 {type(exc).__name__}: {exc}")
+        logger.info(f"persona: 记群里的事失败（后台任务，不影响回话）{type(exc).__name__}: {exc}")
 
 
 async def _maybe_save_sticker(seg, card: str, user_id: str, context: str = "") -> None:
@@ -1905,7 +1920,7 @@ async def _learn_slang(lines: list[tuple[str, str]], scope: str) -> None:
             160, temperature=0.2, stop=None,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"persona: 挑新梗失败 {type(exc).__name__}: {exc}")
+        logger.info(f"persona: 挑新梗失败（后台任务，不影响回话）{type(exc).__name__}: {exc}")
         return
     for term, meaning, sure, thing in parse_slang_candidates(raw, slang.known_terms(scope)):
         public = False
@@ -1990,7 +2005,7 @@ async def _proactive_tick() -> None:
     try:
         raw = await ask_llm(messages, 100, stop=None)
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"persona: 主动找人失败 {type(exc).__name__}: {exc}")
+        logger.info(f"persona: 主动找人失败（后台任务，不影响回话）{type(exc).__name__}: {exc}")
         return
     parts = [t for kind, t in split_reply(raw, 2, MAX_CHARS, REPLY_TOTAL_CHARS) if kind == "text" and not is_offensive(t) and not leaks_persona(t, (messages[0]["content"],))]
     if not parts:
@@ -2088,7 +2103,7 @@ async def _episodes_loop() -> None:
                 _night["date"] = today
                 await _night_tidy(now)
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"persona: 整理记忆出错 {type(exc).__name__}: {exc}")
+            logger.info(f"persona: 整理记忆出错（后台任务，不影响回话）{type(exc).__name__}: {exc}")
 
 
 @nonebot.get_driver().on_startup
