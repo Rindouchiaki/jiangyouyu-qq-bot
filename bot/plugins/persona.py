@@ -98,6 +98,8 @@ from persona_rules import (
     is_game_command,
     is_question,
     knowledge_block,
+    accuse_note,
+    capability_note,
     claim_note,
     judge_annoyance,
     judge_atmosphere,
@@ -1638,7 +1640,10 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
         if isaac_hits:
             isaac_note = isaac_wiki.format_note(isaac_hits)
             logger.info(f"persona: 以撒资料 {[h['title'] for h in isaac_hits]}")
-    claim_hint = claim_note(text, past)
+    cap_hint = capability_note(text)
+    claim_hint = "\n".join(
+        h for h in (cap_hint, claim_note(text, past), accuse_note(text, past)) if h
+    )
     if claim_hint:
         logger.debug("persona: 核对「刚才说过」 -> " + ("找到" if "确实说过" in claim_hint else "没找到"))
     messages = compose_messages(
