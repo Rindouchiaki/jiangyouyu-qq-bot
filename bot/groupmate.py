@@ -3,14 +3,14 @@
 原参数都在 `bot/persona.env` 里（classic 档案，保持原行为）。`groupmate` 只是覆盖几个数字，
 不改任何提示词和流程；出问题把 `PERSONA_PROFILE` 删掉或写回 `classic`，重启即回到原样。
 
-依据（2026-11-08 23:05 ~ 11-09 08:43，群 532193003，另一个机器人 3265642025 的 21 条主动发言）：
+依据（2026-10-26 ~ 11-09 的 3.6 万条群聊，群 532193003，另一个机器人 3265642025 的 2394 条发言）：
 
-- 文字 8 条，长度 4–16 字，平均 11 字，没有标点，用空格断句；
-- 图片 10 条（占 48%），全是只发一张图，不带文字；
-- 引用+@ 只在「回答某一个人的问题」时出现（1 条）；
-- 其余全是没人叫它就自己插话，间隔从几分钟到半小时不等。
+- 文字 1080 条：p50 24 字、p75 35 字、p90 49 字；83% 完全不带标点，用空格断句；
+- 只发一张图、不配字的有 1137 条（47%）；文字、图片几乎不混发；
+- 带文字的消息里，15% 是「引用 + @ 某人 + 文字」，引用/@ 基本都冲着刚才说话的人；
+- 一次回合里通常只发 1 条（中位 1，最多 10）。
 
-所以这里的三条调整：文字更短、被叫也可能只回一张图、图片回应不再只限「有明显场景」。
+所以这里的三条调整：文字放宽到 24 字（提问 48）、被叫也可能只回一张图、回话时把标点去掉。
 """
 
 from __future__ import annotations
@@ -23,11 +23,11 @@ PROFILES: dict[str, dict[str, float]] = {
     "classic": {},
     # 更像群友：话更短、被叫也能只甩一张图
     "groupmate": {
-        "max_chars": 14.0,
-        "max_chars_question": 32.0,
+        "max_chars": 24.0,
+        "max_chars_question": 48.0,
         "sticker_only_prob": 0.5,
         "sticker_only_cooldown": 300.0,
-        "sticker_only_called_prob": 0.35,
+        "sticker_only_called_prob": 0.47,
     },
 }
 
@@ -65,3 +65,10 @@ def sticker_chance(cfg: dict[str, float], *, called: bool, scene: bool, rng: flo
     else:
         chance = 0.0
     return chance if roll < chance else 0.0
+
+
+def polish(text: str) -> str:
+    """把标点换成空格：群友整句说下来很少点逗号句号，停顿靠空格。"""
+    plain = "".join(" " if ch in "，。、,.!！?？;；:：…~～" else ch for ch in text)
+    plain = " ".join(plain.split())
+    return plain or text
