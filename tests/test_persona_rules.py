@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bot"))
 
-from persona_rules import (  # noqa: E402
+from persona_rules import (  # noqa: E402
     accuse_note,
     capability_note,
     claim_note,
@@ -32,7 +32,8 @@ from persona_rules import (  # noqa: E402
     GRUDGE_SEC,
     HATE_LINE,
     annoy_limits,
-    at_history,
+    at_context,
+at_history,
     grudge_loss,
     is_silent,
     pester_need,
@@ -698,10 +699,14 @@ def main() -> int:
     # 被 @ 时群里前面的话不进 prompt（截图里「还是个傲娇」被拿去回了下一条 @），只带引用的那条
     assert at_history(None) == [] and at_history(("24pp", "  ")) == []
     assert at_history(("我", "这种事怎么可能啊")) == [("我", "这种事怎么可能啊")]
+    recent = [("小明", "在吗"), ("小红", "达摩克利斯之剑和硫磺火怎么选"), ("我", "你别瞎问")]
+    merged = at_context(recent, [("我", "你别瞎问")], [("小明", "在吗")])
+    assert merged == [("小明", "在吗"), ("小红", "达摩克利斯之剑和硫磺火怎么选"), ("我", "你别瞎问")], merged
+    assert at_context([], [("我", "x")], None) == [("我", "x")]
     at_msgs = compose_messages(at_history(None), "24pp", "alex要把你修了 你没有多少时间了")
     assert [m["role"] for m in at_msgs] == ["system", "user"], at_msgs
     assert "傲娇" not in at_msgs[-1]["content"]
-    print("PASS  被 @ 时只给那一条（和它引用的那条），群里前文不带")
+    print("PASS  被 @ 时也带最近群聊和自己刚说的（只留几条，防接歪话题）")
 
     rng = random.Random(3)
     assert 0.4 <= typing_delay("", rng=rng) <= 0.8

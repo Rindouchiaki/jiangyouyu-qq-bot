@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 import time
@@ -26,6 +27,10 @@ from nonebot.log import logger
 from nonebot.params import CommandArg
 
 BOT_UIN = os.getenv("BOT_UIN", "").strip()
+
+# 同一个版本 30 分钟内只报一次上线，免得反复重启刷屏
+NOTICE_COOLDOWN = float(os.getenv("DEBUG_NOTICE_COOLDOWN", "1800"))
+NOTICE_FILE = Path(os.getenv("PERSONA_DATA_DIR", "data")) / "debug_notice.json"
 ROOT = Path(__file__).resolve().parents[2]
 _log_dir = Path(os.getenv("LOG_DIR", "").strip() or "logs")
 LOG_FILE = (_log_dir if _log_dir.is_absolute() else ROOT / _log_dir) / "nonebot.out.log"
@@ -105,6 +110,19 @@ async def _online(bot: Bot) -> None:
     if BOT_UIN and str(bot.self_id) != BOT_UIN:
         return
     version = _version()
+    now = time.time()
+    try:
+        state = json.loads(NOTICE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    if version and state.get("version") == version and now - float(state.get("at", 0)) < NOTICE_COOLDOWN:
+        logger.debug("debug_group: 同一版本刚报过上线，这次不重复")
+        return
+    try:
+        NOTICE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        NOTICE_FILE.write_text(json.dumps({"version": version, "at": now}), encoding="utf-8")
+    except OSError:
+        pass
     _keep(_post(f"上线了{f'（{version}）' if version else ''}"))
 
 

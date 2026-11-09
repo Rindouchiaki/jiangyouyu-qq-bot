@@ -43,15 +43,19 @@ def build_db() -> None:
         (1, "蓝蜡烛", "https://isaac.huijiwiki.com/wiki/蓝蜡烛", 120),
         (2, "红蜡烛", "https://isaac.huijiwiki.com/wiki/红蜡烛", 120),
         (3, "以撒的结合", "https://isaac.huijiwiki.com/wiki/以撒的结合", 200),
+        (4, "C577", "https://isaac.huijiwiki.com/wiki/C577", 150),
     ]
     con.executemany("insert into pages(id,title,url,chars,fetched_at) values (?,?,?,?,0)", pages)
     chunks = [
         (1, 1, 0, "【蓝蜡烛】主动道具，使用时召唤一尊蓝火，碰到会掉魂心。", _vec(1, 0, 0)),
         (2, 2, 0, "【红蜡烛】主动道具，使用时召唤一尊红火，可以用来烧敌人。", _vec(0, 1, 0)),
         (3, 3, 0, "【以撒的结合】是一个随机生成地图的射击 RPG，主角叫以撒。", _vec(0, 0, 1)),
+        (4, 4, 0, "【C577】道具\n达摩克里斯之剑\n效果：蓄力后砸下大剑。", _vec(0.2, 0.2, 0.9)),
     ]
     con.executemany("insert into chunks(id,page_id,ord,text,vec) values (?,?,?,?,?)", chunks)
     con.execute("insert into meta(key,value) values ('crawled_at', ?)", ("0",))
+    con.execute("alter table pages add column display text")
+    con.execute("update pages set display='达摩克里斯之剑' where id=4")
     con.commit()
     con.close()
 
@@ -60,7 +64,7 @@ def main() -> None:
     build_db()
     assert isaac_wiki.ready()
     info = isaac_wiki.stats()
-    assert info["pages"] == 3 and info["chunks"] == 3 and info["embedded"] == 3, info
+    assert info["pages"] == 4 and info["chunks"] == 4 and info["embedded"] == 4, info
 
     # 假向量：问蓝蜡烛就给第一维；问不相干的给一个都打不中的方向
     def fake_embed(texts):
@@ -121,6 +125,8 @@ def main() -> None:
     # 聊天里不带「以撒」也认名字：mention 直接按页面名找
     m = isaac_wiki.mention("蓝蜡烛有什么用", 1)
     assert m and m[0]["title"] == "蓝蜡烛", m
+    fuzzy = isaac_wiki.mention("达摩克利斯之剑怎么用", 1)
+    assert fuzzy and fuzzy[0]["title"] == "C577", fuzzy
     assert isaac_wiki.mention("今天吃什么") == []
 
     print("test_isaac_wiki: 全部通过")
