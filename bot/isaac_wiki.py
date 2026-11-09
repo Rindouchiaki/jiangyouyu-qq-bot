@@ -312,7 +312,21 @@ def mention(text: str, limit: int = 2) -> list[dict]:
         used.add(title)
         picked.append((len(name), title))
     if not picked:
-        return []
+        # 名字打得差一点也认：同长度的滑窗比对，够像就算（达摩克利斯之剑 → 达摩克里斯之剑）
+        import difflib
+
+        best_ratio, best = 0.0, None
+        for name_low, name, title in _names():
+            size = len(name_low)
+            if size < 4 or size > 12 or name_low[0] not in low:
+                continue
+            for i in range(len(low) - size + 1):
+                ratio = difflib.SequenceMatcher(None, low[i:i + size], name_low).ratio()
+                if ratio > best_ratio:
+                    best_ratio, best = ratio, (len(name), title)
+        if best is None or best_ratio < 0.82:
+            return []
+        picked.append(best)
     picked.sort(key=lambda item: -item[0])
     titles = [t for _, t in picked[:limit]]
     con = _db()

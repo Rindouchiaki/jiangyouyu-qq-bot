@@ -59,6 +59,7 @@ import topics
 import vision
 import web_search
 from persona_rules import (
+    at_context,
     SEARCH_PRELUDES,
     SEARCH_FAILED,
     SEARCH_PRELUDES_COLD,
@@ -1603,10 +1604,11 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     # 本群风格插话时也带，冒泡才像这个群的人
     group_style = visible_notes(group_rec.get("style"), True, limit=3) if is_group else None
 
-    # 被 @ 时不带群里的杂话（会接错话题），但自己刚说过的话要带上，免得前后打脸
+    # 被 @ 时也别把群聊全丢掉：只看自己那几句最容易接歪话题，留最近 6 条当语境
     if mode == "被叫@":
+        recent = list(_history[key])[:-1][-6:]
         own = [(who, said) for who, said in list(_history[key]) if who == "我"][-3:]
-        past = own + at_history(_quoted(event))
+        past = at_context(recent, own, at_history(_quoted(event)))
     # 事件记忆：被话题勾起就想起来，不用等「记得」；插话只想本群的事，「忘了吧」就不再主动提
     recall_note = ""
     due_ids: list[int] = []
