@@ -48,7 +48,6 @@ import bonds
 import devs
 import episodes
 import gscore_guard
-import groupmate
 import isaac_wiki
 import knowledge
 import slang
@@ -218,15 +217,6 @@ STICKER_SAVED_PREFER = float(os.getenv("STICKER_SAVED_PREFER", "0.3"))
 # 被 @ 和正经求助除外，同一个群至少隔 STICKER_ONLY_COOLDOWN 秒
 STICKER_ONLY_PROB = float(os.getenv("STICKER_ONLY_PROB", "0.5"))
 STICKER_ONLY_COOLDOWN = float(os.getenv("STICKER_ONLY_COOLDOWN", "900"))
-# 群友档案（bot/groupmate.py）：classic 不覆盖任何东西，groupmate 才换一套更短、更爱甩图的习惯
-PROFILE = groupmate.active()
-_PROFILE_CFG = groupmate.profile(PROFILE)
-MAX_CHARS = groupmate.int_of(_PROFILE_CFG, "max_chars", MAX_CHARS)
-MAX_CHARS_QUESTION = groupmate.int_of(_PROFILE_CFG, "max_chars_question", MAX_CHARS_QUESTION)
-STICKER_ONLY_PROB = groupmate.float_of(_PROFILE_CFG, "sticker_only_prob", STICKER_ONLY_PROB)
-STICKER_ONLY_COOLDOWN = groupmate.float_of(_PROFILE_CFG, "sticker_only_cooldown", STICKER_ONLY_COOLDOWN)
-STICKER_ONLY_CALLED_PROB = groupmate.float_of(_PROFILE_CFG, "sticker_only_called_prob", 0.0)
-logger.info(f"persona: 群友档案 {groupmate.active()}（上限 {MAX_CHARS} 字，被叫甩图 {STICKER_ONLY_CALLED_PROB:.0%}）")
 # 没有明显场景时，偶尔随手甩一张无厘头表情的概率（同样受上面的间隔限制）
 STICKER_RANDOM_PROB = float(os.getenv("STICKER_RANDOM_PROB", "0.05"))
 
@@ -1568,9 +1558,6 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
                 item = sticker_lib.pick_for_scene(scene[1], key, STICKER_SAVED_PREFER)
             elif not scene and random.random() < STICKER_RANDOM_PROB:
                 item = sticker_lib.pick("", key)
-        elif not question and STICKER_ONLY_CALLED_PROB > 0 and random.random() < STICKER_ONLY_CALLED_PROB:
-            # 被叫也可能懒得说话，甩张对心情的图就走（groupmate 档案才开）
-            item = sticker_lib.pick_for_mood(mood, key, STICKER_SAVED_PREFER) or sticker_lib.pick("", key)
     if item:
         await _sleep(reaction_delay(False) + random.uniform(0.5, 1.5))
         if await sticker_lib.send(bot, event, item):
@@ -1755,8 +1742,6 @@ async def _respond(bot: Bot, key: str, batch: list[dict], gen: int, force: bool 
     # 真查了才放宽字数：问一句就给工具，但没查的照普通问答的长度
     total = MAX_CHARS_HELP if help_mode or searched else max(MAX_CHARS_QUESTION, REPLY_TOTAL_CHARS) if question else REPLY_TOTAL_CHARS
     parts = split_reply(raw, lines, per_line, total)
-    if PROFILE == "groupmate":
-        parts = [(kind, groupmate.polish(t) if kind == "text" else t) for kind, t in parts]
     # 设定原文和本群小本本（记的是别人的事）不许照念；本人的小本本和回忆是说给他自己听的，不算
     secrets = (messages[0]["content"], *(group_notes or ()), *(group_style or ()))
     offensive = any(kind == "text" and is_offensive(t) for kind, t in parts)
