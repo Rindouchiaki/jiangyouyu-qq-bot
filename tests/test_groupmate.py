@@ -15,16 +15,16 @@ def check_profiles() -> None:
     assert groupmate.active() == "classic"
     assert groupmate.profile() == {}
     cfg = groupmate.profile("groupmate")
-    assert cfg["max_chars"] == 24.0
+    assert cfg["max_chars"] == 26.0
     assert cfg["max_chars_question"] == 48.0
-    assert cfg["sticker_only_called_prob"] == 0.47
+    assert cfg["sticker_only_called_prob"] == 0.42
     assert groupmate.profile("nope") == {}
     print("profiles ok")
 
 
 def check_overrides() -> None:
     cfg = groupmate.profile("groupmate")
-    assert groupmate.int_of(cfg, "max_chars", 20) == 24
+    assert groupmate.int_of(cfg, "max_chars", 20) == 26
     assert groupmate.int_of(cfg, "missing", 20) == 20
     assert groupmate.float_of(cfg, "sticker_only_cooldown", 900.0) == 300.0
     assert groupmate.float_of({}, "sticker_only_prob", 0.5) == 0.5
@@ -33,11 +33,11 @@ def check_overrides() -> None:
 
 def check_sticker_chance() -> None:
     cfg = groupmate.profile("groupmate")
-    # 被叫：概率 0.35，掷骰 0.2 触发、0.9 不触发
-    assert groupmate.sticker_chance(cfg, called=True, scene=False, rng=0.2) == 0.47
+    # 被叫：概率 0.42，掷骰 0.2 触发、0.9 不触发
+    assert groupmate.sticker_chance(cfg, called=True, scene=False, rng=0.2) == 0.42
     assert groupmate.sticker_chance(cfg, called=True, scene=False, rng=0.9) == 0.0
-    # 没被叫但场景命中：0.5
-    assert groupmate.sticker_chance(cfg, called=False, scene=True, rng=0.4) == 0.5
+    # 没被叫但场景命中：0.45
+    assert groupmate.sticker_chance(cfg, called=False, scene=True, rng=0.4) == 0.45
     assert groupmate.sticker_chance(cfg, called=False, scene=True, rng=0.6) == 0.0
     # 没被叫也没场景：不抽
     assert groupmate.sticker_chance(cfg, called=False, scene=False, rng=0.0) == 0.0
