@@ -16,6 +16,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -48,6 +49,16 @@ def api(path: str) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def api_optional(path: str) -> dict | None:
+    """跟 api() 一样，但 404 时返回 None（上游仓库可能已转私有/改名/被删）。"""
+    try:
+        return api(path)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+
+
 def gh_slug(repo: str) -> str:
     return re.sub(r"^https://github\.com/|\.git$", "", repo)
 
@@ -63,7 +74,13 @@ def pins(text: str) -> dict[str, str]:
 
 def check_snowluma(lock: dict, notes: list[str]) -> bool:
     cur = lock["snowluma"]
-    rel = api("repos/SnowLuma/SnowLuma/releases/latest")
+    rel = api_optional("repos/SnowLuma/SnowLuma/releases/latest")
+    if rel is None:
+        notes.append(
+            f"- ⚠️ SnowLuma 上游仓库（`SnowLuma/SnowLuma`）访问不到（可能已转私有、改名或被删），"
+            f"保留锁定版本 `{cur['version']}`，这一项跳过"
+        )
+        return False
     if rel["tag_name"] == cur["version"]:
         return False
     asset = next((a for a in rel["assets"] if a["name"].endswith("-win-x64.zip") and "lite" not in a["name"]), None)

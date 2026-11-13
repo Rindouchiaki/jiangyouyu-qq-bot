@@ -27,7 +27,11 @@ param(
     [string]$Sha256,
     [switch]$Upgrade,
     [switch]$Lite,
-    [string]$Proxy
+    [string]$Proxy,
+    # 本地发行包（zip）：传了就不查 GitHub，直接用这个包装/升级（上游私有化、断网时的兜底）
+    [string]$Zip,
+    # 发行来源仓库，默认官方；上游改名/转私有后可以指向镜像 fork，比如 -Repo TomyJan/SnowLuma
+    [string]$Repo = 'SnowLuma/SnowLuma'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,20 +46,44 @@ if (-not $Version) {
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $headers = @{ 'User-Agent' = 'snowluma-install-script'; 'Accept' = 'application/vnd.github+json' }
-$apiBase = 'https://api.github.com/repos/SnowLuma/SnowLuma/releases'
+$apiBase = "https://api.github.com/repos/$Repo/releases"
 
-if ($Version -eq 'latest') {
-    Write-Host '查询最新 release ...' -ForegroundColor Cyan
-    $release = Invoke-RestMethod -Uri "$apiBase/latest" -Headers $headers
+if ($Zip) {
+    if (-not (Test-Path -LiteralPath $Zip)) { throw "找不到本地发行包: $Zip" }
+    $zipPath = (Resolve-Path -LiteralPath $Zip).Path
+    $zipItem = Get-Item -LiteralPath $zipPath
+    $release = [pscustomobject]@{ tag_name = 'local-zip'; published_at = $zipItem.LastWriteTime; assets = @() }
+    $asset = [pscustomobject]@{ name = $zipItem.Name; size = $zipItem.Length; digest = $null; browser_download_url = '' }
+    Write-Host "用本地发行包: $zipPath" -ForegroundColor Green
 } else {
-    Write-Host "查询 release $Version ..." -ForegroundColor Cyan
-    $release = Invoke-RestMethod -Uri "$apiBase/tags/$Version" -Headers $headers
+    try {
+        if ($Version -eq 'latest') {
+            Write-Host '查询最新 release ...' -ForegroundColor Cyan
+            $release = Invoke-RestMethod -Uri "$apiBase/latest" -Headers $headers
+        } else {
+            Write-Host "查询 release $Version ..." -ForegroundColor Cyan
+            $release = Invoke-RestMethod -Uri "$apiBase/tags/$Version" -Headers $headers
+        }
+    } catch {
+        $status = $null
+        if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode }
+        if ($status -eq 404) {
+            throw @"
+上游 $Repo 的 release 访问不到（HTTP 404）：仓库可能已转私有、改名或被删。
+三个办法：
+  1) 用本机备份：把 _backup\SnowLuma-<版本> 整个目录拷到 $Destination；只是升级失败的话，原来的 SnowLuma 目录通常还在，直接启动即可。
+  2) 用本地发行包：.\scripts\install-snowluma.ps1 -Zip <SnowLuma-vX.Y.Z-win-x64.zip>
+  3) 换镜像仓库：.\scripts\install-snowluma.ps1 -Repo <owner/repo>
+"@
+        }
+        throw
+    }
+
+    Write-Host ("版本: {0}  发布时间: {1}" -f $release.tag_name, $release.published_at) -ForegroundColor Green
+
+    $pattern = if ($Lite) { 'win-x64-lite\.zip$' } else { 'win-x64\.zip$' }
+    $asset = $release.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
 }
-
-Write-Host ("版本: {0}  发布时间: {1}" -f $release.tag_name, $release.published_at) -ForegroundColor Green
-
-$pattern = if ($Lite) { 'win-x64-lite\.zip$' } else { 'win-x64\.zip$' }
-$asset = $release.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
 
 if (-not $asset) {
     $names = ($release.assets | ForEach-Object { $_.name }) -join ', '
@@ -73,7 +101,7 @@ if ($existing -and -not $Upgrade) {
 
 $tmpDir = Join-Path $env:TEMP ("snowluma-dl-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
-$zipPath = Join-Path $tmpDir $asset.name
+if (-not $Zip) { $zipPath = Join-Path $tmpDir $asset.name }
 
 $dlParams = @{
     Uri             = $asset.browser_download_url
@@ -83,9 +111,11 @@ $dlParams = @{
 }
 if ($Proxy) { $dlParams['Proxy'] = $Proxy }
 
-Write-Host '下载中 ...' -ForegroundColor Cyan
-$ProgressPreference = 'SilentlyContinue'
-Invoke-WebRequest @dlParams
+if (-not $Zip) {
+    Write-Host '下载中 ...' -ForegroundColor Cyan
+    $ProgressPreference = 'SilentlyContinue'
+    Invoke-WebRequest @dlParams
+}
 
 # 校验：锁文件里的 sha256，以及 GitHub 给这个资产算的摘要（有就都对）
 $actual = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -125,12 +155,13 @@ function Get-PackageEntries([string]$Dir) {
     return $names | Select-Object -Unique
 }
 
+$label = if ($Zip) { "本地包 " + $asset.name } else { $release.tag_name }
 if ($existing) {
     $oldInfo = Join-Path $Destination 'release.json'
     $oldVersion = if (Test-Path -LiteralPath $oldInfo) { (Get-Content -LiteralPath $oldInfo -Raw -Encoding UTF8 | ConvertFrom-Json).version } else { 'unknown' }
     $backup = "$Destination.bak-$oldVersion"
     if (Test-Path -LiteralPath $backup) { $backup = "$backup-" + (Get-Date -Format 'yyyyMMddHHmmss') }
-    Write-Host "原地升级 $oldVersion → $($release.tag_name)，被替换的旧文件放到 $backup" -ForegroundColor Cyan
+    Write-Host "原地升级 $oldVersion → $label，被替换的旧文件放到 $backup" -ForegroundColor Cyan
     New-Item -ItemType Directory -Force -Path $backup | Out-Null
     $oldEntries = Get-PackageEntries $Destination
     $newEntries = Get-PackageEntries $unpacked
@@ -156,7 +187,7 @@ if (-not (Test-Path -LiteralPath $entry)) {
 
 Write-Host ''
 if ($existing) {
-    Write-Host "已升级到 $($release.tag_name)（config、日志、登录状态没动）。" -ForegroundColor Green
+    Write-Host "已升级到 $label（config、日志、登录状态没动）。" -ForegroundColor Green
     return
 }
 Write-Host '安装完成。下一步:' -ForegroundColor Green
