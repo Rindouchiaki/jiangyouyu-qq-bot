@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -55,15 +56,28 @@ def load(force: bool = False) -> list[dict]:
         return _state["entries"]
 
 
+_ASCII_TERM = re.compile(r"^[a-z0-9_\-+]+$")
+
+
+def _hit(low: str, term: str) -> bool:
+    """英文/字母词按词边界匹配：`yyds` 里不该命中单字母的 `d`。"""
+    t = term.lower()
+    if not t:
+        return False
+    if _ASCII_TERM.match(t):
+        return re.search(r"(?<![a-z0-9_])" + re.escape(t) + r"(?![a-z0-9_])", low) is not None
+    return t in low
+
+
 def lookup(text: str, limit: int | None = None, scope: str = "") -> list[tuple[str, str]]:
     """找出句子里出现的热梗，长的优先，最多 limit 条；scope 是会话（g群号 / p QQ号），只带这个会话自己的梗。"""
     if not text:
         return []
     low = text.lower()
-    hits = [(it["t"], it["m"]) for it in load() if it["t"].lower() in low]
+    hits = [(it["t"], it["m"]) for it in load() if _hit(low, it["t"])]
     have = {t.lower() for t, _ in hits}
     for term, rec in learned(scope).items():
-        if term.lower() in low and term.lower() not in have:
+        if _hit(low, term) and term.lower() not in have:
             hits.append((term, rec["m"]))
     hits.sort(key=lambda pair: -len(pair[0]))
     return hits[: limit if limit is not None else HINT_MAX]
