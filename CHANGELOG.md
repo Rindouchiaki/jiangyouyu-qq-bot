@@ -8,6 +8,7 @@
 
 | PR | 问题 | 改法 |
 |---|---|---|
+| #91 | 清理旧部署前复查：`tests/test_slang.py` 失败——单字母词条 `d` 在 `yyds` 里被子串命中，多提示了「D区表示呕」；roost 迁移与表情搬运也没有留档 | ①`bot/slang.py` 新增 `_hit()`：纯 ASCII 词按词边界匹配（`(?<![a-z0-9_])…(?![a-z0-9_])`），中文词仍按子串，`lookup()` 两处改用它；②新增 `tools/port_stickers_to_roost.py`（459 张表情连侧车标签搬进 roost 表情库）与 `docs/适配-roost-迁移清单.md`（20 项功能对照、三档清空方案、回滚步骤） |
 | #90 | SnowLuma 上游仓库转私有后：`tools/update_deps.py` 每天查 release 会 404 把整个 CI 变红；新机器部署 / 一键更新 SnowLuma 也只会抛一个看不懂的 404 | ①`update_deps.py` 新增 `api_optional()`（404 返回 None），`check_snowluma()` 跳过这一项、保留锁定版本，并在 PR 说明里写「上游访问不到，这一项跳过」；②`install-snowluma.ps1` 新增 `-Zip <本地发行包>` 与 `-Repo <owner/repo>`，404 时给出三条出路（拷本机 `_backup\SnowLuma-<版本>`、`-Zip`、换镜像）；③`docs/部署指南.md` 补更新说明与 FAQ |
 | #89 | 群友档案（#84/#85/#87）上线后回复过短、被叫频繁甩图、去标点，用户反馈「本次修改错漏百出」 | 回滚群友档案：删 `bot/groupmate.py`、`tests/test_groupmate.py`、`docs/调研-群友机器人说话方式.md`；`persona.py` 去掉档案覆盖、被叫甩图、去标点三段；`persona.env.example` 去掉 `PERSONA_PROFILE`；手册删 3.3；**保留 #88 的语境修复**（`at_context`、模糊命中、上线通知去重） |
 | #88 | 被 @ 之后接话容易串台：群里问「达摩克利斯之剑和硫磺火怎么选」，追问「？」时答成赛博朋克的「他攒够钱买往日之影了没啊」；反复重启时「上线了（sha）」把 debug 群刷了十几条 | ①`persona.py` 被 @ 时不再把群聊全丢掉：取最近 6 条群消息 + 自己最近 3 句 + 被引用那条，新增 `persona_rules.at_context()` 按顺序去重合并；②`SYSTEM_PROMPT` 补一条：被点名时先看清前面几句在聊什么，只答被问的那件事，别把别的话题、别人之前的事扯进来，不确定就问「你说的是 X 吗」；③`isaac_wiki.mention()` 加滑窗模糊匹配（`difflib` 比率 ≥0.82），「达摩克利斯之剑」能命中 `C577 达摩克里斯之剑`；④`debug_group.py` 同一版本 30 分钟内只报一次上线（`DEBUG_NOTICE_COOLDOWN`）；补 `at_context` 与模糊命中的单测 |
